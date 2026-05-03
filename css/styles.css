@@ -1143,6 +1143,9 @@ body {
   padding: 8px 12px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(210, 153, 34, 0.2);
+  margin-bottom: 12px;
+  line-height: 1.4;
+  transition: all var(--transition);
 }
 
 .pdf-preview {

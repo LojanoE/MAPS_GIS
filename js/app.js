@@ -811,8 +811,6 @@ async function handlePDFUpload(file) {
     previewCanvas.width = processed.canvas.width;
     previewCanvas.height = processed.canvas.height;
     ctx.drawImage(processed.canvas, 0, 0);
-
-    // Scale preview to fit
     previewCanvas.style.maxWidth = '100%';
     previewCanvas.style.height = 'auto';
 
@@ -821,19 +819,93 @@ async function handlePDFUpload(file) {
       name: file.name,
       arrayBuffer: arrayBuffer,
       size: file.size,
-      isGeoPDF: processed.isGeoPDF
+      isGeoPDF: processed.isGeoPDF,
+      geoData: processed.geoData || null
     };
 
     progressFill.style.width = '80%';
-    progressText.textContent = 'Ingresa las coordenadas de las esquinas';
+
+    // Check if geo data was auto-extracted
+    const geoData = processed.geoData;
+
+    if (geoData && geoData.corners) {
+      // Auto-fill the georef modal with extracted coordinates
+      progressText.textContent = 'Coordenadas detectadas automaticamente!';
+
+      const crs = geoData.crs || 'EPSG:4326';
+      document.getElementById('georef-crs').value = crs;
+
+      const c = geoData.corners;
+
+      if (crs === 'EPSG:4326') {
+        // Coordinates are [lon, lat] - display as lat/lon or convert to UTM
+        // Convert all corners to PSAD56 UTM 17S for display
+        const cornersUTM = {};
+        for (const key of ['tl', 'tr', 'bl', 'br']) {
+          const [lon, lat] = c[key];
+          const [e, n] = proj4('EPSG:4326', 'EPSG:24877', [lon, lat]);
+          cornersUTM[key] = { e, n };
+        }
+
+        document.getElementById('georef-tl-e').value = cornersUTM.tl.e.toFixed(2);
+        document.getElementById('georef-tl-n').value = cornersUTM.tl.n.toFixed(2);
+        document.getElementById('georef-tr-e').value = cornersUTM.tr.e.toFixed(2);
+        document.getElementById('georef-tr-n').value = cornersUTM.tr.n.toFixed(2);
+        document.getElementById('georef-bl-e').value = cornersUTM.bl.e.toFixed(2);
+        document.getElementById('georef-bl-n').value = cornersUTM.bl.n.toFixed(2);
+        document.getElementById('georef-br-e').value = cornersUTM.br.e.toFixed(2);
+        document.getElementById('georef-br-n').value = cornersUTM.br.n.toFixed(2);
+
+        // Set CRS to PSAD56 since we pre-converted
+        document.getElementById('georef-crs').value = 'EPSG:24877';
+      } else {
+        // Coordinates are already in projected CRS (easting, northing)
+        document.getElementById('georef-tl-e').value = c.tl[0].toFixed(2);
+        document.getElementById('georef-tl-n').value = c.tl[1].toFixed(2);
+        document.getElementById('georef-tr-e').value = c.tr[0].toFixed(2);
+        document.getElementById('georef-tr-n').value = c.tr[1].toFixed(2);
+        document.getElementById('georef-bl-e').value = c.bl[0].toFixed(2);
+        document.getElementById('georef-bl-n').value = c.bl[1].toFixed(2);
+        document.getElementById('georef-br-e').value = c.br[0].toFixed(2);
+        document.getElementById('georef-br-n').value = c.br[1].toFixed(2);
+
+        document.getElementById('georef-crs').value = crs;
+      }
+
+      // Update info text
+      const infoEl = document.querySelector('.georef-info');
+      if (infoEl) {
+        infoEl.textContent = 'Coordenadas detectadas automaticamente (' + geoData.source + '). Verifica y ajusta si es necesario.';
+        infoEl.style.background = 'rgba(63, 185, 80, 0.1)';
+        infoEl.style.borderColor = 'rgba(63, 185, 80, 0.3)';
+        infoEl.style.color = 'var(--success)';
+      }
+
+      showToast('Coordenadas del GeoPDF detectadas!', 'success');
+    } else {
+      progressText.textContent = 'Ingresa las coordenadas de las esquinas';
+
+      // Reset info text
+      const infoEl = document.querySelector('.georef-info');
+      if (infoEl) {
+        infoEl.textContent = 'Ingresa las coordenadas de las 4 esquinas del mapa en PSAD56 UTM 17S';
+        infoEl.style.background = '';
+        infoEl.style.borderColor = '';
+        infoEl.style.color = '';
+      }
+
+      // Clear fields
+      ['georef-tl-e', 'georef-tl-n', 'georef-tr-e', 'georef-tr-n',
+       'georef-bl-e', 'georef-bl-n', 'georef-br-e', 'georef-br-n'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('georef-crs').value = 'EPSG:24877';
+
+      showToast('PDF sin georreferenciacion. Ingresa coordenadas manualmente.', 'info');
+    }
 
     // Show georef modal
     document.getElementById('georef-modal').classList.remove('hidden');
-
-    // If GeoPDF detected, try to auto-fill (best effort)
-    if (processed.isGeoPDF) {
-      showToast('GeoPDF detectado. Ingresa coordenadas manualmente.', 'info');
-    }
 
   } catch (error) {
     console.error('PDF processing error:', error);
