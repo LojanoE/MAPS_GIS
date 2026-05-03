@@ -1,0 +1,27 @@
+{
+  "name": "MAPS GIS - Visor de Mapas Offline",
+  "short_name": "MAPS GIS",
+  "description": "Aplicacion PWA para visualizar mapas GeoTIFF offline con gestion de puntos de interes en coordenadas PSAD56 UTM 17S",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "categories": ["navigation", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='64' fill='%230d1117'/><path d='M256 80c-97.2 0-176 78.8-176 176s78.8 176 176 176 176-78.8 176-176S353.2 80 256 80z' fill='none' stroke='%2358a6ff' stroke-width='32'/><circle cx='256' cy='256' r='48' fill='%2358a6ff'/><path d='M256 120v80M256 312v80M120 256h80M312 256h80' stroke='%2358a6ff' stroke-width='24' stroke-linecap='round'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='64' fill='%230d1117'/><path d='M256 80c-97.2 0-176 78.8-176 176s78.8 176 176 176 176-78.8 176-176S353.2 80 256 80z' fill='none' stroke='%2358a6ff' stroke-width='32'/><circle cx='256' cy='256' r='48' fill='%2358a6ff'/><path d='M256 120v80M256 312v80M120 256h80M312 256h80' stroke='%2358a6ff' stroke-width='24' stroke-linecap='round'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "prefer_related_applications": false
+}

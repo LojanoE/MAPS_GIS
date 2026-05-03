@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>MAPS GIS - Visor Offline</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- App CSS -->
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+</head>
+<body>
+
+  <!-- ==================== PANTALLA HOME ==================== -->
+  <div id="home-screen" class="screen active">
+    <header class="app-header">
+      <h1>MAPS GIS</h1>
+      <p class="subtitle">Visor de Mapas Offline</p>
+    </header>
+
+    <main class="home-content">
+      <!-- Seccion de carga de archivos -->
+      <section class="upload-section">
+        <h2>Cargar Mapa</h2>
+        <label for="tiff-input" class="upload-btn" id="upload-label">
+          <span class="upload-icon">+</span>
+          <span class="upload-text">Seleccionar archivo .TIF / .TIFF</span>
+        </label>
+        <input type="file" id="tiff-input" accept=".tif,.tiff" hidden>
+        <div id="upload-progress" class="progress-bar hidden">
+          <div class="progress-fill"></div>
+          <span class="progress-text">Cargando...</span>
+        </div>
+      </section>
+
+      <!-- Lista de mapas guardados -->
+      <section class="maps-section">
+        <h2>Mis Mapas</h2>
+        <div id="maps-list" class="maps-list">
+          <p class="empty-msg">No hay mapas cargados aun</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <span>v1.0.0</span>
+      <span id="storage-info"></span>
+    </footer>
+  </div>
+
+  <!-- ==================== PANTALLA MAPA ==================== -->
+  <div id="map-screen" class="screen">
+    <!-- Header del mapa -->
+    <header class="map-header">
+      <button id="btn-back" class="icon-btn" title="Volver">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+      </button>
+      <h2 id="map-title">Mapa</h2>
+      <button id="btn-theme" class="icon-btn" title="Cambiar tema">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Contenedor del mapa Leaflet -->
+    <div id="map-container">
+      <div id="map"></div>
+
+      <!-- Panel de coordenadas -->
+      <div id="coords-panel" class="coords-panel">
+        <span id="coord-norte">N: ---</span>
+        <span id="coord-este">E: ---</span>
+      </div>
+
+      <!-- Botones flotantes del mapa -->
+      <div class="map-controls">
+        <!-- Mi ubicacion -->
+        <button id="btn-location" class="map-btn" title="Mi ubicacion">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+          </svg>
+        </button>
+
+        <!-- Anadir marcador -->
+        <button id="btn-add-marker" class="map-btn" title="Anadir marcador">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+            <circle cx="12" cy="9" r="2.5"/>
+          </svg>
+        </button>
+
+        <!-- Exportar CSV -->
+        <button id="btn-export" class="map-btn" title="Exportar marcadores CSV">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+        </button>
+
+        <!-- Lista de marcadores -->
+        <button id="btn-markers-list" class="map-btn" title="Ver marcadores">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 6h11M9 12h11M9 18h11M5 6h.01M5 12h.01M5 18h.01"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODALES ==================== -->
+
+  <!-- Modal para nombrar marcador -->
+  <div id="marker-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Nuevo Marcador</h3>
+      <p id="marker-coords-display"></p>
+      <input type="text" id="marker-name" placeholder="Nombre del punto" maxlength="50" autocomplete="off">
+      <div class="modal-actions">
+        <button id="btn-cancel-marker" class="btn-secondary">Cancelar</button>
+        <button id="btn-save-marker" class="btn-primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal lista de marcadores -->
+  <div id="markers-list-modal" class="modal hidden">
+    <div class="modal-content modal-large">
+      <h3>Marcadores Guardados</h3>
+      <div id="markers-list-container" class="markers-list-container">
+        <p class="empty-msg">No hay marcadores guardados</p>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-close-markers" class="btn-primary">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de confirmacion para eliminar mapa -->
+  <div id="delete-map-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Eliminar Mapa</h3>
+      <p id="delete-map-msg">Estas seguro de eliminar este mapa?</p>
+      <div class="modal-actions">
+        <button id="btn-cancel-delete" class="btn-secondary">Cancelar</button>
+        <button id="btn-confirm-delete" class="btn-primary btn-danger">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast de notificaciones -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ==================== SCRIPTS ==================== -->
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Proj4js -->
+  <script src="https://unpkg.com/proj4@2.9.2/dist/proj4.js"></script>
+
+  <!-- GeoTIFF.js -->
+  <script src="https://unpkg.com/geotiff@2.1.3/dist/main/browser/geotiff.js"></script>
+
+  <!-- GeoRaster -->
+  <script src="https://unpkg.com/georaster@1.6.0/dist/browser/georaster.js"></script>
+
+  <!-- GeoRaster Layer for Leaflet -->
+  <script src="https://unpkg.com/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js"></script>
+
+  <!-- Storage Module (IndexedDB) -->
+  <script src="js/storage.js"></script>
+
+  <!-- App Main Logic -->
+  <script src="js/app.js"></script>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('SW registrado:', reg.scope))
+          .catch(err => console.log('SW error:', err));
+      });
+    }
+  </script>
+</body>
+</html>
