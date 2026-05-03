@@ -1,13 +1,13 @@
 /**
- * storage.js - IndexedDB Manager for GeoTIFF files
+ * storage.js - IndexedDB Manager for MAPS GIS
  *
- * Handles CRUD operations for storing large GeoTIFF files
+ * Handles CRUD operations for storing GeoTIFF and PDF map files
  * in the browser's IndexedDB for offline persistence.
  */
 
 const MapStorage = (() => {
   const DB_NAME = 'MapsGISDB';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE_NAME = 'maps';
 
   let db = null;
@@ -31,6 +31,7 @@ const MapStorage = (() => {
           const store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
           store.createIndex('name', 'name', { unique: false });
           store.createIndex('createdAt', 'createdAt', { unique: false });
+          store.createIndex('type', 'type', { unique: false });
         }
       };
 
@@ -64,6 +65,7 @@ const MapStorage = (() => {
         name: name,
         data: arrayBuffer,
         size: size,
+        type: 'tiff',
         createdAt: new Date().toISOString()
       };
 
@@ -71,6 +73,40 @@ const MapStorage = (() => {
 
       request.onsuccess = () => resolve(record);
       request.onerror = () => reject(new Error('Error al guardar el mapa'));
+    });
+  }
+
+  /**
+   * Save a PDF map with georeferencing data
+   * @param {string} name - Display name
+   * @param {ArrayBuffer} arrayBuffer - Raw PDF data
+   * @param {number} size - File size
+   * @param {object} georef - { corners: { tl, tr, bl, br }, crs: string }
+   * @param {string} thumbnail - Data URL thumbnail
+   * @returns {Promise<object>} Saved map record
+   */
+  async function savePDFMap(name, arrayBuffer, size, georef, thumbnail) {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+
+      const record = {
+        id: 'map_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+        name: name,
+        data: arrayBuffer,
+        size: size,
+        type: 'pdf',
+        georef: georef,
+        thumbnail: thumbnail || null,
+        createdAt: new Date().toISOString()
+      };
+
+      const request = store.add(record);
+
+      request.onsuccess = () => resolve(record);
+      request.onerror = () => reject(new Error('Error al guardar el mapa PDF'));
     });
   }
 
@@ -91,6 +127,8 @@ const MapStorage = (() => {
           id: map.id,
           name: map.name,
           size: map.size,
+          type: map.type || 'tiff',
+          thumbnail: map.thumbnail || null,
           createdAt: map.createdAt
         }));
         maps.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -102,11 +140,11 @@ const MapStorage = (() => {
   }
 
   /**
-   * Get a single map's raw data by ID
+   * Get a single map's full record by ID
    * @param {string} id - Map record ID
-   * @returns {Promise<ArrayBuffer>} Raw GeoTIFF ArrayBuffer
+   * @returns {Promise<object>} Full map record
    */
-  async function getMapData(id) {
+  async function getMapRecord(id) {
     const database = await initDB();
 
     return new Promise((resolve, reject) => {
@@ -116,7 +154,7 @@ const MapStorage = (() => {
 
       request.onsuccess = () => {
         if (request.result) {
-          resolve(request.result.data);
+          resolve(request.result);
         } else {
           reject(new Error('Mapa no encontrado'));
         }
@@ -124,6 +162,16 @@ const MapStorage = (() => {
 
       request.onerror = () => reject(new Error('Error al obtener el mapa'));
     });
+  }
+
+  /**
+   * Get a single map's raw data by ID
+   * @param {string} id - Map record ID
+   * @returns {Promise<ArrayBuffer>} Raw data ArrayBuffer
+   */
+  async function getMapData(id) {
+    const record = await getMapRecord(id);
+    return record.data;
   }
 
   /**
@@ -169,7 +217,9 @@ const MapStorage = (() => {
   return {
     initDB,
     saveMap,
+    savePDFMap,
     getAllMaps,
+    getMapRecord,
     getMapData,
     deleteMap,
     getTotalStorage,

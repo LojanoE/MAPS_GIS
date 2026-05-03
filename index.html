@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0d1117">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>MAPS GIS - Visor Offline</title>
+  <title>MAPS GIS - Visor de Mapas</title>
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -23,19 +23,26 @@
   <!-- ==================== PANTALLA HOME ==================== -->
   <div id="home-screen" class="screen active">
     <header class="app-header">
-      <h1>MAPS GIS</h1>
-      <p class="subtitle">Visor de Mapas Offline</p>
+      <div class="header-top">
+        <h1>MAPS GIS</h1>
+        <span id="online-status" class="status-badge online">En linea</span>
+      </div>
+      <p class="subtitle">Visor de Mapas y Marcadores</p>
     </header>
 
     <main class="home-content">
       <!-- Seccion de carga de archivos -->
       <section class="upload-section">
         <h2>Cargar Mapa</h2>
-        <label for="tiff-input" class="upload-btn" id="upload-label">
-          <span class="upload-icon">+</span>
-          <span class="upload-text">Seleccionar archivo .TIF / .TIFF</span>
+        <label for="map-input" class="upload-btn" id="upload-label">
+          <span class="upload-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+            </svg>
+          </span>
+          <span class="upload-text">Seleccionar archivo .TIF, .TIFF o .PDF</span>
         </label>
-        <input type="file" id="tiff-input" accept=".tif,.tiff" hidden>
+        <input type="file" id="map-input" accept=".tif,.tiff,.pdf" hidden>
         <div id="upload-progress" class="progress-bar hidden">
           <div class="progress-fill"></div>
           <span class="progress-text">Cargando...</span>
@@ -44,9 +51,28 @@
 
       <!-- Lista de mapas guardados -->
       <section class="maps-section">
-        <h2>Mis Mapas</h2>
+        <div class="section-header">
+          <h2>Mis Mapas</h2>
+          <span id="maps-count" class="count-badge">0</span>
+        </div>
         <div id="maps-list" class="maps-list">
           <p class="empty-msg">No hay mapas cargados aun</p>
+        </div>
+      </section>
+
+      <!-- Resumen de marcadores -->
+      <section class="summary-section">
+        <div class="summary-card">
+          <div class="summary-icon">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+              <circle cx="12" cy="9" r="2.5"/>
+            </svg>
+          </div>
+          <div class="summary-info">
+            <span class="summary-label">Marcadores guardados</span>
+            <span id="markers-count" class="summary-value">0</span>
+          </div>
         </div>
       </section>
     </main>
@@ -67,6 +93,12 @@
         </svg>
       </button>
       <h2 id="map-title">Mapa</h2>
+      <button id="btn-markers-panel" class="icon-btn" title="Marcadores">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 6h11M9 12h11M9 18h11M5 6h.01M5 12h.01M5 18h.01"/>
+        </svg>
+        <span id="marker-count-badge" class="badge hidden">0</span>
+      </button>
       <button id="btn-theme" class="icon-btn" title="Cambiar tema">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
@@ -80,9 +112,21 @@
 
       <!-- Panel de coordenadas -->
       <div id="coords-panel" class="coords-panel">
-        <span id="coord-norte">N: ---</span>
-        <span id="coord-este">E: ---</span>
+        <div class="coord-row">
+          <span class="coord-label">PSAD56 UTM 17S</span>
+        </div>
+        <div class="coord-values">
+          <span id="coord-norte">N: ---</span>
+          <span id="coord-este">E: ---</span>
+        </div>
+        <div class="coord-values coord-wgs84">
+          <span id="coord-lat">Lat: ---</span>
+          <span id="coord-lng">Lon: ---</span>
+        </div>
       </div>
+
+      <!-- Barra de escala -->
+      <div id="scale-bar" class="scale-bar"></div>
 
       <!-- Botones flotantes del mapa -->
       <div class="map-controls">
@@ -93,8 +137,15 @@
           </svg>
         </button>
 
-        <!-- Anadir marcador -->
-        <button id="btn-add-marker" class="map-btn" title="Anadir marcador">
+        <!-- Centrar mapa -->
+        <button id="btn-center" class="map-btn" title="Centrar en mapa">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+          </svg>
+        </button>
+
+        <!-- Añadir marcador -->
+        <button id="btn-add-marker" class="map-btn map-btn-primary" title="Añadir marcador">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
             <circle cx="12" cy="9" r="2.5"/>
@@ -107,25 +158,84 @@
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
           </svg>
         </button>
-
-        <!-- Lista de marcadores -->
-        <button id="btn-markers-list" class="map-btn" title="Ver marcadores">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 6h11M9 12h11M9 18h11M5 6h.01M5 12h.01M5 18h.01"/>
-          </svg>
-        </button>
       </div>
+    </div>
+  </div>
+
+  <!-- ==================== PANEL LATERAL DE MARCADORES ==================== -->
+  <div id="markers-panel" class="side-panel hidden">
+    <div class="panel-header">
+      <h3>Marcadores</h3>
+      <button id="btn-close-panel" class="icon-btn">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Buscador -->
+    <div class="panel-search">
+      <input type="text" id="marker-search" placeholder="Buscar marcador..." autocomplete="off">
+    </div>
+
+    <!-- Lista de marcadores -->
+    <div id="markers-list-container" class="panel-content">
+      <p class="empty-msg">No hay marcadores guardados</p>
+    </div>
+
+    <!-- Acciones del panel -->
+    <div class="panel-actions">
+      <button id="btn-export-panel" class="btn-full">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        Exportar CSV
+      </button>
     </div>
   </div>
 
   <!-- ==================== MODALES ==================== -->
 
-  <!-- Modal para nombrar marcador -->
+  <!-- Modal para crear/editar marcador -->
   <div id="marker-modal" class="modal hidden">
     <div class="modal-content">
-      <h3>Nuevo Marcador</h3>
+      <h3 id="marker-modal-title">Nuevo Marcador</h3>
       <p id="marker-coords-display"></p>
-      <input type="text" id="marker-name" placeholder="Nombre del punto" maxlength="50" autocomplete="off">
+
+      <div class="form-group">
+        <label for="marker-name">Nombre *</label>
+        <input type="text" id="marker-name" placeholder="Nombre del punto" maxlength="50" autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label for="marker-description">Descripcion</label>
+        <textarea id="marker-description" placeholder="Notas u observaciones..." maxlength="200" rows="3"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Categoria</label>
+        <div id="category-selector" class="category-selector">
+          <button class="category-btn active" data-color="red" title="Rojo">
+            <span class="cat-dot" style="background:#f85149;"></span>
+          </button>
+          <button class="category-btn" data-color="blue" title="Azul">
+            <span class="cat-dot" style="background:#58a6ff;"></span>
+          </button>
+          <button class="category-btn" data-color="green" title="Verde">
+            <span class="cat-dot" style="background:#3fb950;"></span>
+          </button>
+          <button class="category-btn" data-color="yellow" title="Amarillo">
+            <span class="cat-dot" style="background:#d29922;"></span>
+          </button>
+          <button class="category-btn" data-color="orange" title="Naranja">
+            <span class="cat-dot" style="background:#db6d28;"></span>
+          </button>
+          <button class="category-btn" data-color="purple" title="Morado">
+            <span class="cat-dot" style="background:#a371f7;"></span>
+          </button>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button id="btn-cancel-marker" class="btn-secondary">Cancelar</button>
         <button id="btn-save-marker" class="btn-primary">Guardar</button>
@@ -133,15 +243,48 @@
     </div>
   </div>
 
-  <!-- Modal lista de marcadores -->
-  <div id="markers-list-modal" class="modal hidden">
-    <div class="modal-content modal-large">
-      <h3>Marcadores Guardados</h3>
-      <div id="markers-list-container" class="markers-list-container">
-        <p class="empty-msg">No hay marcadores guardados</p>
+  <!-- Modal detalle de marcador -->
+  <div id="marker-detail-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="detail-header">
+        <div id="detail-marker-icon" class="detail-icon"></div>
+        <div>
+          <h3 id="detail-marker-name"></h3>
+          <span id="detail-marker-date" class="detail-date"></span>
+        </div>
       </div>
+
+      <div class="detail-body">
+        <div class="detail-row">
+          <span class="detail-label">Categoria</span>
+          <span id="detail-marker-category"></span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Norte (PSAD56)</span>
+          <span id="detail-marker-norte" class="detail-value"></span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Este (PSAD56)</span>
+          <span id="detail-marker-este" class="detail-value"></span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Latitud (WGS84)</span>
+          <span id="detail-marker-lat" class="detail-value"></span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Longitud (WGS84)</span>
+          <span id="detail-marker-lng" class="detail-value"></span>
+        </div>
+        <div id="detail-description-row" class="detail-row detail-description">
+          <span class="detail-label">Descripcion</span>
+          <p id="detail-marker-description"></p>
+        </div>
+      </div>
+
       <div class="modal-actions">
-        <button id="btn-close-markers" class="btn-primary">Cerrar</button>
+        <button id="btn-edit-marker" class="btn-secondary">Editar</button>
+        <button id="btn-delete-marker" class="btn-primary btn-danger">Eliminar</button>
+        <button id="btn-close-detail" class="btn-primary">Cerrar</button>
       </div>
     </div>
   </div>
@@ -154,6 +297,65 @@
       <div class="modal-actions">
         <button id="btn-cancel-delete" class="btn-secondary">Cancelar</button>
         <button id="btn-confirm-delete" class="btn-primary btn-danger">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de georreferenciacion de PDF -->
+  <div id="georef-modal" class="modal hidden">
+    <div class="modal-content modal-georef">
+      <h3>Georreferenciar PDF</h3>
+      <p class="georef-info">Ingresa las coordenadas de las 4 esquinas del mapa en PSAD56 UTM 17S</p>
+
+      <!-- Preview del PDF -->
+      <div id="pdf-preview-container" class="pdf-preview">
+        <canvas id="pdf-preview-canvas"></canvas>
+      </div>
+
+      <!-- Coordenadas de esquinas -->
+      <div class="georef-grid">
+        <div class="georef-corner">
+          <span class="corner-label">Esquina Superior Izquierda</span>
+          <div class="coord-inputs">
+            <input type="number" id="georef-tl-e" placeholder="Este (E)" step="any">
+            <input type="number" id="georef-tl-n" placeholder="Norte (N)" step="any">
+          </div>
+        </div>
+        <div class="georef-corner">
+          <span class="corner-label">Esquina Superior Derecha</span>
+          <div class="coord-inputs">
+            <input type="number" id="georef-tr-e" placeholder="Este (E)" step="any">
+            <input type="number" id="georef-tr-n" placeholder="Norte (N)" step="any">
+          </div>
+        </div>
+        <div class="georef-corner">
+          <span class="corner-label">Esquina Inferior Izquierda</span>
+          <div class="coord-inputs">
+            <input type="number" id="georef-bl-e" placeholder="Este (E)" step="any">
+            <input type="number" id="georef-bl-n" placeholder="Norte (N)" step="any">
+          </div>
+        </div>
+        <div class="georef-corner">
+          <span class="corner-label">Esquina Inferior Derecha</span>
+          <div class="coord-inputs">
+            <input type="number" id="georef-br-e" placeholder="Este (E)" step="any">
+            <input type="number" id="georef-br-n" placeholder="Norte (N)" step="any">
+          </div>
+        </div>
+      </div>
+
+      <!-- CRS selector -->
+      <div class="form-group">
+        <label>Sistema de coordenadas de entrada</label>
+        <select id="georef-crs" class="crs-select">
+          <option value="EPSG:24877" selected>PSAD56 UTM 17S (EPSG:24877)</option>
+          <option value="EPSG:4326">WGS84 Lat/Lon (EPSG:4326)</option>
+        </select>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-cancel-georef" class="btn-secondary">Cancelar</button>
+        <button id="btn-apply-georef" class="btn-primary">Aplicar y Cargar</button>
       </div>
     </div>
   </div>
@@ -178,8 +380,14 @@
   <!-- GeoRaster Layer for Leaflet -->
   <script src="https://unpkg.com/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js"></script>
 
+  <!-- PDF.js -->
+  <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+
   <!-- Storage Module (IndexedDB) -->
   <script src="js/storage.js"></script>
+
+  <!-- PDF Processor -->
+  <script src="js/pdf-processor.js"></script>
 
   <!-- App Main Logic -->
   <script src="js/app.js"></script>

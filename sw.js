@@ -16,6 +16,7 @@ const CORE_ASSETS = [
   './css/styles.css',
   './js/app.js',
   './js/storage.js',
+  './js/pdf-processor.js',
   './manifest.json'
 ];
 
@@ -26,7 +27,9 @@ const CDN_ASSETS = [
   'https://unpkg.com/proj4@2.9.2/dist/proj4.js',
   'https://unpkg.com/geotiff@2.1.3/dist/main/browser/geotiff.js',
   'https://unpkg.com/georaster@1.6.0/dist/browser/georaster.js',
-  'https://unpkg.com/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js'
+  'https://unpkg.com/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js',
+  'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
+  'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js'
 ];
 
 // Tile URL patterns to handle separately (network-first for fresh tiles)

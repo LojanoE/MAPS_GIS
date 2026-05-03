@@ -1,7 +1,7 @@
 {
-  "name": "MAPS GIS - Visor de Mapas Offline",
+  "name": "MAPS GIS - Visor de Mapas y Marcadores",
   "short_name": "MAPS GIS",
-  "description": "Aplicacion PWA para visualizar mapas GeoTIFF offline con gestion de puntos de interes en coordenadas PSAD56 UTM 17S",
+  "description": "Aplicacion PWA para visualizar mapas GeoTIFF offline con gestion avanzada de puntos de interes en coordenadas PSAD56 UTM 17S",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
