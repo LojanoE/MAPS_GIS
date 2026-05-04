@@ -30,7 +30,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.1.0';
 
 // ============================================
 // APP STATE
@@ -50,7 +50,8 @@ const AppState = {
   selectedCategory: 'red',
   darkTiles: null,
   lightTiles: null,
-  pendingPDF: null
+  pendingPDF: null,
+  pendingPhotos: [] // Array of { photoId, dataUrl } for current marker
 };
 
 // ============================================
@@ -72,7 +73,7 @@ const MarkerManager = {
     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(markers));
   },
 
-  create(name, description, lat, lng, color) {
+  create(name, description, lat, lng, color, photos) {
     const markers = this.getAll();
     const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
     const marker = {
@@ -84,6 +85,7 @@ const MarkerManager = {
       norte: north.toFixed(3),
       este: east.toFixed(3),
       color: color || 'red',
+      photos: photos || [],
       createdAt: new Date().toISOString()
     };
     markers.push(marker);
@@ -151,6 +153,111 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// ============================================
+// IMAGE COMPRESSION & PHOTO HANDLING
+// ============================================
+
+function compressImage(file, maxWidth = 1024, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      img.src = e.target.result;
+    };
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('Error al comprimir imagen'));
+        }
+      }, 'image/jpeg', quality);
+    };
+
+    img.onerror = () => reject(new Error('Error al cargar imagen'));
+    reader.onerror = () => reject(new Error('Error al leer archivo'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function handlePhotoCapture(file) {
+  if (!file) return;
+
+  try {
+    showToast('Procesando foto...', 'info');
+    const compressedBlob = await compressImage(file, 1024, 0.75);
+    const dataUrl = await blobToDataURL(compressedBlob);
+
+    if (AppState.pendingPhotos.length >= 2) {
+      showToast('Solo se permiten 2 fotos por marcador', 'error');
+      return;
+    }
+
+    AppState.pendingPhotos.push({ blob: compressedBlob, dataUrl: dataUrl });
+    renderPhotoGrid();
+    showToast('Foto agregada', 'success');
+  } catch (error) {
+    console.error('Error processing photo:', error);
+    showToast('Error al procesar la foto', 'error');
+  }
+}
+
+function renderPhotoGrid() {
+  const grid = document.getElementById('photo-grid');
+  if (!grid) return;
+
+  grid.innerHTML = AppState.pendingPhotos.map((photo, index) => {
+    return '<div class="photo-thumb">' +
+      '<img src="' + photo.dataUrl + '" alt="Foto ' + (index + 1) + '">' +
+      '<button class="photo-remove" data-index="' + index + '" title="Eliminar foto">&times;</button>' +
+      '</div>';
+  }).join('');
+
+  grid.querySelectorAll('.photo-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.index);
+      AppState.pendingPhotos.splice(idx, 1);
+      renderPhotoGrid();
+    });
+  });
+
+  const btnAddPhoto = document.getElementById('btn-add-photo');
+  if (btnAddPhoto) {
+    btnAddPhoto.style.display = AppState.pendingPhotos.length >= 2 ? 'none' : 'flex';
+  }
+}
+
+function clearPendingPhotos() {
+  AppState.pendingPhotos = [];
+  renderPhotoGrid();
 }
 
 // ============================================
@@ -382,9 +489,10 @@ function createMarkerIcon(marker) {
 // MARKER MODAL (Create/Edit)
 // ============================================
 
-function openMarkerModal(latlng, editId) {
+async function openMarkerModal(latlng, editId) {
   AppState.pendingMarkerLatLng = latlng;
   AppState.editingMarkerId = editId || null;
+  clearPendingPhotos();
 
   if (editId) {
     const marker = MarkerManager.getById(editId);
@@ -398,6 +506,22 @@ function openMarkerModal(latlng, editId) {
     const [east, north] = proj4(WGS84, 'EPSG:24877', [marker.lng, marker.lat]);
     document.getElementById('marker-coords-display').textContent =
       'N: ' + north.toFixed(3) + ' | E: ' + east.toFixed(3);
+
+    // Load existing photos
+    if (marker.photos && marker.photos.length > 0) {
+      for (const photoId of marker.photos) {
+        try {
+          const photoRecord = await MapStorage.getPhoto(photoId);
+          if (photoRecord && photoRecord.blob) {
+            const dataUrl = await blobToDataURL(photoRecord.blob);
+            AppState.pendingPhotos.push({ photoId: photoId, blob: photoRecord.blob, dataUrl: dataUrl });
+          }
+        } catch (e) {
+          console.warn('Could not load photo:', photoId, e);
+        }
+      }
+      renderPhotoGrid();
+    }
   } else {
     document.getElementById('marker-modal-title').textContent = 'Nuevo Marcador';
     document.getElementById('marker-name').value = '';
@@ -420,10 +544,11 @@ function closeMarkerModal() {
   AppState.pendingMarkerLatLng = null;
   AppState.editingMarkerId = null;
   AppState.isAddMarkerMode = false;
+  clearPendingPhotos();
   document.getElementById('btn-add-marker').classList.remove('active');
 }
 
-function saveMarker() {
+async function saveMarker() {
   const name = document.getElementById('marker-name').value.trim();
   const description = document.getElementById('marker-description').value.trim();
 
@@ -432,16 +557,48 @@ function saveMarker() {
     return;
   }
 
+  // Save photos to IndexedDB and collect photoIds
+  const photoIds = [];
+  for (const photo of AppState.pendingPhotos) {
+    try {
+      if (photo.photoId) {
+        // Existing photo, keep the ID
+        photoIds.push(photo.photoId);
+      } else if (photo.blob) {
+        // New photo, save to IndexedDB
+        const markerId = AppState.editingMarkerId || ('m_' + Date.now());
+        const photoId = await MapStorage.savePhoto(photo.blob, markerId);
+        photoIds.push(photoId);
+      }
+    } catch (e) {
+      console.error('Error saving photo:', e);
+    }
+  }
+
   if (AppState.editingMarkerId) {
+    // Delete old photos that were removed
+    const oldMarker = MarkerManager.getById(AppState.editingMarkerId);
+    if (oldMarker && oldMarker.photos) {
+      const removedPhotos = oldMarker.photos.filter(id => !photoIds.includes(id));
+      for (const photoId of removedPhotos) {
+        try {
+          await MapStorage.deletePhoto(photoId);
+        } catch (e) {
+          console.warn('Could not delete old photo:', photoId);
+        }
+      }
+    }
+
     MarkerManager.update(AppState.editingMarkerId, {
       name: name,
       description: description,
-      color: AppState.selectedCategory
+      color: AppState.selectedCategory,
+      photos: photoIds
     });
     showToast('Marcador actualizado', 'success');
   } else if (AppState.pendingMarkerLatLng) {
     const { lat, lng } = AppState.pendingMarkerLatLng;
-    MarkerManager.create(name, description, lat, lng, AppState.selectedCategory);
+    MarkerManager.create(name, description, lat, lng, AppState.selectedCategory, photoIds);
     showToast('Marcador "' + name + '" guardado', 'success');
   }
 
@@ -460,7 +617,7 @@ function updateCategorySelector() {
 // MARKER DETAIL MODAL
 // ============================================
 
-function openMarkerDetail(id) {
+async function openMarkerDetail(id) {
   const marker = MarkerManager.getById(id);
   if (!marker) return;
 
@@ -485,6 +642,36 @@ function openMarkerDetail(id) {
     descRow.classList.add('hidden');
   }
 
+  // Load and display photos
+  const photosRow = document.getElementById('detail-photos-row');
+  const photosGrid = document.getElementById('detail-marker-photos');
+  photosGrid.innerHTML = '';
+
+  if (marker.photos && marker.photos.length > 0) {
+    photosRow.classList.remove('hidden');
+    for (const photoId of marker.photos) {
+      try {
+        const photoRecord = await MapStorage.getPhoto(photoId);
+        if (photoRecord && photoRecord.blob) {
+          const dataUrl = await blobToDataURL(photoRecord.blob);
+          const img = document.createElement('img');
+          img.src = dataUrl;
+          img.alt = 'Foto';
+          img.addEventListener('click', () => {
+            // Open full-size image
+            const win = window.open();
+            win.document.write('<img src="' + dataUrl + '" style="max-width:100%">');
+          });
+          photosGrid.appendChild(img);
+        }
+      } catch (e) {
+        console.warn('Could not load photo for detail:', photoId);
+      }
+    }
+  } else {
+    photosRow.classList.add('hidden');
+  }
+
   document.getElementById('marker-detail-modal').dataset.markerId = id;
   document.getElementById('marker-detail-modal').classList.remove('hidden');
 }
@@ -502,8 +689,21 @@ function editCurrentMarker() {
   openMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
 }
 
-function deleteCurrentMarker() {
+async function deleteCurrentMarker() {
   const id = document.getElementById('marker-detail-modal').dataset.markerId;
+  const marker = MarkerManager.getById(id);
+
+  // Delete associated photos
+  if (marker && marker.photos && marker.photos.length > 0) {
+    for (const photoId of marker.photos) {
+      try {
+        await MapStorage.deletePhoto(photoId);
+      } catch (e) {
+        console.warn('Could not delete photo:', photoId);
+      }
+    }
+  }
+
   MarkerManager.remove(id);
   refreshMarkersOnMap();
   updateMarkerCountBadge();
@@ -640,39 +840,135 @@ function updateMarkerCountBadge() {
 }
 
 // ============================================
-// CSV EXPORT
+// ZIP + EXCEL EXPORT
 // ============================================
 
-function exportToCSV() {
+function openExportModal() {
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('export-today-date').textContent = formatDate(today);
+  document.getElementById('export-date-from').value = today;
+  document.getElementById('export-date-to').value = today;
+
+  updateExportSummary();
+  document.getElementById('export-modal').classList.remove('hidden');
+}
+
+function closeExportModal() {
+  document.getElementById('export-modal').classList.add('hidden');
+}
+
+function getExportType() {
+  return document.querySelector('input[name="export-type"]:checked').value;
+}
+
+function getExportMarkers() {
   const markers = MarkerManager.getAll();
+  const type = getExportType();
+
+  if (type === 'today') {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return markers.filter(m => m.createdAt && m.createdAt.startsWith(todayStr));
+  } else {
+    const fromVal = document.getElementById('export-date-from').value;
+    const toVal = document.getElementById('export-date-to').value;
+    if (!fromVal || !toVal) return markers;
+
+    const fromDate = new Date(fromVal);
+    fromDate.setHours(0, 0, 0, 0);
+    const toDate = new Date(toVal);
+    toDate.setHours(23, 59, 59, 999);
+
+    return markers.filter(m => {
+      if (!m.createdAt) return false;
+      const d = new Date(m.createdAt);
+      return d >= fromDate && d <= toDate;
+    });
+  }
+}
+
+function updateExportSummary() {
+  const count = getExportMarkers().length;
+  document.getElementById('export-count').textContent = count;
+}
+
+async function exportToZIP() {
+  const markers = getExportMarkers();
 
   if (markers.length === 0) {
-    showToast('No hay marcadores para exportar', 'error');
+    showToast('No hay marcadores para exportar en el rango seleccionado', 'error');
     return;
   }
 
-  let csv = '\uFEFFNombre,Categoria,Descripcion,Norte (m),Este (m),Latitud,Longitud,Fecha\n';
+  showToast('Generando ZIP...', 'info');
 
-  markers.forEach(m => {
-    csv += '"' + (m.name || '').replace(/"/g, '""') + '",' +
-           '"' + (MARKER_COLORS[m.color]?.label || '') + '",' +
-           '"' + (m.description || '').replace(/"/g, '""') + '",' +
-           m.norte + ',' +
-           m.este + ',' +
-           m.lat.toFixed(8) + ',' +
-           m.lng.toFixed(8) + ',' +
-           '"' + formatDateTime(m.createdAt) + '"\n';
-  });
+  try {
+    const zip = new JSZip();
+    const folder = zip.folder('fotos');
 
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'marcadores_' + new Date().toISOString().slice(0, 10) + '.csv';
-  link.click();
-  URL.revokeObjectURL(url);
+    // Build Excel data
+    const excelData = [];
+    excelData.push([
+      'Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)',
+      'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2'
+    ]);
 
-  showToast(markers.length + ' marcadores exportados', 'success');
+    for (let i = 0; i < markers.length; i++) {
+      const m = markers[i];
+      const safeName = (m.name || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '_');
+      const rowNum = String(i + 1).padStart(3, '0');
+
+      let foto1Name = '';
+      let foto2Name = '';
+
+      if (m.photos && m.photos.length > 0) {
+        for (let p = 0; p < m.photos.length && p < 2; p++) {
+          const photoId = m.photos[p];
+          try {
+            const photoRecord = await MapStorage.getPhoto(photoId);
+            if (photoRecord && photoRecord.blob) {
+              const fileName = safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
+              folder.file(fileName, photoRecord.blob);
+              if (p === 0) foto1Name = fileName;
+              if (p === 1) foto2Name = fileName;
+            }
+          } catch (e) {
+            console.warn('Could not add photo to zip:', photoId);
+          }
+        }
+      }
+
+      excelData.push([
+        m.name || '',
+        MARKER_COLORS[m.color]?.label || '',
+        m.description || '',
+        m.norte,
+        m.este,
+        m.lat,
+        m.lng,
+        formatDateTime(m.createdAt),
+        foto1Name,
+        foto2Name
+      ]);
+    }
+
+    // Create Excel workbook
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(excelData);
+    XLSX.utils.book_append_sheet(wb, ws, 'Marcadores');
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    zip.file('marcadores.xlsx', excelBuffer);
+
+    // Generate and download ZIP
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const dateStr = new Date().toISOString().slice(0, 10);
+    saveAs(zipBlob, 'marcadores_' + dateStr + '.zip');
+
+    showToast(markers.length + ' marcadores exportados en ZIP', 'success');
+    closeExportModal();
+  } catch (error) {
+    console.error('Export error:', error);
+    showToast('Error al generar ZIP: ' + (error.message || 'Desconocido'), 'error');
+  }
 }
 
 // ============================================
@@ -1160,16 +1456,40 @@ function initEventListeners() {
   document.getElementById('btn-edit-marker').addEventListener('click', editCurrentMarker);
   document.getElementById('btn-delete-marker').addEventListener('click', deleteCurrentMarker);
 
+  // Photo capture
+  document.getElementById('btn-add-photo').addEventListener('click', () => {
+    document.getElementById('photo-input').click();
+  });
+  document.getElementById('photo-input').addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handlePhotoCapture(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
+
   // Export
-  document.getElementById('btn-export').addEventListener('click', exportToCSV);
+  document.getElementById('btn-export').addEventListener('click', openExportModal);
 
   // Markers panel
   document.getElementById('btn-markers-panel').addEventListener('click', openMarkersPanel);
   document.getElementById('btn-close-panel').addEventListener('click', closeMarkersPanel);
-  document.getElementById('btn-export-panel').addEventListener('click', exportToCSV);
+  document.getElementById('btn-export-panel').addEventListener('click', openExportModal);
   document.getElementById('marker-search').addEventListener('input', (e) => {
     renderMarkersList(e.target.value);
   });
+
+  // Export modal
+  document.getElementById('btn-cancel-export').addEventListener('click', closeExportModal);
+  document.getElementById('btn-confirm-export').addEventListener('click', exportToZIP);
+  document.querySelectorAll('input[name="export-type"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const isRange = getExportType() === 'range';
+      document.getElementById('export-range-fields').classList.toggle('hidden', !isRange);
+      updateExportSummary();
+    });
+  });
+  document.getElementById('export-date-from').addEventListener('change', updateExportSummary);
+  document.getElementById('export-date-to').addEventListener('change', updateExportSummary);
 
   // Delete map modal
   document.getElementById('btn-confirm-delete').addEventListener('click', confirmDeleteMap);
@@ -1193,6 +1513,9 @@ function initEventListeners() {
         }
         if (modal.id === 'georef-modal') {
           closeGeorefModal();
+        }
+        if (modal.id === 'export-modal') {
+          closeExportModal();
         }
       }
     });

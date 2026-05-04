@@ -3,12 +3,14 @@
  *
  * Handles CRUD operations for storing GeoTIFF and PDF map files
  * in the browser's IndexedDB for offline persistence.
+ * v3.0 - Added photo storage support
  */
 
 const MapStorage = (() => {
   const DB_NAME = 'MapsGISDB';
-  const DB_VERSION = 2;
-  const STORE_NAME = 'maps';
+  const DB_VERSION = 3;
+  const STORE_MAPS = 'maps';
+  const STORE_PHOTOS = 'photos';
 
   let db = null;
 
@@ -32,11 +34,27 @@ const MapStorage = (() => {
 
       request.onupgradeneeded = (event) => {
         const database = event.target.result;
-        if (!database.objectStoreNames.contains(STORE_NAME)) {
-          const store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+
+        // Maps store
+        if (!database.objectStoreNames.contains(STORE_MAPS)) {
+          const store = database.createObjectStore(STORE_MAPS, { keyPath: 'id' });
           store.createIndex('name', 'name', { unique: false });
           store.createIndex('createdAt', 'createdAt', { unique: false });
           store.createIndex('type', 'type', { unique: false });
+        } else {
+          // Migration: add type index if missing
+          const transaction = event.target.transaction;
+          const store = transaction.objectStore(STORE_MAPS);
+          if (!store.indexNames.contains('type')) {
+            store.createIndex('type', 'type', { unique: false });
+          }
+        }
+
+        // Photos store (new in v3)
+        if (!database.objectStoreNames.contains(STORE_PHOTOS)) {
+          const photoStore = database.createObjectStore(STORE_PHOTOS, { keyPath: 'id' });
+          photoStore.createIndex('markerId', 'markerId', { unique: false });
+          photoStore.createIndex('createdAt', 'createdAt', { unique: false });
         }
       };
 
@@ -51,19 +69,16 @@ const MapStorage = (() => {
     });
   }
 
-  /**
-   * Save a GeoTIFF file to IndexedDB
-   * @param {string} name - Display name of the map
-   * @param {ArrayBuffer} arrayBuffer - Raw GeoTIFF data
-   * @param {number} size - File size in bytes
-   * @returns {Promise<object>} Saved map record
-   */
+  // ============================================
+  // MAP OPERATIONS
+  // ============================================
+
   async function saveMap(name, arrayBuffer, size) {
     const database = await initDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
+      const transaction = database.transaction([STORE_MAPS], 'readwrite');
+      const store = transaction.objectStore(STORE_MAPS);
 
       const record = {
         id: 'map_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
@@ -76,9 +91,7 @@ const MapStorage = (() => {
 
       const request = store.add(record);
 
-      request.onsuccess = () => {
-        // Esperar a que la transaccion se complete realmente
-      };
+      request.onsuccess = () => {};
       request.onerror = (e) => {
         e.preventDefault();
         reject(new Error('Error al guardar el mapa'));
@@ -96,21 +109,12 @@ const MapStorage = (() => {
     });
   }
 
-  /**
-   * Save a PDF map with georeferencing data
-   * @param {string} name - Display name
-   * @param {ArrayBuffer} arrayBuffer - Raw PDF data
-   * @param {number} size - File size
-   * @param {object} georef - { corners: { tl, tr, bl, br }, crs: string }
-   * @param {string} thumbnail - Data URL thumbnail
-   * @returns {Promise<object>} Saved map record
-   */
   async function savePDFMap(name, arrayBuffer, size, georef, thumbnail) {
     const database = await initDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
+      const transaction = database.transaction([STORE_MAPS], 'readwrite');
+      const store = transaction.objectStore(STORE_MAPS);
 
       const record = {
         id: 'map_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
@@ -125,9 +129,7 @@ const MapStorage = (() => {
 
       const request = store.add(record);
 
-      request.onsuccess = () => {
-        // Esperar a que la transaccion se complete realmente
-      };
+      request.onsuccess = () => {};
       request.onerror = (e) => {
         e.preventDefault();
         reject(new Error('Error al guardar el mapa PDF'));
@@ -145,16 +147,12 @@ const MapStorage = (() => {
     });
   }
 
-  /**
-   * Get all saved maps (metadata only, no data)
-   * @returns {Promise<Array<object>>} List of map records
-   */
   async function getAllMaps() {
     const database = await initDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
+      const transaction = database.transaction([STORE_MAPS], 'readonly');
+      const store = transaction.objectStore(STORE_MAPS);
       const request = store.getAll();
 
       let mapsResult = [];
@@ -186,17 +184,12 @@ const MapStorage = (() => {
     });
   }
 
-  /**
-   * Get a single map's full record by ID
-   * @param {string} id - Map record ID
-   * @returns {Promise<object>} Full map record
-   */
   async function getMapRecord(id) {
     const database = await initDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
+      const transaction = database.transaction([STORE_MAPS], 'readonly');
+      const store = transaction.objectStore(STORE_MAPS);
       const request = store.get(id);
 
       let result = null;
@@ -224,32 +217,20 @@ const MapStorage = (() => {
     });
   }
 
-  /**
-   * Get a single map's raw data by ID
-   * @param {string} id - Map record ID
-   * @returns {Promise<ArrayBuffer>} Raw data ArrayBuffer
-   */
   async function getMapData(id) {
     const record = await getMapRecord(id);
     return record.data;
   }
 
-  /**
-   * Delete a map from IndexedDB
-   * @param {string} id - Map record ID
-   * @returns {Promise<void>}
-   */
   async function deleteMap(id) {
     const database = await initDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
+      const transaction = database.transaction([STORE_MAPS], 'readwrite');
+      const store = transaction.objectStore(STORE_MAPS);
       const request = store.delete(id);
 
-      request.onsuccess = () => {
-        // Esperar transaction.oncomplete
-      };
+      request.onsuccess = () => {};
       request.onerror = (e) => {
         e.preventDefault();
         reject(new Error('Error al eliminar el mapa'));
@@ -266,20 +247,144 @@ const MapStorage = (() => {
     });
   }
 
-  /**
-   * Get total storage used by all maps
-   * @returns {Promise<number>} Total size in bytes
-   */
   async function getTotalStorage() {
     const maps = await getAllMaps();
     return maps.reduce((total, map) => total + map.size, 0);
   }
 
-  /**
-   * Format bytes to human-readable string
-   * @param {number} bytes
-   * @returns {string}
-   */
+  // ============================================
+  // PHOTO OPERATIONS
+  // ============================================
+
+  async function savePhoto(blob, markerId) {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_PHOTOS], 'readwrite');
+      const store = transaction.objectStore(STORE_PHOTOS);
+
+      const photoId = 'photo_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      const record = {
+        id: photoId,
+        markerId: markerId || null,
+        blob: blob,
+        createdAt: new Date().toISOString()
+      };
+
+      const request = store.add(record);
+
+      request.onsuccess = () => {};
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al guardar la foto'));
+      };
+
+      transaction.oncomplete = () => resolve(photoId);
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de foto'));
+      };
+      transaction.onabort = (e) => {
+        const err = transaction.error || new Error('Transaccion de foto abortada. Posiblemente almacenamiento lleno.');
+        reject(err);
+      };
+    });
+  }
+
+  async function getPhoto(photoId) {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_PHOTOS], 'readonly');
+      const store = transaction.objectStore(STORE_PHOTOS);
+      const request = store.get(photoId);
+
+      let result = null;
+
+      request.onsuccess = () => {
+        result = request.result;
+      };
+
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al obtener la foto'));
+      };
+
+      transaction.oncomplete = () => {
+        if (result) {
+          resolve(result);
+        } else {
+          resolve(null);
+        }
+      };
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de lectura de foto'));
+      };
+    });
+  }
+
+  async function getPhotosByMarker(markerId) {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_PHOTOS], 'readonly');
+      const store = transaction.objectStore(STORE_PHOTOS);
+      const index = store.index('markerId');
+      const request = index.getAll(markerId);
+
+      let result = [];
+
+      request.onsuccess = () => {
+        result = request.result || [];
+      };
+
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al obtener fotos del marcador'));
+      };
+
+      transaction.oncomplete = () => resolve(result);
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de lectura de fotos'));
+      };
+    });
+  }
+
+  async function deletePhoto(photoId) {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_PHOTOS], 'readwrite');
+      const store = transaction.objectStore(STORE_PHOTOS);
+      const request = store.delete(photoId);
+
+      request.onsuccess = () => {};
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al eliminar la foto'));
+      };
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de eliminacion de foto'));
+      };
+    });
+  }
+
+  async function deletePhotosByMarker(markerId) {
+    const photos = await getPhotosByMarker(markerId);
+    for (const photo of photos) {
+      await deletePhoto(photo.id);
+    }
+  }
+
+  // ============================================
+  // UTILS
+  // ============================================
+
   function formatBytes(bytes) {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -297,6 +402,12 @@ const MapStorage = (() => {
     getMapData,
     deleteMap,
     getTotalStorage,
-    formatBytes
+    formatBytes,
+    // Photos
+    savePhoto,
+    getPhoto,
+    getPhotosByMarker,
+    deletePhoto,
+    deletePhotosByMarker
   };
 })();

@@ -78,7 +78,7 @@
     </main>
 
     <footer class="app-footer">
-      <span id="app-version">v1.0.1</span>
+      <span id="app-version">v1.1.0</span>
       <span id="storage-info"></span>
     </footer>
   </div>
@@ -152,8 +152,8 @@
           </svg>
         </button>
 
-        <!-- Exportar CSV -->
-        <button id="btn-export" class="map-btn" title="Exportar marcadores CSV">
+        <!-- Exportar ZIP -->
+        <button id="btn-export" class="map-btn" title="Exportar marcadores ZIP">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
           </svg>
@@ -189,7 +189,7 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
         </svg>
-        Exportar CSV
+        Exportar ZIP
       </button>
     </div>
   </div>
@@ -236,6 +236,23 @@
         </div>
       </div>
 
+      <div class="form-group">
+        <label>Fotos (max. 2)</label>
+        <div class="photo-section">
+          <div class="photo-grid" id="photo-grid">
+            <!-- Las fotos se insertan aquí dinamicamente -->
+          </div>
+          <button type="button" id="btn-add-photo" class="btn-photo">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            Tomar foto
+          </button>
+          <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button id="btn-cancel-marker" class="btn-secondary">Cancelar</button>
         <button id="btn-save-marker" class="btn-primary">Guardar</button>
@@ -278,6 +295,10 @@
         <div id="detail-description-row" class="detail-row detail-description">
           <span class="detail-label">Descripcion</span>
           <p id="detail-marker-description"></p>
+        </div>
+        <div id="detail-photos-row" class="detail-row detail-photos">
+          <span class="detail-label">Fotos</span>
+          <div id="detail-marker-photos" class="detail-photo-grid"></div>
         </div>
       </div>
 
@@ -360,6 +381,45 @@
     </div>
   </div>
 
+  <!-- Modal de exportacion ZIP -->
+  <div id="export-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Exportar Marcadores</h3>
+      <p class="export-info">Selecciona el rango de fechas a exportar. Se generara un ZIP con un Excel y las fotos.</p>
+
+      <div class="form-group">
+        <label class="export-option">
+          <input type="radio" name="export-type" value="today" checked>
+          <span>Solo los de hoy (<span id="export-today-date"></span>)</span>
+        </label>
+        <label class="export-option">
+          <input type="radio" name="export-type" value="range">
+          <span>Rango de fechas</span>
+        </label>
+      </div>
+
+      <div id="export-range-fields" class="export-range hidden">
+        <div class="form-group">
+          <label for="export-date-from">Desde</label>
+          <input type="date" id="export-date-from">
+        </div>
+        <div class="form-group">
+          <label for="export-date-to">Hasta</label>
+          <input type="date" id="export-date-to">
+        </div>
+      </div>
+
+      <div class="export-summary" id="export-summary">
+        <span id="export-count">0</span> marcadores encontrados
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-cancel-export" class="btn-secondary">Cancelar</button>
+        <button id="btn-confirm-export" class="btn-primary">Exportar ZIP</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast de notificaciones -->
   <div id="toast" class="toast hidden"></div>
 
@@ -382,6 +442,15 @@
 
   <!-- PDF.js -->
   <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+
+  <!-- SheetJS (Excel export) -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+  <!-- JSZip (ZIP export) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- FileSaver (Downloads) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
   <!-- Storage Module (IndexedDB) -->
   <script src="js/storage.js"></script>
