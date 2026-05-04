@@ -46,7 +46,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.2.2';
 
 // ============================================
 // APP STATE
@@ -57,6 +57,7 @@ const AppState = {
   mapOverlay: null,
   markersLayer: null,
   userLocationLayer: null,
+  adminMarkersLayer: null,
   isAddMarkerMode: false,
   pendingMarkerLatLng: null,
   currentMapId: null,
@@ -69,7 +70,8 @@ const AppState = {
   pendingPDF: null,
   pendingPhotos: [], // Array of { photoId, dataUrl } for current marker
   currentMarkerMode: 'qc', // 'qc' or 'lsm' - persistent mode on map screen
-  lsmSelectedCategory: 'red'
+  lsmSelectedCategory: 'red',
+  isAdmin: false // admin mode active
 };
 
 // ============================================
@@ -380,6 +382,337 @@ function getDeviceId() {
     localStorage.setItem('maps_gis_device_id', id);
   }
   return id;
+}
+
+// ============================================
+// ADMIN MANAGER (Review all LSM markers)
+// ============================================
+const ADMIN_PASS = 'LSM$';
+const ADMIN_KEY = 'maps_gis_admin';
+let adminMarkersCache = [];
+
+const AdminManager = {
+  isLoggedIn() {
+    try {
+      return JSON.parse(localStorage.getItem(ADMIN_KEY)) || false;
+    } catch {
+      return false;
+    }
+  },
+
+  login(password) {
+    if (password === ADMIN_PASS) {
+      localStorage.setItem(ADMIN_KEY, 'true');
+      AppState.isAdmin = true;
+      return true;
+    }
+    return false;
+  },
+
+  logout() {
+    localStorage.removeItem(ADMIN_KEY);
+    AppState.isAdmin = false;
+    adminMarkersCache = [];
+  },
+
+  async fetchAllMarkers() {
+    if (!supabaseClient) {
+      showToast('Sin conexion a la base de datos', 'error');
+      return [];
+    }
+    try {
+      const { data, error } = await supabaseClient
+        .from('lsm_markers')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      adminMarkersCache = data || [];
+      return data || [];
+    } catch (e) {
+      console.warn('[Admin] Fetch failed:', e.message);
+      showToast('Error al descargar datos', 'error');
+      return [];
+    }
+  },
+
+  getUniqueNicknames() {
+    const nicks = [...new Set(adminMarkersCache.map(m => m.nickname))];
+    nicks.sort();
+    return nicks;
+  },
+
+  filterByNickname(nickname) {
+    if (!nickname) return adminMarkersCache;
+    return adminMarkersCache.filter(m => m.nickname === nickname);
+  }
+};
+
+async function activateAdmin(password) {
+  if (!AdminManager.login(password)) {
+    showToast('Contrasena incorrecta', 'error');
+    return;
+  }
+  showToast('Modo Admin activado. Descargando datos...', 'info');
+  const markers = await AdminManager.fetchAllMarkers();
+  if (markers.length === 0) {
+    showToast('No hay muestras LSM en la base de datos', 'info');
+  } else {
+    showToast(markers.length + ' muestras LSM descargadas', 'success');
+  }
+  renderAdminPanel();
+  updateConfigAccountTab();
+  addAdminMarkersToMap();
+}
+
+function deactivateAdmin() {
+  AdminManager.logout();
+  removeAdminMarkersFromMap();
+  renderAdminPanel();
+  updateConfigAccountTab();
+  updateModeToggleButton();
+  showToast('Modo Admin desactivado', 'info');
+}
+
+function addAdminMarkersToMap(filterNickname) {
+  if (!AppState.map) return;
+  removeAdminMarkersFromMap();
+
+  if (!AppState.adminMarkersLayer) {
+    AppState.adminMarkersLayer = L.layerGroup();
+  }
+  AppState.adminMarkersLayer.clearLayers();
+
+  const markers = filterNickname
+    ? AdminManager.filterByNickname(filterNickname)
+    : adminMarkersCache;
+
+  markers.forEach(m => {
+    const color = MARKER_COLORS[m.color]?.hex || '#58a6ff';
+    const initial = (m.nombre_muestra || 'X').charAt(0).toUpperCase();
+    const icon = L.divIcon({
+      className: '',
+      html: '<div class="custom-marker-pin admin-marker-pin">' +
+        '<svg viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg">' +
+          '<path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 24 16 24s16-12 16-24C32 7.16 24.84 0 16 0z" fill="' + color + '"/>' +
+          '<circle cx="16" cy="15" r="10" fill="rgba(255,255,255,0.3)"/>' +
+          '<text x="16" y="19" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold" font-family="sans-serif">' + initial + '</text>' +
+        '</svg>' +
+      '</div>',
+      iconSize: [32, 40],
+      iconAnchor: [16, 40],
+      popupAnchor: [0, -40]
+    });
+
+    const ensayos = (m.ensayos || []).join(', ');
+    const popupContent =
+      '<div style="min-width:180px;padding:6px;font-size:0.8rem;">' +
+      '<strong>' + escapeHtml(m.nombre_muestra || '') + '</strong> <span style="background:#58a6ff;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.65rem;">LSM</span><br>' +
+      '<span style="color:#666;">' + escapeHtml(m.nickname || '') + ' | ' + formatDate(m.created_at) + '</span><br>' +
+      '<span style="color:#666;font-size:0.7rem;">N: ' + (m.norte || '') + ' | E: ' + (m.este || '') + '</span>' +
+      (ensayos ? '<br><span style="color:#666;font-size:0.7rem;">Ensayos: ' + escapeHtml(ensayos) + '</span>' : '') +
+      '</div>';
+
+    L.marker([m.lat, m.lng], { icon: icon })
+      .bindPopup(popupContent)
+      .addTo(AppState.adminMarkersLayer);
+  });
+
+  AppState.adminMarkersLayer.addTo(AppState.map);
+}
+
+function removeAdminMarkersFromMap() {
+  if (AppState.adminMarkersLayer) {
+    AppState.map.removeLayer(AppState.adminMarkersLayer);
+    AppState.adminMarkersLayer.clearLayers();
+  }
+}
+
+function renderAdminPanel() {
+  const tab = document.getElementById('config-tab-admin');
+  if (!tab) return;
+
+  const isAdmin = AppState.isAdmin;
+  const markers = adminMarkersCache;
+  const nicknames = AdminManager.getUniqueNicknames();
+
+  if (!isAdmin) {
+    tab.innerHTML =
+      '<div class="form-group">' +
+        '<label>Acceso Admin</label>' +
+        '<p class="config-hint">Ingresa la contrasena de admin para ver todas las muestras LSM de todos los usuarios.</p>' +
+        '<div class="admin-login-row">' +
+          '<input type="password" id="admin-password" placeholder="Contrasena de admin" maxlength="20" autocomplete="off">' +
+          '<button id="btn-admin-login" class="btn-primary btn-sm">Ingresar</button>' +
+        '</div>' +
+      '</div>';
+  } else {
+    const count = markers.length;
+    const nickOptions = nicknames.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>').join('');
+
+    tab.innerHTML =
+      '<div class="admin-status">' +
+        '<div class="admin-status-icon">&#9989;</div>' +
+        '<div class="admin-status-info">' +
+          '<span class="admin-status-label">Modo Admin activo</span>' +
+          '<span class="admin-status-count">' + count + ' muestras LSM en la base de datos</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label>Filtrar por Nickname</label>' +
+        '<select id="admin-nickname-filter" class="crs-select">' +
+          '<option value="">Todos</option>' +
+          nickOptions +
+        '</select>' +
+      '</div>' +
+      '<div class="admin-actions-row">' +
+        '<button id="btn-admin-refresh" class="btn-secondary btn-sm">Actualizar datos</button>' +
+        '<button id="btn-admin-export" class="btn-primary btn-sm">Exportar Excel</button>' +
+        '<button id="btn-admin-logout" class="btn-danger btn-sm">Salir de Admin</button>' +
+      '</div>' +
+      '<div id="admin-markers-list" class="admin-markers-list"></div>';
+
+    setTimeout(() => {
+      const filterEl = document.getElementById('admin-nickname-filter');
+      if (filterEl) {
+        filterEl.addEventListener('change', () => {
+          addAdminMarkersToMap(filterEl.value);
+          renderAdminMarkersList(filterEl.value);
+        });
+      }
+      const refreshBtn = document.getElementById('btn-admin-refresh');
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+          showToast('Actualizando datos...', 'info');
+          await AdminManager.fetchAllMarkers();
+          renderAdminPanel();
+          addAdminMarkersToMap();
+        });
+      }
+      const exportBtn = document.getElementById('btn-admin-export');
+      if (exportBtn) {
+        exportBtn.addEventListener('click', adminExportExcel);
+      }
+      const logoutBtn = document.getElementById('btn-admin-logout');
+      if (logoutBtn) {
+        logoutBtn.addEventListener('click', deactivateAdmin);
+      }
+      renderAdminMarkersList();
+    }, 50);
+  }
+
+  setTimeout(() => {
+    const loginBtn = document.getElementById('btn-admin-login');
+    if (loginBtn) {
+      loginBtn.addEventListener('click', () => {
+        const pwd = document.getElementById('admin-password').value;
+        activateAdmin(pwd);
+      });
+    }
+    const pwdInput = document.getElementById('admin-password');
+    if (pwdInput) {
+      pwdInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const pwd = pwdInput.value;
+          activateAdmin(pwd);
+        }
+      });
+    }
+  }, 50);
+}
+
+function renderAdminMarkersList(filterNickname) {
+  const listEl = document.getElementById('admin-markers-list');
+  if (!listEl) return;
+
+  const filtered = filterNickname
+    ? AdminManager.filterByNickname(filterNickname)
+    : adminMarkersCache;
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<p class="empty-msg">No hay muestras LSM</p>';
+    return;
+  }
+
+  listEl.innerHTML = filtered.slice(0, 50).map(m => {
+    const color = MARKER_COLORS[m.color]?.hex || '#58a6ff';
+    return '<div class="admin-marker-item" data-lat="' + m.lat + '" data-lng="' + m.lng + '">' +
+      '<span class="marker-item-dot" style="background:' + color + ';"></span>' +
+      '<div class="marker-item-info">' +
+        '<div class="marker-item-name">' + escapeHtml(m.nombre_muestra || '') + ' <span class="marker-type-badge">LSM</span></div>' +
+        '<div class="marker-item-coords">' + escapeHtml(m.nickname || '') + ' | ' + formatDate(m.created_at) + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  if (filtered.length > 50) {
+    listEl.innerHTML += '<p class="empty-msg">Mostrando 50 de ' + filtered.length + '</p>';
+  }
+
+  listEl.querySelectorAll('.admin-marker-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const lat = parseFloat(item.dataset.lat);
+      const lng = parseFloat(item.dataset.lng);
+      if (AppState.map && !isNaN(lat) && !isNaN(lng)) {
+        AppState.map.setView([lat, lng], 17);
+      }
+    });
+  });
+}
+
+async function adminExportExcel() {
+  const markers = adminMarkersCache;
+  if (markers.length === 0) {
+    showToast('No hay datos para exportar', 'error');
+    return;
+  }
+
+  showToast('Generando Excel...', 'info');
+
+  try {
+    const data = [];
+    data.push([
+      'Nickname', 'Nombre_Muestra', 'Tipo_Muestra', 'Nombre_Proyecto', 'Solicitante',
+      'Estructura_Deposito', 'Subestructuras', 'Categoria', 'Tipo_Material',
+      'Proveniencia', 'Localizacion', 'Fuente', 'Ensayos',
+      'Norte', 'Este', 'Latitud', 'Longitud', 'Fecha_Hora'
+    ]);
+
+    markers.forEach(m => {
+      data.push([
+        m.nickname || '',
+        m.nombre_muestra || '',
+        m.tipo_muestra || '',
+        m.nombre_proyecto || '',
+        m.solicitante || '',
+        m.estructura_deposito || '',
+        m.subestructuras || '',
+        m.categoria || '',
+        m.tipo_material || '',
+        m.proveniencia || '',
+        m.localizacion || '',
+        m.fuente || '',
+        (m.ensayos || []).join(', '),
+        m.norte || '',
+        m.este || '',
+        m.lat,
+        m.lng,
+        m.created_at ? formatDateTime(m.created_at) : ''
+      ]);
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, 'LSM_Admin');
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const dateStr = new Date().toISOString().slice(0, 10);
+    saveAs(blob, 'LSM_Admin_' + dateStr + '.xlsx');
+
+    showToast(markers.length + ' muestras exportadas', 'success');
+  } catch (error) {
+    console.error('Admin export error:', error);
+    showToast('Error al exportar: ' + (error.message || 'Desconocido'), 'error');
+  }
 }
 
 // ============================================
@@ -2002,7 +2335,10 @@ function updateModeToggleButton() {
   const btn = document.getElementById('btn-mode-toggle');
   const label = document.getElementById('mode-label');
   if (!btn || !label) return;
-  if (AppState.currentMarkerMode === 'lsm') {
+  if (AppState.isAdmin) {
+    label.textContent = 'ADMIN';
+    btn.classList.add('mode-lsm');
+  } else if (AppState.currentMarkerMode === 'lsm') {
     label.textContent = 'LSM';
     btn.classList.add('mode-lsm');
   } else {
@@ -2148,6 +2484,10 @@ function initEventListeners() {
 
   // Mode toggle (QC / LSM)
   document.getElementById('btn-mode-toggle').addEventListener('click', () => {
+    if (AppState.isAdmin) {
+      showToast('Modo Admin activo. Desactiva Admin primero para cambiar modo.', 'info');
+      return;
+    }
     AppState.currentMarkerMode = AppState.currentMarkerMode === 'qc' ? 'lsm' : 'qc';
     updateModeToggleButton();
     showToast('Modo: ' + (AppState.currentMarkerMode === 'lsm' ? 'LSM' : 'QC'), 'info');
@@ -2320,6 +2660,9 @@ function initEventListeners() {
 function openConfigModal() {
   renderConfigSections();
   updateConfigAccountTab();
+  // Check if admin is already logged in and render admin panel
+  AppState.isAdmin = AdminManager.isLoggedIn();
+  renderAdminPanel();
   document.getElementById('config-modal').classList.remove('hidden');
 }
 
