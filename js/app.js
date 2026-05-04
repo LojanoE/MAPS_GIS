@@ -46,7 +46,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 
 // ============================================
 // APP STATE
@@ -68,7 +68,7 @@ const AppState = {
   lightTiles: null,
   pendingPDF: null,
   pendingPhotos: [], // Array of { photoId, dataUrl } for current marker
-  pendingMarkerType: null, // 'qc' or 'lsm'
+  currentMarkerMode: 'qc', // 'qc' or 'lsm' - persistent mode on map screen
   lsmSelectedCategory: 'red'
 };
 
@@ -578,7 +578,11 @@ function initMap() {
 
   AppState.map.on('click', (e) => {
     if (AppState.isAddMarkerMode) {
-      openMarkerTypeModal(e.latlng);
+      if (AppState.currentMarkerMode === 'lsm') {
+        openLSMLoginOrMarkerModal(e.latlng);
+      } else {
+        openMarkerModal(e.latlng);
+      }
     }
   });
 
@@ -1994,6 +1998,19 @@ async function applyGeoref() {
 // OPEN MAP VIEW
 // ============================================
 
+function updateModeToggleButton() {
+  const btn = document.getElementById('btn-mode-toggle');
+  const label = document.getElementById('mode-label');
+  if (!btn || !label) return;
+  if (AppState.currentMarkerMode === 'lsm') {
+    label.textContent = 'LSM';
+    btn.classList.add('mode-lsm');
+  } else {
+    label.textContent = 'QC';
+    btn.classList.remove('mode-lsm');
+  }
+}
+
 async function openMap(mapId) {
   AppState.currentMapId = mapId;
   const maps = await MapStorage.getAllMaps();
@@ -2001,6 +2018,10 @@ async function openMap(mapId) {
   AppState.currentMapType = map ? (map.type || 'tiff') : 'tiff';
   AppState.mapTitle = map ? map.name : 'Mapa';
   document.getElementById('map-title').textContent = AppState.mapTitle;
+
+  // Reset mode to QC by default when entering map
+  AppState.currentMarkerMode = 'qc';
+  updateModeToggleButton();
 
   showScreen('map-screen');
   initMap();
@@ -2118,10 +2139,18 @@ function initEventListeners() {
   document.getElementById('btn-add-marker').addEventListener('click', () => {
     AppState.isAddMarkerMode = !AppState.isAddMarkerMode;
     document.getElementById('btn-add-marker').classList.toggle('active', AppState.isAddMarkerMode);
+    const modeText = AppState.currentMarkerMode === 'lsm' ? 'LSM' : 'QC';
     showToast(
-      AppState.isAddMarkerMode ? 'Toca el mapa para colocar un marcador' : 'Modo marcador desactivado',
+      AppState.isAddMarkerMode ? 'Modo ' + modeText + ': Toca el mapa para colocar un marcador' : 'Modo marcador desactivado',
       'info'
     );
+  });
+
+  // Mode toggle (QC / LSM)
+  document.getElementById('btn-mode-toggle').addEventListener('click', () => {
+    AppState.currentMarkerMode = AppState.currentMarkerMode === 'qc' ? 'lsm' : 'qc';
+    updateModeToggleButton();
+    showToast('Modo: ' + (AppState.currentMarkerMode === 'lsm' ? 'LSM' : 'QC'), 'info');
   });
 
   // Marker modal

@@ -81,17 +81,17 @@ create policy "Allow all modifications on config"
     using (true)
     with check (true);
 
--- Insertar registros vacíos iniciales (evita errores de FK/insert)
+-- Insertar valores de ejemplo por defecto
 insert into app_config (config_key, config_values) values
-('tipo_muestra', '{}'),
-('nombre_proyecto', '{}'),
-('solicitante', '{}'),
-('estructura_deposito', '{}'),
-('subestructuras', '{}'),
-('categoria', '{}'),
-('tipo_material', '{}'),
-('proveniencia', '{}'),
-('localizacion', '{}'),
-('fuente', '{}'),
-('ensayos', '{}')
-on conflict (config_key) do nothing;
+('tipo_muestra', '{"Suelo","Roca","Concreto","Asfalto","Agregado"}'),
+('nombre_proyecto', '{"Proyecto A","Proyecto B","Proyecto C"}'),
+('solicitante', '{"Ing. Lopez","Ing. Garcia","Cliente XYZ"}'),
+('estructura_deposito', '{"Mina Principal","Pila 1","Pila 2","Tajeo 3N"}'),
+('subestructuras', '{"Nivel 1","Nivel 2","Nivel 3","Zona A","Zona B"}'),
+('categoria', '{"Exploracion","Control","Verificacion","Rutina"}'),
+('tipo_material', '{"Arcilla","Arena","Grava","Roca Dura","Roca Blanda"}'),
+('proveniencia', '{"In Situ","Planta","Laboratorio","Stock"}'),
+('localizacion', '{"Frente Norte","Frente Sur","Frente Este","Frente Oeste","Planta"}'),
+('fuente', '{"Muestreo Directo","Canal","Testigo","Cuchareo"}'),
+('ensayos', '{"Granulometria","Humedad","Densidad","CBR","Proctor","Plasticidad","Contenido de Humedad","Resistencia a Compresion"}')
+on conflict (config_key) do update set config_values = excluded.config_values;
