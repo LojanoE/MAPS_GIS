@@ -22,12 +22,28 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 let supabaseClient = null;
 
 function initSupabase() {
-  if (typeof supabase === 'undefined') {
-    console.warn('[Supabase] Client library not loaded');
+  if (typeof window.supabase === 'undefined') {
+    console.warn('[Supabase] Client library not loaded. Trying alternate access...');
+    // Try the global that the UMD bundle creates
+    if (typeof window.Supabase === 'undefined' && typeof window.supabaseJs === 'undefined') {
+      console.error('[Supabase] No Supabase client found at all. Offline mode enabled.');
+      return null;
+    }
+  }
+  try {
+    // The UMD bundle exposes supabase at window.supabase.createClient
+    const createClient = window.supabase?.createClient || window.Supabase?.createClient || window.supabaseJs?.createClient;
+    if (!createClient) {
+      console.error('[Supabase] createClient not found');
+      return null;
+    }
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('[Supabase] Client initialized successfully');
+    return supabaseClient;
+  } catch (e) {
+    console.error('[Supabase] Failed to initialize:', e);
     return null;
   }
-  supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  return supabaseClient;
 }
 
 // ============================================
@@ -46,7 +62,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.2.2';
+const APP_VERSION = '1.2.3';
 
 // ============================================
 // APP STATE
@@ -250,15 +266,27 @@ const ConfigManager = {
   },
 
   async downloadFromSupabase() {
-    if (!supabaseClient) return false;
+    if (!supabaseClient) {
+      console.warn('[Config] No Supabase client, skipping download');
+      return false;
+    }
     try {
-      const { data, error } = await supabaseClient.from('app_config').select('config_key, config_values');
-      if (error) throw error;
+      console.log('[Config] Downloading from Supabase...');
+      const { data, error } = await supabaseClient
+        .from('app_config')
+        .select('config_key, config_values');
+      if (error) {
+        console.error('[Config] Supabase query error:', error.message, error.code, error.details);
+        return false;
+      }
+      console.log('[Config] Downloaded', data ? data.length : 0, 'config rows from Supabase');
       const cfg = {};
-      if (data) {
+      if (data && data.length > 0) {
         data.forEach(row => {
           cfg[row.config_key] = row.config_values || [];
         });
+      } else {
+        console.warn('[Config] No data returned from Supabase');
       }
       // Merge: keep local values that don't exist remotely (avoid data loss)
       const localCfg = this.getLocal();
@@ -269,15 +297,19 @@ const ConfigManager = {
         cfg[k] = merged;
       });
       this.saveLocal(cfg);
+      console.log('[Config] Merged and saved locally');
       return true;
     } catch (e) {
-      console.warn('[Config] Download failed:', e.message);
+      console.error('[Config] Download exception:', e);
       return false;
     }
   },
 
   async uploadToSupabase() {
-    if (!supabaseClient) return false;
+    if (!supabaseClient) {
+      console.warn('[Config] No Supabase client, skipping upload');
+      return false;
+    }
     try {
       const cfg = this.getLocal();
       const updates = [];
@@ -288,12 +320,18 @@ const ConfigManager = {
           updated_at: new Date().toISOString()
         });
       });
-      // Upsert all
-      const { error } = await supabaseClient.from('app_config').upsert(updates, { onConflict: 'config_key' });
-      if (error) throw error;
+      console.log('[Config] Uploading', updates.length, 'config rows to Supabase...');
+      const { data, error } = await supabaseClient
+        .from('app_config')
+        .upsert(updates, { onConflict: 'config_key' });
+      if (error) {
+        console.error('[Config] Upload error:', error.message, error.code, error.details);
+        return false;
+      }
+      console.log('[Config] Upload successful');
       return true;
     } catch (e) {
-      console.warn('[Config] Upload failed:', e.message);
+      console.error('[Config] Upload exception:', e);
       return false;
     }
   }
@@ -304,18 +342,32 @@ const ConfigManager = {
 // ============================================
 const LSMSyncManager = {
   async shouldUpload() {
-    // Check network type
+    // Always try if online
+    if (!navigator.onLine) return false;
+    // Check network type - but don't block if unknown
     const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     if (conn && conn.effectiveType) {
       const good = ['4g', '5g'].includes(conn.effectiveType);
-      if (!good) return false;
+      if (!good) {
+        console.log('[Sync] Network type:', conn.effectiveType, '- not uploading');
+        return false;
+      }
     }
     // Quick ping to Supabase
-    if (!supabaseClient) return false;
+    if (!supabaseClient) {
+      console.log('[Sync] No Supabase client');
+      return false;
+    }
     try {
-      const { error } = await supabaseClient.from('app_config').select('id').limit(1);
-      return !error;
+      const { data, error } = await supabaseClient.from('app_config').select('id').limit(1);
+      if (error) {
+        console.log('[Sync] Supabase ping error:', error.message);
+        return false;
+      }
+      console.log('[Sync] Supabase is reachable, can upload');
+      return true;
     } catch (e) {
+      console.log('[Sync] Supabase unreachable:', e.message);
       return false;
     }
   },
@@ -346,11 +398,16 @@ const LSMSyncManager = {
         fuente: marker.lsmData?.fuente || null,
         ensayos: marker.lsmData?.ensayos || []
       };
-      const { error } = await supabaseClient.from('lsm_markers').insert(data);
-      if (error) throw error;
+      console.log('[Sync] Uploading marker to Supabase:', data.nombre_muestra);
+      const { data: result, error } = await supabaseClient.from('lsm_markers').insert(data).select();
+      if (error) {
+        console.error('[Sync] Insert error:', error.message, error.code, error.details, error.hint);
+        return false;
+      }
+      console.log('[Sync] Upload successful:', result);
       return true;
     } catch (e) {
-      console.warn('[Sync] Upload failed:', e.message);
+      console.error('[Sync] Upload exception:', e);
       return false;
     }
   },
@@ -417,20 +474,27 @@ const AdminManager = {
 
   async fetchAllMarkers() {
     if (!supabaseClient) {
-      showToast('Sin conexion a la base de datos', 'error');
+      console.error('[Admin] No Supabase client available');
+      showToast('No hay conexion con la base de datos', 'error');
       return [];
     }
     try {
+      console.log('[Admin] Fetching all LSM markers from Supabase...');
       const { data, error } = await supabaseClient
         .from('lsm_markers')
         .select('*')
         .order('created_at', { ascending: false });
-      if (error) throw error;
+      if (error) {
+        console.error('[Admin] Supabase query error:', error.message, error.code, error.details, error.hint);
+        showToast('Error de base de datos: ' + error.message, 'error');
+        return [];
+      }
+      console.log('[Admin] Fetched', data ? data.length : 0, 'markers from Supabase');
       adminMarkersCache = data || [];
       return data || [];
     } catch (e) {
-      console.warn('[Admin] Fetch failed:', e.message);
-      showToast('Error al descargar datos', 'error');
+      console.error('[Admin] Fetch exception:', e);
+      showToast('Error al descargar datos: ' + e.message, 'error');
       return [];
     }
   },
@@ -2433,8 +2497,13 @@ function loadThemePreference() {
 function updateOnlineStatus() {
   const badge = document.getElementById('online-status');
   if (navigator.onLine) {
-    badge.textContent = 'En linea';
-    badge.className = 'status-badge online';
+    if (supabaseClient) {
+      badge.textContent = 'En linea + Sync';
+      badge.className = 'status-badge online';
+    } else {
+      badge.textContent = 'En linea (local)';
+      badge.className = 'status-badge online';
+    }
   } else {
     badge.textContent = 'Sin conexion';
     badge.className = 'status-badge offline';
@@ -2755,15 +2824,23 @@ async function initApp() {
   loadThemePreference();
   updateOnlineStatus();
   initSupabase();
+  updateOnlineStatus();
   initEventListeners();
   await loadMapsList();
   updateMarkerCountBadge();
 
   // Download config from Supabase
   if (supabaseClient) {
-    await ConfigManager.downloadFromSupabase();
+    const ok = await ConfigManager.downloadFromSupabase();
+    if (ok) {
+      console.log('[App] Config synced from Supabase');
+    } else {
+      console.warn('[App] Config sync failed, using local data');
+    }
     // Try sync pending LSM markers
     LSMSyncManager.syncPending();
+  } else {
+    console.warn('[App] No Supabase client - running in offline mode');
   }
 }
 

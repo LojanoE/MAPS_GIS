@@ -39,19 +39,9 @@ create table if not exists lsm_markers (
     created_at timestamptz default now()
 );
 
--- Habilitar RLS
-alter table lsm_markers enable row level security;
-
--- Políticas públicas (sin auth, ya que usamos nickname + device_id)
-create policy "Allow all inserts"
-    on lsm_markers for insert
-    to anon, authenticated
-    with check (true);
-
-create policy "Allow all selects"
-    on lsm_markers for select
-    to anon, authenticated
-    using (true);
+-- Deshabilitar RLS temporalmente para permitir acceso anonimo
+-- (Se puede habilitar despues con politicas mas especificas)
+alter table lsm_markers disable row level security;
 
 -- ============================================================
 -- 2. TABLA DE CONFIGURACIÓN (Listas desplegables compartidas)
@@ -68,18 +58,7 @@ create table if not exists app_config (
     updated_at timestamptz default now()
 );
 
-alter table app_config enable row level security;
-
-create policy "Allow all reads on config"
-    on app_config for select
-    to anon, authenticated
-    using (true);
-
-create policy "Allow all modifications on config"
-    on app_config for all
-    to anon, authenticated
-    using (true)
-    with check (true);
+alter table app_config disable row level security;
 
 -- Insertar valores de ejemplo por defecto
 insert into app_config (config_key, config_values) values
