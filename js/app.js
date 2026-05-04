@@ -724,7 +724,10 @@ async function loadMapsList() {
   }
 
   const total = await MapStorage.getTotalStorage();
-  document.getElementById('storage-info').textContent = MapStorage.formatBytes(total) + ' usado';
+  const storageInfoEl = document.getElementById('storage-info');
+  if (storageInfoEl) {
+    storageInfoEl.textContent = MapStorage.formatBytes(total) + ' usado';
+  }
 }
 
 // ============================================
@@ -800,7 +803,8 @@ async function handlePDFUpload(file) {
 
   try {
     const arrayBuffer = await file.arrayBuffer();
-    const processed = await PDFProcessor.processPDF(arrayBuffer);
+    // Pass a copy to PDFProcessor since PDF.js may detach the buffer
+    const processed = await PDFProcessor.processPDF(arrayBuffer.slice(0));
 
     progressFill.style.width = '60%';
     progressText.textContent = 'Renderizando vista previa...';

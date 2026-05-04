@@ -79,31 +79,29 @@ const PDFProcessor = (() => {
       const ny = lpts[i * 2 + 1]; // normalized y (0=bottom, 1=top)
 
       // PDF coordinate system: y increases upward
-      if (nx < 0.5 && ny > 0.5) {
+      if (nx <= 0.5 && ny >= 0.5) {
         tl = { lat, lon, nx, ny };
-      } else if (nx > 0.5 && ny > 0.5) {
+      } else if (nx >= 0.5 && ny >= 0.5) {
         tr = { lat, lon, nx, ny };
-      } else if (nx < 0.5 && ny < 0.5) {
+      } else if (nx <= 0.5 && ny <= 0.5) {
         bl = { lat, lon, nx, ny };
-      } else if (nx > 0.5 && ny < 0.5) {
+      } else if (nx >= 0.5 && ny <= 0.5) {
         br = { lat, lon, nx, ny };
       }
     }
 
     // If we couldn't determine corners by position, use order-based mapping
-    // Standard ISO 32000 order: LL, LR, UL, UR
+    // ISO 32000-2 order: UL (TL), UR (TR), LR (BR), LL (BL)
     if (!tl || !tr || !bl || !br) {
-      // Fallback: assume standard ordering
-      // gpts[0,1]=LL, gpts[2,3]=LR, gpts[4,5]=UL, gpts[6,7]=UR
-      bl = { lat: gpts[0], lon: gpts[1] };
-      br = { lat: gpts[2], lon: gpts[3] };
-      tl = { lat: gpts[4], lon: gpts[5] };
-      tr = { lat: gpts[6], lon: gpts[7] };
+      // Fallback: assume ISO 32000-2 ordering
+      // gpts[0,1]=TL, gpts[2,3]=TR, gpts[4,5]=BR, gpts[6,7]=BL
+      tl = { lat: gpts[0], lon: gpts[1] };
+      tr = { lat: gpts[2], lon: gpts[3] };
+      br = { lat: gpts[4], lon: gpts[5] };
+      bl = { lat: gpts[6], lon: gpts[7] };
     }
 
-    // Try to find the coordinate system
-    const crs = detectCRS(text);
-
+    // GPTS is always lat/lon (EPSG:4326) per ISO 32000-2 spec
     return {
       corners: {
         tl: [tl.lon, tl.lat],
@@ -111,7 +109,7 @@ const PDFProcessor = (() => {
         bl: [bl.lon, bl.lat],
         br: [br.lon, br.lat]
       },
-      crs: crs || 'EPSG:4326',
+      crs: 'EPSG:4326',
       source: 'ISO-32000-2 (GeoPDF)'
     };
   }
@@ -475,12 +473,16 @@ const PDFProcessor = (() => {
    * Process a PDF file - main entry point
    */
   async function processPDF(arrayBuffer) {
+    // PDF.js may detach the ArrayBuffer when using web workers,
+    // so make a copy for metadata extraction
+    const arrayBufferCopy = arrayBuffer.slice(0);
+
     const pdf = await loadPDF(arrayBuffer);
     const { canvas, width, height } = await renderPage(pdf, 2);
-    const geoPDF = await isGeoPDF(arrayBuffer);
+    const geoPDF = await isGeoPDF(arrayBufferCopy);
 
     // Try to extract geo data
-    const geoData = await extractGeoData(arrayBuffer);
+    const geoData = await extractGeoData(arrayBufferCopy);
 
     return {
       pdf,
