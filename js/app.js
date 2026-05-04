@@ -46,7 +46,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.2.0';
 
 // ============================================
 // APP STATE
