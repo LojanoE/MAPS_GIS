@@ -30,7 +30,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 
 // ============================================
 // APP STATE
@@ -212,7 +212,7 @@ async function handlePhotoCapture(file) {
 
   try {
     showToast('Procesando foto...', 'info');
-    const compressedBlob = await compressImage(file, 1024, 0.75);
+    const compressedBlob = await compressImage(file, 1600, 0.90);
     const dataUrl = await blobToDataURL(compressedBlob);
 
     if (AppState.pendingPhotos.length >= 2) {
