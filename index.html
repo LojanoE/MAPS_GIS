@@ -25,7 +25,15 @@
     <header class="app-header">
       <div class="header-top">
         <h1>MAPS GIS</h1>
-        <span id="online-status" class="status-badge online">En linea</span>
+        <div class="header-actions">
+          <button id="btn-config" class="icon-btn config-btn" title="Configuracion">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+            </svg>
+          </button>
+          <span id="online-status" class="status-badge online">En linea</span>
+        </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
     </header>
@@ -420,6 +428,205 @@
     </div>
   </div>
 
+  <!-- ==================== MODAL SELECCION TIPO DE MARCADOR ==================== -->
+  <div id="marker-type-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Tipo de Marcador</h3>
+      <p class="type-info">Selecciona el tipo de marcador que deseas agregar</p>
+      <div class="marker-type-selector">
+        <button id="btn-type-qc" class="marker-type-card">
+          <span class="type-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+              <circle cx="12" cy="9" r="2.5"/>
+            </svg>
+          </span>
+          <span class="type-title">QC</span>
+          <span class="type-desc">Control de Calidad</span>
+        </button>
+        <button id="btn-type-lsm" class="marker-type-card">
+          <span class="type-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6"/>
+              <path d="M16 13H8M16 17H8M10 9H8"/>
+            </svg>
+          </span>
+          <span class="type-title">LSM</span>
+          <span class="type-desc">Laboratorio de Suelos y Materiales</span>
+        </button>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-cancel-type" class="btn-secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL LOGIN LSM ==================== -->
+  <div id="lsm-login-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Acceso LSM</h3>
+      <p class="login-info">Ingresa tu identificador para registrar muestras</p>
+      <div class="form-group">
+        <label for="lsm-nickname">Nickname</label>
+        <input type="text" id="lsm-nickname" placeholder="Tu nombre de usuario" maxlength="30" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="lsm-password">Contrasena</label>
+        <input type="password" id="lsm-password" placeholder="Contrasena" maxlength="10" value="354">
+      </div>
+      <div class="modal-actions">
+        <button id="btn-cancel-lsm-login" class="btn-secondary">Cancelar</button>
+        <button id="btn-confirm-lsm-login" class="btn-primary">Ingresar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL MARCADOR LSM ==================== -->
+  <div id="lsm-marker-modal" class="modal hidden">
+    <div class="modal-content modal-lsm">
+      <h3 id="lsm-modal-title">Nueva Muestra LSM</h3>
+      <p id="lsm-coords-display"></p>
+
+      <div class="form-group">
+        <label for="lsm-tipo-muestra">Tipo de Muestra</label>
+        <select id="lsm-tipo-muestra" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-nombre-proyecto">Nombre del Proyecto</label>
+        <select id="lsm-nombre-proyecto" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-solicitante">Solicitante</label>
+        <select id="lsm-solicitante" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-estructura-deposito">Estructura / Deposito</label>
+        <select id="lsm-estructura-deposito" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-subestructuras">Subestructuras</label>
+        <select id="lsm-subestructuras" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-categoria">Categoria</label>
+        <select id="lsm-categoria" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-tipo-material">Tipo de Material</label>
+        <select id="lsm-tipo-material" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-nombre-muestra">Nombre de Muestra *</label>
+        <input type="text" id="lsm-nombre-muestra" placeholder="Nombre de la muestra" maxlength="50" autocomplete="off">
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-proveniencia">Proveniencia</label>
+        <select id="lsm-proveniencia" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-localizacion">Localizacion</label>
+        <select id="lsm-localizacion" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="lsm-fuente">Fuente</label>
+        <select id="lsm-fuente" class="crs-select"></select>
+      </div>
+
+      <div class="form-group">
+        <label>Ensayos</label>
+        <div id="lsm-ensayos-group" class="checkbox-group"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Categoria</label>
+        <div id="lsm-category-selector" class="category-selector">
+          <button class="category-btn active" data-color="red" title="Rojo">
+            <span class="cat-dot" style="background:#f85149;"></span>
+          </button>
+          <button class="category-btn" data-color="blue" title="Azul">
+            <span class="cat-dot" style="background:#58a6ff;"></span>
+          </button>
+          <button class="category-btn" data-color="green" title="Verde">
+            <span class="cat-dot" style="background:#3fb950;"></span>
+          </button>
+          <button class="category-btn" data-color="yellow" title="Amarillo">
+            <span class="cat-dot" style="background:#d29922;"></span>
+          </button>
+          <button class="category-btn" data-color="orange" title="Naranja">
+            <span class="cat-dot" style="background:#db6d28;"></span>
+          </button>
+          <button class="category-btn" data-color="purple" title="Morado">
+            <span class="cat-dot" style="background:#a371f7;"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Fotos (max. 2)</label>
+        <div class="photo-section">
+          <div class="photo-grid" id="lsm-photo-grid"></div>
+          <button type="button" id="btn-lsm-add-photo" class="btn-photo">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            Tomar o subir foto
+          </button>
+          <input type="file" id="lsm-photo-input" accept="image/*" hidden>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="btn-cancel-lsm-marker" class="btn-secondary">Cancelar</button>
+        <button id="btn-save-lsm-marker" class="btn-primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL CONFIGURACION ==================== -->
+  <div id="config-modal" class="modal hidden">
+    <div class="modal-content modal-config">
+      <div class="config-header">
+        <h3>Configuracion</h3>
+        <button id="btn-close-config" class="icon-btn">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="config-tabs">
+        <button class="config-tab active" data-tab="lists">Listas Desplegables</button>
+        <button class="config-tab" data-tab="account">Cuenta LSM</button>
+      </div>
+
+      <div id="config-tab-lists" class="config-tab-content active">
+        <div class="config-sections" id="config-sections"></div>
+      </div>
+
+      <div id="config-tab-account" class="config-tab-content">
+        <div class="form-group">
+          <label>Nickname LSM</label>
+          <div class="account-info">
+            <span id="config-lsm-nickname">No ingresado</span>
+            <button id="btn-lsm-logout" class="btn-secondary btn-sm">Cerrar sesion</button>
+          </div>
+        </div>
+        <p class="config-hint">Los marcadores LSM se asocian a este nickname. Puedes cambiarlo en cualquier momento desde el mapa.</p>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast de notificaciones -->
   <div id="toast" class="toast hidden"></div>
 
@@ -451,6 +658,9 @@
 
   <!-- FileSaver (Downloads) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <!-- Supabase Client -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <!-- Storage Module (IndexedDB) -->
   <script src="js/storage.js"></script>

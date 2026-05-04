@@ -15,6 +15,22 @@ const WGS84 = 'EPSG:4326';
 proj4.defs('EPSG:24877', PSAD56_UTM_17S);
 
 // ============================================
+// SUPABASE CONFIG
+// ============================================
+const SUPABASE_URL = 'https://dzmhhlsttqygjvfabdxx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6bWhobHN0dHF5Z2p2ZmFiZHh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTE3MDAsImV4cCI6MjA5MDcyNzcwMH0._Gf0G2gpV_9QAYqFx1Kn6TN0lFDq3LxmBdNI82Suj-o';
+let supabaseClient = null;
+
+function initSupabase() {
+  if (typeof supabase === 'undefined') {
+    console.warn('[Supabase] Client library not loaded');
+    return null;
+  }
+  supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return supabaseClient;
+}
+
+// ============================================
 // MARKER COLORS CONFIG
 // ============================================
 
@@ -51,7 +67,9 @@ const AppState = {
   darkTiles: null,
   lightTiles: null,
   pendingPDF: null,
-  pendingPhotos: [] // Array of { photoId, dataUrl } for current marker
+  pendingPhotos: [], // Array of { photoId, dataUrl } for current marker
+  pendingMarkerType: null, // 'qc' or 'lsm'
+  lsmSelectedCategory: 'red'
 };
 
 // ============================================
@@ -59,11 +77,17 @@ const AppState = {
 // ============================================
 
 const MarkerManager = {
-  STORAGE_KEY: 'maps_gis_markers_v2',
+  STORAGE_KEY: 'maps_gis_markers_v3',
 
   getAll() {
     try {
-      return JSON.parse(localStorage.getItem(this.STORAGE_KEY)) || [];
+      const data = JSON.parse(localStorage.getItem(this.STORAGE_KEY));
+      if (!Array.isArray(data)) return [];
+      // Migrate old markers without markerType to QC
+      return data.map(m => ({
+        ...m,
+        markerType: m.markerType || 'qc'
+      }));
     } catch {
       return [];
     }
@@ -73,11 +97,12 @@ const MarkerManager = {
     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(markers));
   },
 
-  create(name, description, lat, lng, color, photos) {
+  createQC(name, description, lat, lng, color, photos) {
     const markers = this.getAll();
     const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
     const marker = {
       id: 'm_' + Date.now(),
+      markerType: 'qc',
       name: name.trim(),
       description: description.trim(),
       lat: lat,
@@ -86,6 +111,28 @@ const MarkerManager = {
       este: east.toFixed(3),
       color: color || 'red',
       photos: photos || [],
+      createdAt: new Date().toISOString()
+    };
+    markers.push(marker);
+    this.saveAll(markers);
+    return marker;
+  },
+
+  createLSM(lat, lng, color, photos, lsmData) {
+    const markers = this.getAll();
+    const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
+    const marker = {
+      id: 'm_' + Date.now(),
+      markerType: 'lsm',
+      name: (lsmData.nombreMuestra || '').trim(),
+      lat: lat,
+      lng: lng,
+      norte: north.toFixed(3),
+      este: east.toFixed(3),
+      color: color || 'red',
+      photos: photos || [],
+      lsmData: lsmData,
+      pendingUpload: true,
       createdAt: new Date().toISOString()
     };
     markers.push(marker);
@@ -115,6 +162,225 @@ const MarkerManager = {
     return this.getAll().length;
   }
 };
+
+// ============================================
+// LSM USER MANAGER (Local Auth)
+// ============================================
+const LSM_USER_KEY = 'maps_gis_lsm_user';
+const LSM_PASS = '354';
+
+const LSMUserManager = {
+  get() {
+    try {
+      return JSON.parse(localStorage.getItem(LSM_USER_KEY)) || null;
+    } catch {
+      return null;
+    }
+  },
+
+  set(nickname) {
+    localStorage.setItem(LSM_USER_KEY, JSON.stringify({ nickname, loggedInAt: Date.now() }));
+  },
+
+  clear() {
+    localStorage.removeItem(LSM_USER_KEY);
+  },
+
+  isLoggedIn() {
+    return !!this.get();
+  },
+
+  getNickname() {
+    const u = this.get();
+    return u ? u.nickname : null;
+  },
+
+  validate(nickname, password) {
+    return nickname && nickname.trim().length > 0 && password === LSM_PASS;
+  }
+};
+
+// ============================================
+// CONFIG MANAGER (Dropdown lists + Supabase sync)
+// ============================================
+const CONFIG_KEY = 'maps_gis_config_v2';
+const CONFIG_KEYS = [
+  'tipo_muestra', 'nombre_proyecto', 'solicitante',
+  'estructura_deposito', 'subestructuras', 'categoria',
+  'tipo_material', 'proveniencia', 'localizacion',
+  'fuente', 'ensayos'
+];
+
+const ConfigManager = {
+  getLocal() {
+    try {
+      return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
+    } catch {
+      return {};
+    }
+  },
+
+  saveLocal(config) {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+  },
+
+  getValues(key) {
+    const cfg = this.getLocal();
+    return Array.isArray(cfg[key]) ? cfg[key] : [];
+  },
+
+  addValue(key, value) {
+    if (!value || !value.trim()) return false;
+    const cfg = this.getLocal();
+    if (!Array.isArray(cfg[key])) cfg[key] = [];
+    if (cfg[key].includes(value.trim())) return false;
+    cfg[key].push(value.trim());
+    this.saveLocal(cfg);
+    return true;
+  },
+
+  removeValue(key, value) {
+    const cfg = this.getLocal();
+    if (!Array.isArray(cfg[key])) return false;
+    cfg[key] = cfg[key].filter(v => v !== value);
+    this.saveLocal(cfg);
+    return true;
+  },
+
+  async downloadFromSupabase() {
+    if (!supabaseClient) return false;
+    try {
+      const { data, error } = await supabaseClient.from('app_config').select('config_key, config_values');
+      if (error) throw error;
+      const cfg = {};
+      if (data) {
+        data.forEach(row => {
+          cfg[row.config_key] = row.config_values || [];
+        });
+      }
+      // Merge: keep local values that don't exist remotely (avoid data loss)
+      const localCfg = this.getLocal();
+      CONFIG_KEYS.forEach(k => {
+        const remoteVals = cfg[k] || [];
+        const localVals = localCfg[k] || [];
+        const merged = [...new Set([...remoteVals, ...localVals])];
+        cfg[k] = merged;
+      });
+      this.saveLocal(cfg);
+      return true;
+    } catch (e) {
+      console.warn('[Config] Download failed:', e.message);
+      return false;
+    }
+  },
+
+  async uploadToSupabase() {
+    if (!supabaseClient) return false;
+    try {
+      const cfg = this.getLocal();
+      const updates = [];
+      CONFIG_KEYS.forEach(k => {
+        updates.push({
+          config_key: k,
+          config_values: cfg[k] || [],
+          updated_at: new Date().toISOString()
+        });
+      });
+      // Upsert all
+      const { error } = await supabaseClient.from('app_config').upsert(updates, { onConflict: 'config_key' });
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.warn('[Config] Upload failed:', e.message);
+      return false;
+    }
+  }
+};
+
+// ============================================
+// LSM SYNC MANAGER (Upload to Supabase)
+// ============================================
+const LSMSyncManager = {
+  async shouldUpload() {
+    // Check network type
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn && conn.effectiveType) {
+      const good = ['4g', '5g'].includes(conn.effectiveType);
+      if (!good) return false;
+    }
+    // Quick ping to Supabase
+    if (!supabaseClient) return false;
+    try {
+      const { error } = await supabaseClient.from('app_config').select('id').limit(1);
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  async uploadMarker(marker) {
+    if (!supabaseClient || marker.markerType !== 'lsm') return false;
+    try {
+      const data = {
+        nickname: LSMUserManager.getNickname() || 'anon',
+        device_id: getDeviceId(),
+        local_marker_id: marker.id,
+        lat: marker.lat,
+        lng: marker.lng,
+        norte: marker.norte,
+        este: marker.este,
+        color: marker.color,
+        photos_count: (marker.photos || []).length,
+        nombre_muestra: marker.name,
+        tipo_muestra: marker.lsmData?.tipoMuestra || null,
+        nombre_proyecto: marker.lsmData?.nombreProyecto || null,
+        solicitante: marker.lsmData?.solicitante || null,
+        estructura_deposito: marker.lsmData?.estructuraDeposito || null,
+        subestructuras: marker.lsmData?.subestructuras || null,
+        categoria: marker.lsmData?.categoria || null,
+        tipo_material: marker.lsmData?.tipoMaterial || null,
+        proveniencia: marker.lsmData?.proveniencia || null,
+        localizacion: marker.lsmData?.localizacion || null,
+        fuente: marker.lsmData?.fuente || null,
+        ensayos: marker.lsmData?.ensayos || []
+      };
+      const { error } = await supabaseClient.from('lsm_markers').insert(data);
+      if (error) throw error;
+      return true;
+    } catch (e) {
+      console.warn('[Sync] Upload failed:', e.message);
+      return false;
+    }
+  },
+
+  async syncPending() {
+    const markers = MarkerManager.getAll().filter(m => m.markerType === 'lsm' && m.pendingUpload);
+    if (markers.length === 0) return;
+    if (!await this.shouldUpload()) return;
+
+    showToast('Sincronizando ' + markers.length + ' muestra(s)...', 'info');
+    let success = 0;
+    for (const marker of markers) {
+      const ok = await this.uploadMarker(marker);
+      if (ok) {
+        MarkerManager.update(marker.id, { pendingUpload: false });
+        success++;
+      }
+    }
+    if (success > 0) {
+      showToast(success + ' muestra(s) subidas a la nube', 'success');
+    }
+  }
+};
+
+function getDeviceId() {
+  let id = localStorage.getItem('maps_gis_device_id');
+  if (!id) {
+    id = 'dev_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('maps_gis_device_id', id);
+  }
+  return id;
+}
 
 // ============================================
 // UI HELPERS
@@ -229,8 +495,16 @@ async function handlePhotoCapture(file) {
   }
 }
 
+function getPhotoGridId() {
+  return AppState.pendingMarkerType === 'lsm' ? 'lsm-photo-grid' : 'photo-grid';
+}
+
+function getAddPhotoBtnId() {
+  return AppState.pendingMarkerType === 'lsm' ? 'btn-lsm-add-photo' : 'btn-add-photo';
+}
+
 function renderPhotoGrid() {
-  const grid = document.getElementById('photo-grid');
+  const grid = document.getElementById(getPhotoGridId());
   if (!grid) return;
 
   grid.innerHTML = AppState.pendingPhotos.map((photo, index) => {
@@ -249,7 +523,7 @@ function renderPhotoGrid() {
     });
   });
 
-  const btnAddPhoto = document.getElementById('btn-add-photo');
+  const btnAddPhoto = document.getElementById(getAddPhotoBtnId());
   if (btnAddPhoto) {
     btnAddPhoto.style.display = AppState.pendingPhotos.length >= 2 ? 'none' : 'flex';
   }
@@ -304,7 +578,7 @@ function initMap() {
 
   AppState.map.on('click', (e) => {
     if (AppState.isAddMarkerMode) {
-      openMarkerModal(e.latlng);
+      openMarkerTypeModal(e.latlng);
     }
   });
 
@@ -486,10 +760,320 @@ function createMarkerIcon(marker) {
 }
 
 // ============================================
-// MARKER MODAL (Create/Edit)
+// MARKER TYPE SELECTOR (QC vs LSM)
+// ============================================
+
+function openMarkerTypeModal(latlng) {
+  AppState.pendingMarkerLatLng = latlng;
+  document.getElementById('marker-type-modal').classList.remove('hidden');
+}
+
+function closeMarkerTypeModal() {
+  document.getElementById('marker-type-modal').classList.add('hidden');
+  AppState.pendingMarkerLatLng = null;
+  AppState.isAddMarkerMode = false;
+  document.getElementById('btn-add-marker').classList.remove('active');
+}
+
+function selectMarkerType(type) {
+  closeMarkerTypeModal();
+  const latlng = AppState.pendingMarkerLatLng;
+  if (!latlng) return;
+
+  if (type === 'qc') {
+    AppState.pendingMarkerType = 'qc';
+    openMarkerModal(latlng);
+  } else {
+    AppState.pendingMarkerType = 'lsm';
+    openLSMLoginOrMarkerModal(latlng);
+  }
+}
+
+// ============================================
+// LSM LOGIN & MARKER MODAL
+// ============================================
+
+function openLSMLoginOrMarkerModal(latlng) {
+  if (LSMUserManager.isLoggedIn()) {
+    openLSMMarkerModal(latlng);
+  } else {
+    openLSMLoginModal(latlng);
+  }
+}
+
+function openLSMLoginModal(latlng) {
+  AppState.pendingMarkerLatLng = latlng;
+  const saved = LSMUserManager.get();
+  document.getElementById('lsm-nickname').value = saved ? saved.nickname : '';
+  document.getElementById('lsm-password').value = '';
+  document.getElementById('lsm-login-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('lsm-nickname').focus(), 100);
+}
+
+function closeLSMLoginModal() {
+  document.getElementById('lsm-login-modal').classList.add('hidden');
+  AppState.pendingMarkerLatLng = null;
+  AppState.isAddMarkerMode = false;
+  document.getElementById('btn-add-marker').classList.remove('active');
+}
+
+function confirmLSMLogin() {
+  const nickname = document.getElementById('lsm-nickname').value.trim();
+  const password = document.getElementById('lsm-password').value.trim();
+
+  if (!nickname) {
+    showToast('Ingresa un nickname', 'error');
+    return;
+  }
+
+  if (!LSMUserManager.validate(nickname, password)) {
+    showToast('Contrasena incorrecta', 'error');
+    return;
+  }
+
+  LSMUserManager.set(nickname);
+  showToast('Bienvenido, ' + nickname, 'success');
+  closeLSMLoginModal();
+
+  const latlng = AppState.pendingMarkerLatLng;
+  if (latlng) {
+    openLSMMarkerModal(latlng);
+  }
+}
+
+function populateLsmSelect(id, key, required) {
+  const select = document.getElementById(id);
+  if (!select) return;
+  const values = ConfigManager.getValues(key);
+  select.innerHTML = '';
+  if (!required) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '-- Seleccionar --';
+    select.appendChild(opt);
+  }
+  values.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    select.appendChild(opt);
+  });
+}
+
+function populateLsmEnsayos() {
+  const container = document.getElementById('lsm-ensayos-group');
+  if (!container) return;
+  const values = ConfigManager.getValues('ensayos');
+  container.innerHTML = '';
+  values.forEach(v => {
+    const label = document.createElement('label');
+    label.className = 'checkbox-option';
+    label.innerHTML = '<input type="checkbox" value="' + escapeHtml(v) + '"><span>' + escapeHtml(v) + '</span>';
+    container.appendChild(label);
+  });
+}
+
+function updateLSMCategorySelector() {
+  document.querySelectorAll('#lsm-category-selector .category-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.color === AppState.lsmSelectedCategory);
+  });
+}
+
+const LAST_LSM_KEY = 'maps_gis_last_lsm_form';
+
+function getLastLSMForm() {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_LSM_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLastLSMForm(data) {
+  const copy = { ...data };
+  delete copy.nombreMuestra;
+  delete copy.ensayos;
+  localStorage.setItem(LAST_LSM_KEY, JSON.stringify(copy));
+}
+
+async function openLSMMarkerModal(latlng, editId) {
+  AppState.pendingMarkerLatLng = latlng;
+  AppState.editingMarkerId = editId || null;
+  AppState.pendingMarkerType = 'lsm';
+  clearPendingPhotos();
+
+  // Populate selects
+  populateLsmSelect('lsm-tipo-muestra', 'tipo_muestra');
+  populateLsmSelect('lsm-nombre-proyecto', 'nombre_proyecto');
+  populateLsmSelect('lsm-solicitante', 'solicitante');
+  populateLsmSelect('lsm-estructura-deposito', 'estructura_deposito');
+  populateLsmSelect('lsm-subestructuras', 'subestructuras');
+  populateLsmSelect('lsm-categoria', 'categoria');
+  populateLsmSelect('lsm-tipo-material', 'tipo_material');
+  populateLsmSelect('lsm-proveniencia', 'proveniencia');
+  populateLsmSelect('lsm-localizacion', 'localizacion');
+  populateLsmSelect('lsm-fuente', 'fuente');
+  populateLsmEnsayos();
+
+  const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
+  document.getElementById('lsm-coords-display').textContent =
+    'N: ' + north.toFixed(3) + ' | E: ' + east.toFixed(3);
+
+  if (editId) {
+    const marker = MarkerManager.getById(editId);
+    if (!marker || marker.markerType !== 'lsm') return;
+    document.getElementById('lsm-modal-title').textContent = 'Editar Muestra LSM';
+    const d = marker.lsmData || {};
+    document.getElementById('lsm-tipo-muestra').value = d.tipoMuestra || '';
+    document.getElementById('lsm-nombre-proyecto').value = d.nombreProyecto || '';
+    document.getElementById('lsm-solicitante').value = d.solicitante || '';
+    document.getElementById('lsm-estructura-deposito').value = d.estructuraDeposito || '';
+    document.getElementById('lsm-subestructuras').value = d.subestructuras || '';
+    document.getElementById('lsm-categoria').value = d.categoria || '';
+    document.getElementById('lsm-tipo-material').value = d.tipoMaterial || '';
+    document.getElementById('lsm-nombre-muestra').value = marker.name || '';
+    document.getElementById('lsm-proveniencia').value = d.proveniencia || '';
+    document.getElementById('lsm-localizacion').value = d.localizacion || '';
+    document.getElementById('lsm-fuente').value = d.fuente || '';
+
+    // Check ensayos
+    const ensayos = d.ensayos || [];
+    document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]').forEach(cb => {
+      cb.checked = ensayos.includes(cb.value);
+    });
+
+    AppState.lsmSelectedCategory = marker.color || 'red';
+
+    // Load photos
+    if (marker.photos && marker.photos.length > 0) {
+      for (const photoId of marker.photos) {
+        try {
+          const photoRecord = await MapStorage.getPhoto(photoId);
+          if (photoRecord && photoRecord.blob) {
+            const dataUrl = await blobToDataURL(photoRecord.blob);
+            AppState.pendingPhotos.push({ photoId: photoId, blob: photoRecord.blob, dataUrl: dataUrl });
+          }
+        } catch (e) {
+          console.warn('Could not load photo:', photoId, e);
+        }
+      }
+      renderPhotoGrid();
+    }
+  } else {
+    document.getElementById('lsm-modal-title').textContent = 'Nueva Muestra LSM';
+    const last = getLastLSMForm();
+    document.getElementById('lsm-tipo-muestra').value = last.tipoMuestra || '';
+    document.getElementById('lsm-nombre-proyecto').value = last.nombreProyecto || '';
+    document.getElementById('lsm-solicitante').value = last.solicitante || '';
+    document.getElementById('lsm-estructura-deposito').value = last.estructuraDeposito || '';
+    document.getElementById('lsm-subestructuras').value = last.subestructuras || '';
+    document.getElementById('lsm-categoria').value = last.categoria || '';
+    document.getElementById('lsm-tipo-material').value = last.tipoMaterial || '';
+    document.getElementById('lsm-nombre-muestra').value = '';
+    document.getElementById('lsm-proveniencia').value = last.proveniencia || '';
+    document.getElementById('lsm-localizacion').value = last.localizacion || '';
+    document.getElementById('lsm-fuente').value = last.fuente || '';
+    document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]').forEach(cb => cb.checked = false);
+    AppState.lsmSelectedCategory = 'red';
+  }
+
+  updateLSMCategorySelector();
+  document.getElementById('lsm-marker-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('lsm-nombre-muestra').focus(), 100);
+}
+
+function closeLSMMarkerModal() {
+  document.getElementById('lsm-marker-modal').classList.add('hidden');
+  AppState.pendingMarkerLatLng = null;
+  AppState.editingMarkerId = null;
+  AppState.isAddMarkerMode = false;
+  clearPendingPhotos();
+  document.getElementById('btn-add-marker').classList.remove('active');
+}
+
+async function saveLSMMarker() {
+  const nombreMuestra = document.getElementById('lsm-nombre-muestra').value.trim();
+  if (!nombreMuestra) {
+    showToast('Ingresa el Nombre de Muestra', 'error');
+    return;
+  }
+
+  // Gather LSM data
+  const lsmData = {
+    tipoMuestra: document.getElementById('lsm-tipo-muestra').value.trim(),
+    nombreProyecto: document.getElementById('lsm-nombre-proyecto').value.trim(),
+    solicitante: document.getElementById('lsm-solicitante').value.trim(),
+    estructuraDeposito: document.getElementById('lsm-estructura-deposito').value.trim(),
+    subestructuras: document.getElementById('lsm-subestructuras').value.trim(),
+    categoria: document.getElementById('lsm-categoria').value.trim(),
+    tipoMaterial: document.getElementById('lsm-tipo-material').value.trim(),
+    nombreMuestra: nombreMuestra,
+    proveniencia: document.getElementById('lsm-proveniencia').value.trim(),
+    localizacion: document.getElementById('lsm-localizacion').value.trim(),
+    fuente: document.getElementById('lsm-fuente').value.trim(),
+    ensayos: Array.from(document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]:checked')).map(cb => cb.value)
+  };
+
+  // Save photos
+  const photoIds = [];
+  for (const photo of AppState.pendingPhotos) {
+    try {
+      if (photo.photoId) {
+        photoIds.push(photo.photoId);
+      } else if (photo.blob) {
+        const markerId = AppState.editingMarkerId || ('m_' + Date.now());
+        const photoId = await MapStorage.savePhoto(photo.blob, markerId);
+        photoIds.push(photoId);
+      }
+    } catch (e) {
+      console.error('Error saving photo:', e);
+    }
+  }
+
+  if (AppState.editingMarkerId) {
+    const oldMarker = MarkerManager.getById(AppState.editingMarkerId);
+    if (oldMarker && oldMarker.photos) {
+      const removedPhotos = oldMarker.photos.filter(id => !photoIds.includes(id));
+      for (const photoId of removedPhotos) {
+        try {
+          await MapStorage.deletePhoto(photoId);
+        } catch (e) {
+          console.warn('Could not delete old photo:', photoId);
+        }
+      }
+    }
+
+    MarkerManager.update(AppState.editingMarkerId, {
+      name: nombreMuestra,
+      color: AppState.lsmSelectedCategory,
+      photos: photoIds,
+      lsmData: lsmData,
+      pendingUpload: true
+    });
+    showToast('Muestra LSM actualizada', 'success');
+  } else if (AppState.pendingMarkerLatLng) {
+    const { lat, lng } = AppState.pendingMarkerLatLng;
+    MarkerManager.createLSM(lat, lng, AppState.lsmSelectedCategory, photoIds, lsmData);
+    showToast('Muestra LSM "' + nombreMuestra + '" guardada', 'success');
+  }
+
+  saveLastLSMForm(lsmData);
+  refreshMarkersOnMap();
+  updateMarkerCountBadge();
+  closeLSMMarkerModal();
+
+  // Try sync
+  if (await LSMSyncManager.shouldUpload()) {
+    LSMSyncManager.syncPending();
+  }
+}
+
+// ============================================
+// MARKER MODAL (Create/Edit) - QC ONLY
 // ============================================
 
 async function openMarkerModal(latlng, editId) {
+  AppState.pendingMarkerType = 'qc';
   AppState.pendingMarkerLatLng = latlng;
   AppState.editingMarkerId = editId || null;
   clearPendingPhotos();
@@ -598,7 +1182,7 @@ async function saveMarker() {
     showToast('Marcador actualizado', 'success');
   } else if (AppState.pendingMarkerLatLng) {
     const { lat, lng } = AppState.pendingMarkerLatLng;
-    MarkerManager.create(name, description, lat, lng, AppState.selectedCategory, photoIds);
+    MarkerManager.createQC(name, description, lat, lng, AppState.selectedCategory, photoIds);
     showToast('Marcador "' + name + '" guardado', 'success');
   }
 
@@ -629,17 +1213,48 @@ async function openMarkerDetail(id) {
   document.getElementById('detail-marker-name').textContent = marker.name;
   document.getElementById('detail-marker-date').textContent = formatDateTime(marker.createdAt);
   document.getElementById('detail-marker-category').textContent = MARKER_COLORS[marker.color]?.label || 'Rojo';
-  document.getElementById('detail-marker-norte').textContent = marker.norte + ' m';
-  document.getElementById('detail-marker-este').textContent = marker.este + ' m';
-  document.getElementById('detail-marker-lat').textContent = marker.lat.toFixed(8);
-  document.getElementById('detail-marker-lng').textContent = marker.lng.toFixed(8);
 
-  const descRow = document.getElementById('detail-description-row');
-  if (marker.description) {
-    descRow.classList.remove('hidden');
-    document.getElementById('detail-marker-description').textContent = marker.description;
+  const detailBody = document.querySelector('#marker-detail-modal .detail-body');
+
+  if (marker.markerType === 'lsm') {
+    const d = marker.lsmData || {};
+    const ensayosStr = (d.ensayos || []).join(', ');
+    detailBody.innerHTML =
+      '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">LSM</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Tipo de Muestra</span><span class="detail-value">' + escapeHtml(d.tipoMuestra || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Proyecto</span><span class="detail-value">' + escapeHtml(d.nombreProyecto || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Solicitante</span><span class="detail-value">' + escapeHtml(d.solicitante || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Estructura/Deposito</span><span class="detail-value">' + escapeHtml(d.estructuraDeposito || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Subestructuras</span><span class="detail-value">' + escapeHtml(d.subestructuras || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + escapeHtml(d.categoria || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Tipo de Material</span><span class="detail-value">' + escapeHtml(d.tipoMaterial || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Proveniencia</span><span class="detail-value">' + escapeHtml(d.proveniencia || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Localizacion</span><span class="detail-value">' + escapeHtml(d.localizacion || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Fuente</span><span class="detail-value">' + escapeHtml(d.fuente || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Ensayos</span><span class="detail-value">' + escapeHtml(ensayosStr || '-') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div>' +
+      '<div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
   } else {
-    descRow.classList.add('hidden');
+    detailBody.innerHTML =
+      '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">QC</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + (MARKER_COLORS[marker.color]?.label || 'Rojo') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div>' +
+      '<div id="detail-description-row" class="detail-row detail-description"><span class="detail-label">Descripcion</span><p id="detail-marker-description"></p></div>' +
+      '<div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
+
+    const descRow = document.getElementById('detail-description-row');
+    if (marker.description) {
+      descRow.classList.remove('hidden');
+      document.getElementById('detail-marker-description').textContent = marker.description;
+    } else {
+      descRow.classList.add('hidden');
+    }
   }
 
   // Load and display photos
@@ -658,7 +1273,6 @@ async function openMarkerDetail(id) {
           img.src = dataUrl;
           img.alt = 'Foto';
           img.addEventListener('click', () => {
-            // Open full-size image
             const win = window.open();
             win.document.write('<img src="' + dataUrl + '" style="max-width:100%">');
           });
@@ -686,7 +1300,11 @@ function editCurrentMarker() {
   if (!marker) return;
 
   closeMarkerDetail();
-  openMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
+  if (marker.markerType === 'lsm') {
+    openLSMMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
+  } else {
+    openMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
+  }
 }
 
 async function deleteCurrentMarker() {
@@ -773,10 +1391,11 @@ function renderMarkersList(filter = '') {
 
   container.innerHTML = markers.map(m => {
     const color = MARKER_COLORS[m.color]?.hex || MARKER_COLORS.red.hex;
+    const typeLabel = m.markerType === 'lsm' ? 'LSM' : 'QC';
     return '<div class="marker-item" data-id="' + m.id + '">' +
       '<span class="marker-item-dot" style="background:' + color + ';"></span>' +
       '<div class="marker-item-info">' +
-        '<div class="marker-item-name">' + escapeHtml(m.name) + '</div>' +
+        '<div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div>' +
         '<div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + '</div>' +
       '</div>' +
       '<div class="marker-item-actions">' +
@@ -809,7 +1428,11 @@ function renderMarkersList(filter = '') {
       const marker = MarkerManager.getById(id);
       if (marker) {
         closeMarkersPanel();
-        openMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
+        if (marker.markerType === 'lsm') {
+          openLSMMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
+        } else {
+          openMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
+        }
       }
     });
   });
@@ -905,56 +1528,122 @@ async function exportToZIP() {
     const zip = new JSZip();
     const folder = zip.folder('fotos');
 
-    // Build Excel data
-    const excelData = [];
-    excelData.push([
-      'Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)',
-      'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2'
-    ]);
-
-    for (let i = 0; i < markers.length; i++) {
-      const m = markers[i];
-      const safeName = (m.name || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '_');
-      const rowNum = String(i + 1).padStart(3, '0');
-
-      let foto1Name = '';
-      let foto2Name = '';
-
-      if (m.photos && m.photos.length > 0) {
-        for (let p = 0; p < m.photos.length && p < 2; p++) {
-          const photoId = m.photos[p];
-          try {
-            const photoRecord = await MapStorage.getPhoto(photoId);
-            if (photoRecord && photoRecord.blob) {
-              const fileName = safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
-              folder.file(fileName, photoRecord.blob);
-              if (p === 0) foto1Name = fileName;
-              if (p === 1) foto2Name = fileName;
-            }
-          } catch (e) {
-            console.warn('Could not add photo to zip:', photoId);
-          }
-        }
-      }
-
-      excelData.push([
-        m.name || '',
-        MARKER_COLORS[m.color]?.label || '',
-        m.description || '',
-        m.norte,
-        m.este,
-        m.lat,
-        m.lng,
-        formatDateTime(m.createdAt),
-        foto1Name,
-        foto2Name
-      ]);
-    }
+    const qcMarkers = markers.filter(m => m.markerType === 'qc');
+    const lsmMarkers = markers.filter(m => m.markerType === 'lsm');
 
     // Create Excel workbook
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(excelData);
-    XLSX.utils.book_append_sheet(wb, ws, 'Marcadores');
+
+    // Sheet 1: QC
+    if (qcMarkers.length > 0) {
+      const qcData = [];
+      qcData.push([
+        'Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)',
+        'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2'
+      ]);
+
+      for (let i = 0; i < qcMarkers.length; i++) {
+        const m = qcMarkers[i];
+        const safeName = (m.name || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '_');
+        const rowNum = String(i + 1).padStart(3, '0');
+        let foto1Name = '';
+        let foto2Name = '';
+
+        if (m.photos && m.photos.length > 0) {
+          for (let p = 0; p < m.photos.length && p < 2; p++) {
+            const photoId = m.photos[p];
+            try {
+              const photoRecord = await MapStorage.getPhoto(photoId);
+              if (photoRecord && photoRecord.blob) {
+                const fileName = safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
+                folder.file(fileName, photoRecord.blob);
+                if (p === 0) foto1Name = fileName;
+                if (p === 1) foto2Name = fileName;
+              }
+            } catch (e) {
+              console.warn('Could not add photo to zip:', photoId);
+            }
+          }
+        }
+
+        qcData.push([
+          m.name || '',
+          MARKER_COLORS[m.color]?.label || '',
+          m.description || '',
+          m.norte,
+          m.este,
+          m.lat,
+          m.lng,
+          formatDateTime(m.createdAt),
+          foto1Name,
+          foto2Name
+        ]);
+      }
+      const wsQC = XLSX.utils.aoa_to_sheet(qcData);
+      XLSX.utils.book_append_sheet(wb, wsQC, 'Marcadores_QC');
+    }
+
+    // Sheet 2: LSM
+    if (lsmMarkers.length > 0) {
+      const lsmData = [];
+      lsmData.push([
+        'Nombre_Muestra', 'Tipo_Muestra', 'Nombre_Proyecto', 'Solicitante',
+        'Estructura_Deposito', 'Subestructuras', 'Categoria', 'Tipo_Material',
+        'Proveniencia', 'Localizacion', 'Fuente', 'Ensayos',
+        'Norte (m)', 'Este (m)', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2'
+      ]);
+
+      for (let i = 0; i < lsmMarkers.length; i++) {
+        const m = lsmMarkers[i];
+        const d = m.lsmData || {};
+        const safeName = (m.name || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '_');
+        const rowNum = String(i + 1).padStart(3, '0');
+        let foto1Name = '';
+        let foto2Name = '';
+
+        if (m.photos && m.photos.length > 0) {
+          for (let p = 0; p < m.photos.length && p < 2; p++) {
+            const photoId = m.photos[p];
+            try {
+              const photoRecord = await MapStorage.getPhoto(photoId);
+              if (photoRecord && photoRecord.blob) {
+                const fileName = safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
+                folder.file(fileName, photoRecord.blob);
+                if (p === 0) foto1Name = fileName;
+                if (p === 1) foto2Name = fileName;
+              }
+            } catch (e) {
+              console.warn('Could not add photo to zip:', photoId);
+            }
+          }
+        }
+
+        lsmData.push([
+          m.name || '',
+          d.tipoMuestra || '',
+          d.nombreProyecto || '',
+          d.solicitante || '',
+          d.estructuraDeposito || '',
+          d.subestructuras || '',
+          d.categoria || '',
+          d.tipoMaterial || '',
+          d.proveniencia || '',
+          d.localizacion || '',
+          d.fuente || '',
+          (d.ensayos || []).join(', '),
+          m.norte,
+          m.este,
+          m.lat,
+          m.lng,
+          formatDateTime(m.createdAt),
+          foto1Name,
+          foto2Name
+        ]);
+      }
+      const wsLSM = XLSX.utils.aoa_to_sheet(lsmData);
+      XLSX.utils.book_append_sheet(wb, wsLSM, 'Marcadores_LSM');
+    }
+
     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     zip.file('marcadores.xlsx', excelBuffer);
 
@@ -1506,24 +2195,184 @@ function initEventListeners() {
   document.querySelectorAll('.modal').forEach(modal => {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
-        modal.classList.add('hidden');
         if (modal.id === 'marker-modal') {
-          AppState.isAddMarkerMode = false;
-          document.getElementById('btn-add-marker').classList.remove('active');
-        }
-        if (modal.id === 'georef-modal') {
+          closeMarkerModal();
+        } else if (modal.id === 'georef-modal') {
           closeGeorefModal();
-        }
-        if (modal.id === 'export-modal') {
+        } else if (modal.id === 'export-modal') {
           closeExportModal();
+        } else if (modal.id === 'marker-type-modal') {
+          closeMarkerTypeModal();
+        } else if (modal.id === 'lsm-login-modal') {
+          closeLSMLoginModal();
+        } else if (modal.id === 'lsm-marker-modal') {
+          closeLSMMarkerModal();
+        } else if (modal.id === 'config-modal') {
+          closeConfigModal();
+        } else if (modal.id === 'marker-detail-modal') {
+          closeMarkerDetail();
+        } else if (modal.id === 'delete-map-modal') {
+          pendingDeleteMapId = null;
+          modal.classList.add('hidden');
+        } else {
+          modal.classList.add('hidden');
         }
       }
     });
   });
 
-  // Online status
-  window.addEventListener('online', updateOnlineStatus);
+  // Marker type selector
+  document.getElementById('btn-type-qc').addEventListener('click', () => selectMarkerType('qc'));
+  document.getElementById('btn-type-lsm').addEventListener('click', () => selectMarkerType('lsm'));
+  document.getElementById('btn-cancel-type').addEventListener('click', closeMarkerTypeModal);
+
+  // LSM login modal
+  document.getElementById('btn-confirm-lsm-login').addEventListener('click', confirmLSMLogin);
+  document.getElementById('btn-cancel-lsm-login').addEventListener('click', closeLSMLoginModal);
+  document.getElementById('lsm-nickname').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmLSMLogin();
+  });
+
+  // LSM marker modal
+  document.getElementById('btn-save-lsm-marker').addEventListener('click', saveLSMMarker);
+  document.getElementById('btn-cancel-lsm-marker').addEventListener('click', closeLSMMarkerModal);
+  document.getElementById('lsm-nombre-muestra').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveLSMMarker();
+  });
+
+  // LSM category selector
+  document.querySelectorAll('#lsm-category-selector .category-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      AppState.lsmSelectedCategory = btn.dataset.color;
+      updateLSMCategorySelector();
+    });
+  });
+
+  // LSM photo capture
+  document.getElementById('btn-lsm-add-photo').addEventListener('click', () => {
+    document.getElementById('lsm-photo-input').click();
+  });
+  document.getElementById('lsm-photo-input').addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handlePhotoCapture(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
+
+  // Config modal
+  document.getElementById('btn-config').addEventListener('click', openConfigModal);
+  document.getElementById('btn-close-config').addEventListener('click', closeConfigModal);
+  document.querySelectorAll('.config-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.config-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.config-tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('config-tab-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+  document.getElementById('btn-lsm-logout').addEventListener('click', () => {
+    LSMUserManager.clear();
+    updateConfigAccountTab();
+    showToast('Sesion LSM cerrada', 'info');
+  });
+
+  // Online status + sync
+  window.addEventListener('online', () => {
+    updateOnlineStatus();
+    LSMSyncManager.syncPending();
+  });
   window.addEventListener('offline', updateOnlineStatus);
+}
+
+// ============================================
+// CONFIG MODAL
+// ============================================
+
+function openConfigModal() {
+  renderConfigSections();
+  updateConfigAccountTab();
+  document.getElementById('config-modal').classList.remove('hidden');
+}
+
+function closeConfigModal() {
+  document.getElementById('config-modal').classList.add('hidden');
+}
+
+function updateConfigAccountTab() {
+  const nick = LSMUserManager.getNickname();
+  document.getElementById('config-lsm-nickname').textContent = nick || 'No ingresado';
+}
+
+function renderConfigSections() {
+  const container = document.getElementById('config-sections');
+  const labels = {
+    tipo_muestra: 'Tipo de Muestra',
+    nombre_proyecto: 'Nombre del Proyecto',
+    solicitante: 'Solicitante',
+    estructura_deposito: 'Estructura / Deposito',
+    subestructuras: 'Subestructuras',
+    categoria: 'Categoria',
+    tipo_material: 'Tipo de Material',
+    proveniencia: 'Proveniencia',
+    localizacion: 'Localizacion',
+    fuente: 'Fuente',
+    ensayos: 'Ensayos'
+  };
+
+  container.innerHTML = '';
+  CONFIG_KEYS.forEach(key => {
+    const values = ConfigManager.getValues(key);
+    const section = document.createElement('div');
+    section.className = 'config-section open';
+    section.dataset.key = key;
+    section.innerHTML =
+      '<div class="config-section-header">' +
+        '<h4>' + labels[key] + '</h4>' +
+        '<span class="config-section-toggle">&#9650;</span>' +
+      '</div>' +
+      '<div class="config-section-body">' +
+        '<div class="config-tag-list">' + values.map(v =>
+          '<span class="config-tag">' + escapeHtml(v) + '<button data-val="' + escapeHtml(v) + '">&times;</button></span>'
+        ).join('') + '</div>' +
+        '<div class="config-input-row">' +
+          '<input type="text" placeholder="Nueva opcion..." maxlength="50">' +
+          '<button class="btn-primary btn-sm btn-add-config">Agregar</button>' +
+        '</div>' +
+      '</div>';
+
+    container.appendChild(section);
+
+    // Toggle section
+    section.querySelector('.config-section-header').addEventListener('click', () => {
+      section.classList.toggle('open');
+    });
+
+    // Remove value
+    section.querySelectorAll('.config-tag button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        ConfigManager.removeValue(key, btn.dataset.val);
+        ConfigManager.uploadToSupabase();
+        renderConfigSections();
+      });
+    });
+
+    // Add value
+    const addBtn = section.querySelector('.btn-add-config');
+    const input = section.querySelector('input');
+    const doAdd = () => {
+      if (ConfigManager.addValue(key, input.value)) {
+        input.value = '';
+        ConfigManager.uploadToSupabase();
+        renderConfigSections();
+      } else {
+        showToast('Opcion duplicada o vacia', 'error');
+      }
+    };
+    addBtn.addEventListener('click', doAdd);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doAdd();
+    });
+  });
 }
 
 // ============================================
@@ -1533,9 +2382,17 @@ function initEventListeners() {
 async function initApp() {
   loadThemePreference();
   updateOnlineStatus();
+  initSupabase();
   initEventListeners();
   await loadMapsList();
   updateMarkerCountBadge();
+
+  // Download config from Supabase
+  if (supabaseClient) {
+    await ConfigManager.downloadFromSupabase();
+    // Try sync pending LSM markers
+    LSMSyncManager.syncPending();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', initApp);
