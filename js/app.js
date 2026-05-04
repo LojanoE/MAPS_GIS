@@ -28,6 +28,11 @@ const MARKER_COLORS = {
 };
 
 // ============================================
+// APP VERSION - Must match sw.js APP_VERSION
+// ============================================
+const APP_VERSION = '1.0.1';
+
+// ============================================
 // APP STATE
 // ============================================
 
@@ -764,26 +769,28 @@ function handleTIFFUpload(file) {
     }
   };
 
-  reader.onload = async (e) => {
-    progressFill.style.width = '80%';
-    progressText.textContent = 'Guardando...';
+    reader.onload = async (e) => {
+      progressFill.style.width = '80%';
+      progressText.textContent = 'Guardando...';
 
-    try {
-      await MapStorage.saveMap(file.name, e.target.result, file.size);
-      progressFill.style.width = '100%';
-      progressText.textContent = 'Completado!';
-      showToast('Mapa "' + file.name + '" guardado', 'success');
-      await loadMapsList();
-      document.getElementById('map-input').value = '';
-      setTimeout(() => {
+      try {
+        await MapStorage.saveMap(file.name, e.target.result, file.size);
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Completado!';
+        showToast('Mapa "' + file.name + '" guardado', 'success');
+        await loadMapsList();
+        document.getElementById('map-input').value = '';
+        setTimeout(() => {
+          progressEl.classList.add('hidden');
+          progressFill.style.width = '0%';
+        }, 1500);
+      } catch (error) {
+        console.error('Error guardando mapa:', error);
+        const msg = error && error.message ? error.message : 'Error al guardar el mapa';
+        showToast(msg, 'error');
         progressEl.classList.add('hidden');
-        progressFill.style.width = '0%';
-      }, 1500);
-    } catch (error) {
-      showToast('Error al guardar el mapa', 'error');
-      progressEl.classList.add('hidden');
-    }
-  };
+      }
+    };
 
   reader.onerror = () => {
     showToast('Error al leer el archivo', 'error');
@@ -803,7 +810,9 @@ async function handlePDFUpload(file) {
 
   try {
     const arrayBuffer = await file.arrayBuffer();
-    // Pass a copy to PDFProcessor since PDF.js may detach the buffer
+    // Hacer una copia inmediata ANTES de que PDF.js la modifique/detache
+    const arrayBufferForStorage = arrayBuffer.slice(0);
+    // Pasar otra copia a PDFProcessor
     const processed = await PDFProcessor.processPDF(arrayBuffer.slice(0));
 
     progressFill.style.width = '60%';
@@ -818,10 +827,10 @@ async function handlePDFUpload(file) {
     previewCanvas.style.maxWidth = '100%';
     previewCanvas.style.height = 'auto';
 
-    // Store pending PDF data
+    // Store pending PDF data - usar la copia que NUNCA paso por PDF.js
     AppState.pendingPDF = {
       name: file.name,
-      arrayBuffer: arrayBuffer,
+      arrayBuffer: arrayBufferForStorage,
       size: file.size,
       isGeoPDF: processed.isGeoPDF,
       geoData: processed.geoData || null
@@ -990,7 +999,9 @@ async function applyGeoref() {
       document.querySelector('#upload-progress .progress-fill').style.width = '0%';
     }, 1500);
   } catch (error) {
-    showToast('Error al guardar el PDF', 'error');
+    console.error('Error guardando PDF:', error);
+    const msg = error && error.message ? error.message : 'Error al guardar el PDF';
+    showToast(msg, 'error');
   }
 }
 

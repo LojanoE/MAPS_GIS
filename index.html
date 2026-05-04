@@ -78,7 +78,7 @@
     </main>
 
     <footer class="app-footer">
-      <span>v1.0.0</span>
+      <span id="app-version">v1.0.1</span>
       <span id="storage-info"></span>
     </footer>
   </div>
@@ -392,15 +392,65 @@
   <!-- App Main Logic -->
   <script src="js/app.js"></script>
 
-  <!-- Service Worker Registration -->
+  <!-- Service Worker Registration with forced updates -->
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-          .then(reg => console.log('SW registrado:', reg.scope))
-          .catch(err => console.log('SW error:', err));
+    (function() {
+      if (!('serviceWorker' in navigator)) return;
+
+      let refreshing = false;
+
+      // Detect when a new service worker takes control and reload the page
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (refreshing) return;
+        refreshing = true;
+        console.log('[App] New service worker activated, reloading...');
+        window.location.reload();
       });
-    }
+
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('./sw.js')
+          .then(function(reg) {
+            console.log('[App] SW registered:', reg.scope);
+
+            // Check for updates immediately
+            reg.update();
+
+            // If there's a waiting worker, force it to activate
+            if (reg.waiting) {
+              console.log('[App] SW waiting, forcing activation...');
+              reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+              return;
+            }
+
+            // If there's an installing worker, wait for it to be ready
+            if (reg.installing) {
+              console.log('[App] SW installing...');
+              trackInstalling(reg.installing);
+              return;
+            }
+
+            // Listen for new updates
+            reg.addEventListener('updatefound', function() {
+              console.log('[App] SW update found');
+              trackInstalling(reg.installing);
+            });
+          })
+          .catch(function(err) {
+            console.error('[App] SW registration failed:', err);
+          });
+      });
+
+      function trackInstalling(worker) {
+        worker.addEventListener('statechange', function() {
+          console.log('[App] SW state changed to:', worker.state);
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New version is waiting, force activation
+            console.log('[App] New version installed, forcing activation...');
+            worker.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      }
+    })();
   </script>
 </body>
 </html>

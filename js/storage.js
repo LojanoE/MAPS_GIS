@@ -23,6 +23,11 @@ const MapStorage = (() => {
         return;
       }
 
+      if (!window.indexedDB) {
+        reject(new Error('IndexedDB no disponible. Es posible que estes en modo privado/incognito. Usa el modo normal del navegador.'));
+        return;
+      }
+
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onupgradeneeded = (event) => {
@@ -71,8 +76,23 @@ const MapStorage = (() => {
 
       const request = store.add(record);
 
-      request.onsuccess = () => resolve(record);
-      request.onerror = () => reject(new Error('Error al guardar el mapa'));
+      request.onsuccess = () => {
+        // Esperar a que la transaccion se complete realmente
+      };
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al guardar el mapa'));
+      };
+
+      transaction.oncomplete = () => resolve(record);
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en la transaccion de guardado'));
+      };
+      transaction.onabort = (e) => {
+        const err = transaction.error || new Error('Transaccion abortada. Posiblemente almacenamiento lleno.');
+        reject(err);
+      };
     });
   }
 
@@ -105,8 +125,23 @@ const MapStorage = (() => {
 
       const request = store.add(record);
 
-      request.onsuccess = () => resolve(record);
-      request.onerror = () => reject(new Error('Error al guardar el mapa PDF'));
+      request.onsuccess = () => {
+        // Esperar a que la transaccion se complete realmente
+      };
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al guardar el mapa PDF'));
+      };
+
+      transaction.oncomplete = () => resolve(record);
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en la transaccion de guardado PDF'));
+      };
+      transaction.onabort = (e) => {
+        const err = transaction.error || new Error('Transaccion abortada. Posiblemente almacenamiento lleno.');
+        reject(err);
+      };
     });
   }
 
@@ -122,8 +157,10 @@ const MapStorage = (() => {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.getAll();
 
+      let mapsResult = [];
+
       request.onsuccess = () => {
-        const maps = request.result.map(map => ({
+        mapsResult = request.result.map(map => ({
           id: map.id,
           name: map.name,
           size: map.size,
@@ -131,11 +168,21 @@ const MapStorage = (() => {
           thumbnail: map.thumbnail || null,
           createdAt: map.createdAt
         }));
-        maps.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        resolve(maps);
       };
 
-      request.onerror = () => reject(new Error('Error al obtener los mapas'));
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al obtener los mapas'));
+      };
+
+      transaction.oncomplete = () => {
+        mapsResult.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        resolve(mapsResult);
+      };
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de lectura'));
+      };
     });
   }
 
@@ -152,15 +199,28 @@ const MapStorage = (() => {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.get(id);
 
+      let result = null;
+
       request.onsuccess = () => {
-        if (request.result) {
-          resolve(request.result);
+        result = request.result;
+      };
+
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al obtener el mapa'));
+      };
+
+      transaction.oncomplete = () => {
+        if (result) {
+          resolve(result);
         } else {
           reject(new Error('Mapa no encontrado'));
         }
       };
-
-      request.onerror = () => reject(new Error('Error al obtener el mapa'));
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de lectura'));
+      };
     });
   }
 
@@ -187,8 +247,22 @@ const MapStorage = (() => {
       const store = transaction.objectStore(STORE_NAME);
       const request = store.delete(id);
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(new Error('Error al eliminar el mapa'));
+      request.onsuccess = () => {
+        // Esperar transaction.oncomplete
+      };
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al eliminar el mapa'));
+      };
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de eliminacion'));
+      };
+      transaction.onabort = () => {
+        reject(new Error('Transaccion de eliminacion abortada'));
+      };
     });
   }
 

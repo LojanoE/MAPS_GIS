@@ -473,16 +473,18 @@ const PDFProcessor = (() => {
    * Process a PDF file - main entry point
    */
   async function processPDF(arrayBuffer) {
-    // PDF.js may detach the ArrayBuffer when using web workers,
-    // so make a copy for metadata extraction
-    const arrayBufferCopy = arrayBuffer.slice(0);
+    // PDF.js con web worker puede "detachear" (transferir) el ArrayBuffer,
+    // dejandolo vacio en el hilo principal. Usamos una copia para PDF.js
+    // y conservamos el original para metadata y guardado.
+    const arrayBufferForPDF = arrayBuffer.slice(0);
+    const arrayBufferForMeta = arrayBuffer.slice(0);
 
-    const pdf = await loadPDF(arrayBuffer);
+    const pdf = await loadPDF(arrayBufferForPDF);
     const { canvas, width, height } = await renderPage(pdf, 2);
-    const geoPDF = await isGeoPDF(arrayBufferCopy);
+    const geoPDF = await isGeoPDF(arrayBufferForMeta);
 
     // Try to extract geo data
-    const geoData = await extractGeoData(arrayBufferCopy);
+    const geoData = await extractGeoData(arrayBufferForMeta);
 
     return {
       pdf,
