@@ -60,6 +60,9 @@ create table if not exists app_config (
 
 alter table app_config disable row level security;
 
+-- Habilitar Realtime para la tabla app_config (necesario para sincronizacion entre dispositivos)
+alter publication supabase_realtime add table app_config;
+
 -- Insertar valores de ejemplo por defecto
 insert into app_config (config_key, config_values) values
 ('tipo_muestra', '{"Suelo","Roca","Concreto","Asfalto","Agregado"}'),

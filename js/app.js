@@ -62,7 +62,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.2.3';
+const APP_VERSION = '1.2.4';
 
 // ============================================
 // APP STATE
@@ -288,16 +288,26 @@ const ConfigManager = {
       } else {
         console.warn('[Config] No data returned from Supabase');
       }
-      // Merge: keep local values that don't exist remotely (avoid data loss)
       const localCfg = this.getLocal();
+      let changed = false;
       CONFIG_KEYS.forEach(k => {
         const remoteVals = cfg[k] || [];
         const localVals = localCfg[k] || [];
         const merged = [...new Set([...remoteVals, ...localVals])];
         cfg[k] = merged;
       });
+      const localKeys = Object.keys(localCfg).sort().map(k => k + ':' + (localCfg[k] || []).join(',')).join('|');
+      const newKeys = Object.keys(cfg).sort().map(k => k + ':' + (cfg[k] || []).join(',')).join('|');
+      changed = localKeys !== newKeys;
       this.saveLocal(cfg);
-      console.log('[Config] Merged and saved locally');
+      if (changed) {
+        console.log('[Config] Remote changes detected, updating UI');
+        if (typeof renderConfigSections === 'function') {
+          try { renderConfigSections(); } catch(e) { console.warn('[Config] Error refreshing config UI:', e); }
+        }
+      } else {
+        console.log('[Config] No remote changes, local data is up to date');
+      }
       return true;
     } catch (e) {
       console.error('[Config] Download exception:', e);
@@ -333,6 +343,49 @@ const ConfigManager = {
     } catch (e) {
       console.error('[Config] Upload exception:', e);
       return false;
+    }
+  },
+
+  subscribeToRealtime() {
+    if (!supabaseClient) {
+      console.warn('[Config] No Supabase client, skipping Realtime subscription');
+      return;
+    }
+    try {
+      const channel = supabaseClient
+        .channel('app_config_changes')
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'app_config' },
+          (payload) => {
+            console.log('[Config] Realtime change detected:', payload.event, payload.new?.config_key);
+            ConfigManager.downloadFromSupabase();
+          }
+        )
+        .subscribe((status) => {
+          console.log('[Config] Realtime subscription status:', status);
+        });
+      ConfigManager._realtimeChannel = channel;
+      console.log('[Config] Subscribed to Realtime for app_config');
+    } catch (e) {
+      console.error('[Config] Realtime subscription failed:', e);
+    }
+  },
+
+  startPolling() {
+    this.stopPolling();
+    ConfigManager._pollInterval = setInterval(async () => {
+      if (navigator.onLine && supabaseClient) {
+        console.log('[Config] Polling for changes...');
+        await ConfigManager.downloadFromSupabase();
+      }
+    }, 5 * 60 * 1000);
+    console.log('[Config] Started polling every 5 minutes');
+  },
+
+  stopPolling() {
+    if (ConfigManager._pollInterval) {
+      clearInterval(ConfigManager._pollInterval);
+      ConfigManager._pollInterval = null;
     }
   }
 };
@@ -2837,11 +2890,20 @@ async function initApp() {
     } else {
       console.warn('[App] Config sync failed, using local data');
     }
-    // Try sync pending LSM markers
+    ConfigManager.subscribeToRealtime();
+    ConfigManager.startPolling();
     LSMSyncManager.syncPending();
   } else {
     console.warn('[App] No Supabase client - running in offline mode');
   }
+
+  // Re-sync config when user returns to the tab
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && supabaseClient && navigator.onLine) {
+      console.log('[App] Tab regained focus, syncing config...');
+      ConfigManager.downloadFromSupabase();
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', initApp);
