@@ -21,28 +21,94 @@ const SUPABASE_URL = 'https://dzmhhlsttqygjvfabdxx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6bWhobHN0dHF5Z2p2ZmFiZHh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTE3MDAsImV4cCI6MjA5MDcyNzcwMH0._Gf0G2gpV_9QAYqFx1Kn6TN0lFDq3LxmBdNI82Suj-o';
 let supabaseClient = null;
 
-function initSupabase() {
-  if (typeof window.supabase === 'undefined') {
-    console.warn('[Supabase] Client library not loaded. Trying alternate access...');
-    // Try the global that the UMD bundle creates
-    if (typeof window.Supabase === 'undefined' && typeof window.supabaseJs === 'undefined') {
-      console.error('[Supabase] No Supabase client found at all. Offline mode enabled.');
-      return null;
+function getSupabaseCreateClient() {
+  // The UMD bundle can expose supabase in multiple ways depending on CDN and version
+  const candidates = [
+    window.supabase?.createClient,
+    typeof window.supabase === 'function' ? window.supabase : null,
+    window.Supabase?.createClient,
+    typeof window.Supabase === 'function' ? window.Supabase : null,
+    window.supabaseJs?.createClient,
+    typeof window.supabaseJs === 'function' ? window.supabaseJs : null,
+    window.createClient
+  ];
+  for (const fn of candidates) {
+    if (typeof fn === 'function') {
+      // Verify it looks like the Supabase createClient by checking its name or a quick test
+      return fn;
     }
   }
+  return null;
+}
+
+async function waitForSupabaseScript(maxWaitMs = 10000, intervalMs = 250) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const fn = getSupabaseCreateClient();
+    if (fn) return fn;
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  return null;
+}
+
+async function initSupabase() {
+  console.log('[Supabase] Initializing...');
+  const createClient = await waitForSupabaseScript();
+  if (!createClient) {
+    console.error('[Supabase] createClient not found after waiting. Offline mode enabled.');
+    showToast('No se pudo cargar el cliente de Supabase. Modo offline.', 'error');
+    supabaseClient = null;
+    return null;
+  }
   try {
-    // The UMD bundle exposes supabase at window.supabase.createClient
-    const createClient = window.supabase?.createClient || window.Supabase?.createClient || window.supabaseJs?.createClient;
-    if (!createClient) {
-      console.error('[Supabase] createClient not found');
-      return null;
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false },
+      db: { schema: 'public' }
+    });
+    console.log('[Supabase] Client created. Testing connection...');
+    // Quick connectivity test
+    const testResult = await pingSupabase();
+    if (testResult.ok) {
+      console.log('[Supabase] Connected and reachable. Tables:', testResult.tables);
+      showToast('Conectado a Supabase', 'success');
+    } else {
+      console.warn('[Supabase] Client created but ping failed:', testResult.error);
+      showToast('Cliente creado pero sin conexion a la base de datos', 'error');
     }
-    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    console.log('[Supabase] Client initialized successfully');
     return supabaseClient;
   } catch (e) {
     console.error('[Supabase] Failed to initialize:', e);
+    showToast('Error al inicializar Supabase: ' + e.message, 'error');
+    supabaseClient = null;
     return null;
+  }
+}
+
+async function pingSupabase() {
+  if (!supabaseClient) return { ok: false, error: 'No client' };
+  try {
+    const { data, error } = await supabaseClient
+      .from('app_config')
+      .select('config_key')
+      .limit(1);
+    if (error) {
+      return { ok: false, error: error.message, code: error.code };
+    }
+    // Also check lsm_markers
+    const { data: lsmData, error: lsmError } = await supabaseClient
+      .from('lsm_markers')
+      .select('id')
+      .limit(1);
+    return {
+      ok: true,
+      tables: {
+        app_config: !error,
+        lsm_markers: !lsmError
+      },
+      lsmError: lsmError ? lsmError.message : null
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
   }
 }
 
@@ -2584,16 +2650,16 @@ function loadThemePreference() {
 
 function updateOnlineStatus() {
   const badge = document.getElementById('online-status');
-  if (navigator.onLine) {
-    if (supabaseClient) {
-      badge.textContent = 'En linea + Sync';
-      badge.className = 'status-badge online';
-    } else {
-      badge.textContent = 'En linea (local)';
-      badge.className = 'status-badge online';
-    }
-  } else {
+  if (!navigator.onLine) {
     badge.textContent = 'Sin conexion';
+    badge.className = 'status-badge offline';
+    return;
+  }
+  if (supabaseClient) {
+    badge.textContent = 'En linea + Sync';
+    badge.className = 'status-badge online';
+  } else {
+    badge.textContent = 'En linea (sin DB)';
     badge.className = 'status-badge offline';
   }
 }
@@ -2811,8 +2877,13 @@ function initEventListeners() {
   });
 
   // Online status + sync
-  window.addEventListener('online', () => {
+  window.addEventListener('online', async () => {
     updateOnlineStatus();
+    if (!supabaseClient) {
+      console.log('[App] Back online, attempting to reconnect to Supabase...');
+      await initSupabase();
+      updateOnlineStatus();
+    }
     LSMSyncManager.syncPending();
   });
   window.addEventListener('offline', updateOnlineStatus);
@@ -2829,6 +2900,10 @@ function openConfigModal() {
     updateConfigAccountTab();
     renderAdminPanel();
     document.getElementById('config-modal').classList.remove('hidden');
+    // Warn if no Supabase connection
+    if (!supabaseClient) {
+      showToast('Sin conexion a Supabase. Los cambios solo se guardaran localmente.', 'warning');
+    }
     // Auto-download on open
     if (supabaseClient && navigator.onLine) {
       ConfigManager.downloadFromSupabase().then(ok => {
@@ -2915,7 +2990,12 @@ function closeConfigLoginModal() {
 
 function attemptConfigLogin() {
   const pwd = document.getElementById('config-login-password').value;
+  if (!pwd) {
+    showToast('Ingresa la contrasena', 'error');
+    return;
+  }
   if (pwd === ADMIN_PASS) {
+    console.log('[Config] Login successful');
     AdminManager.login(pwd);
     closeConfigLoginModal();
     AppState.isAdmin = true;
@@ -2923,13 +3003,16 @@ function attemptConfigLogin() {
     updateConfigAccountTab();
     renderAdminPanel();
     document.getElementById('config-modal').classList.remove('hidden');
+    // Show connection status
+    if (!supabaseClient) {
+      showToast('Admin activado pero sin conexion a Supabase', 'warning');
+    } else {
+      showToast('Admin activado. Conectado a Supabase.', 'success');
+    }
   } else {
+    console.warn('[Config] Login failed - incorrect password');
     showToast('Contrasena incorrecta', 'error');
   }
-}
-
-function closeConfigModal() {
-  document.getElementById('config-modal').classList.add('hidden');
 }
 
 function updateConfigAccountTab() {
@@ -2966,7 +3049,7 @@ function renderConfigSections() {
       '</div>' +
       '<div class="config-section-body">' +
         '<div class="config-tag-list">' + values.map(v =>
-          '<span class="config-tag">' + escapeHtml(v) + '<button data-val="' + escapeHtml(v) + '">&times;</button></span>'
+          '<span class="config-tag">' + escapeHtml(v) + '<button data-val="' + v.replace(/"/g, '&quot;') + '">&times;</button></span>'
         ).join('') + '</div>' +
         '<div class="config-input-row">' +
           '<input type="text" placeholder="Nueva opcion..." maxlength="50">' +
@@ -3016,7 +3099,7 @@ function renderConfigSections() {
 async function initApp() {
   loadThemePreference();
   updateOnlineStatus();
-  initSupabase();
+  await initSupabase();
   updateOnlineStatus();
   initEventListeners();
   await loadMapsList();
@@ -3046,4 +3129,8 @@ async function initApp() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', initApp);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp);
+} else {
+  initApp();
+}

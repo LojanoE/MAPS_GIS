@@ -729,8 +729,35 @@
   <!-- PDF Processor -->
   <script src="js/pdf-processor.js"></script>
 
-  <!-- App Main Logic -->
-  <script src="js/app.js"></script>
+  <!-- App Main Logic - loaded dynamically after Supabase is confirmed -->
+  <script>
+    (function loadAppWhenSupabaseReady() {
+      var maxAttempts = 40;
+      var attempts = 0;
+      function checkAndLoad() {
+        var hasSupabase = !!(window.supabase || window.Supabase || window.supabaseJs);
+        if (hasSupabase) {
+          console.log('[Loader] Supabase detected, loading app.js...');
+          var s = document.createElement('script');
+          s.src = 'js/app.js';
+          s.onerror = function() { console.error('[Loader] Failed to load app.js'); };
+          document.body.appendChild(s);
+          return;
+        }
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(checkAndLoad, 250);
+        } else {
+          console.warn('[Loader] Supabase not detected after ' + (maxAttempts * 250) + 'ms, loading app.js anyway (offline mode)');
+          var s = document.createElement('script');
+          s.src = 'js/app.js';
+          s.onerror = function() { console.error('[Loader] Failed to load app.js'); };
+          document.body.appendChild(s);
+        }
+      }
+      checkAndLoad();
+    })();
+  </script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>
