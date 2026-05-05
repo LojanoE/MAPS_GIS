@@ -84,7 +84,7 @@
         </div>
       </section>
 
-      <!-- Jalar datos desde Base de Datos -->
+      <!-- Descargar datos desde Base de Datos -->
       <section class="sync-section">
         <button id="btn-home-pull" class="btn-sync-home">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -92,14 +92,26 @@
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          Jalar datos desde Base de Datos
+          Descargar datos desde Base de Datos
         </button>
         <span id="home-sync-status" class="sync-status"></span>
+      </section>
+
+      <!-- Forzar Actualización Completa -->
+      <section class="sync-section">
+        <button id="btn-home-refresh" class="btn-sync-home" style="background:rgba(248,81,73,0.15);color:var(--danger);border-color:rgba(248,81,73,0.3)">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+          </svg>
+          Forzar Actualización Completa
+        </button>
+        <span id="home-refresh-status" class="sync-status"></span>
       </section>
     </main>
 
     <footer class="app-footer">
-      <span id="app-version">v1.5.0</span>
+      <span id="app-version">v1.5.1</span>
       <span id="storage-info"></span>
     </footer>
   </div>
@@ -636,14 +648,6 @@
             </svg>
             Subir a Supabase
           </button>
-          <button id="btn-config-pull" class="btn-secondary btn-sm">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            Jalar de Supabase
-          </button>
           <span id="config-sync-status" class="sync-status"></span>
         </div>
         <div class="config-sections" id="config-sections"></div>
@@ -658,10 +662,6 @@
           </div>
         </div>
         <p class="config-hint">Los marcadores LSM se asocian a este nickname. Puedes cambiarlo en cualquier momento desde el mapa.</p>
-        <div class="form-group" style="margin-top:16px">
-          <button id="btn-force-refresh" class="btn-danger btn-sm" style="width:100%">Forzar Actualizacion Completa</button>
-          <p class="config-hint" style="margin-top:4px">Limpia datos locales y descarga todo de la base de datos. No se pierden mapas ni fotos.</p>
-        </div>
       </div>
 
       <div id="config-tab-admin" class="config-tab-content">

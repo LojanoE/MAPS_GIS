@@ -120,7 +120,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 
 // ============================================
 // APP STATE
@@ -3003,14 +3003,14 @@ function initEventListeners() {
     }
   });
 
-  // Home: pull from Supabase
+  // Home: download from Supabase
   document.getElementById('btn-home-pull').addEventListener('click', pullConfigFromHome);
+  document.getElementById('btn-home-refresh').addEventListener('click', forceFullRefresh);
 
   // Config modal
   document.getElementById('btn-config').addEventListener('click', openConfigModal);
   document.getElementById('btn-close-config').addEventListener('click', closeConfigModal);
   document.getElementById('btn-config-sync').addEventListener('click', syncConfigWithSupabase);
-  document.getElementById('btn-config-pull').addEventListener('click', pullConfigFromSupabase);
   document.getElementById('btn-close-config-login').addEventListener('click', closeConfigLoginModal);
   document.getElementById('btn-config-login-cancel').addEventListener('click', closeConfigLoginModal);
   document.getElementById('btn-config-login-enter').addEventListener('click', attemptConfigLogin);
@@ -3030,7 +3030,6 @@ function initEventListeners() {
     updateConfigAccountTab();
     showToast('Sesion LSM cerrada', 'info');
   });
-  document.getElementById('btn-force-refresh').addEventListener('click', forceFullRefresh);
 
   // Online status + sync
   window.addEventListener('online', () => {
@@ -3100,33 +3099,39 @@ async function syncConfigWithSupabase() {
 
 async function pullConfigFromSupabase() {
   const statusEl = document.getElementById('config-sync-status');
-  const btn = document.getElementById('btn-config-pull');
-  if (!statusEl || !btn) return;
   if (!supabaseClient) {
     showToast('No hay conexion con Supabase', 'error');
     return;
   }
-  btn.disabled = true;
-  statusEl.textContent = 'Descargando...';
-  statusEl.className = 'sync-status syncing';
+  if (statusEl) {
+    statusEl.textContent = 'Descargando...';
+    statusEl.className = 'sync-status syncing';
+  }
   try {
     const ok = await ConfigManager.downloadFromSupabase(true);
     if (ok) {
-      statusEl.textContent = 'Descargado!';
-      statusEl.className = 'sync-status success';
+      if (statusEl) {
+        statusEl.textContent = 'Descargado!';
+        statusEl.className = 'sync-status success';
+      }
       showToast('Config descargada de Supabase', 'success');
     } else {
-      statusEl.textContent = 'Sin cambios';
-      statusEl.className = 'sync-status';
+      if (statusEl) {
+        statusEl.textContent = 'Sin cambios';
+        statusEl.className = 'sync-status';
+      }
     }
   } catch (e) {
     console.error('[Config] Pull failed:', e);
-    statusEl.textContent = 'Error al descargar';
-    statusEl.className = 'sync-status error';
+    if (statusEl) {
+      statusEl.textContent = 'Error al descargar';
+      statusEl.className = 'sync-status error';
+    }
     showToast('Error al descargar', 'error');
   } finally {
-    btn.disabled = false;
-    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+    if (statusEl) {
+      setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+    }
   }
 }
 
@@ -3185,7 +3190,14 @@ async function forceFullRefresh() {
   if (!confirm('Esto limpiara los datos locales y descargara todo de la base de datos.\n\nNo se perderan los mapas ni fotos guardados.\n\nContinuar?')) {
     return;
   }
-  showToast('Forzando actualizacion completa...', 'info');
+
+  const btn = document.getElementById('btn-home-refresh');
+  const statusEl = document.getElementById('home-refresh-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) {
+    statusEl.textContent = 'Actualizando...';
+    statusEl.className = 'sync-status syncing';
+  }
 
   const savedNickname = LSMUserManager.getNickname();
 
@@ -3204,12 +3216,23 @@ async function forceFullRefresh() {
 
     if (AppState.markersLayer) refreshMarkersOnMap();
     updateMarkerCountBadge();
-    renderConfigSections();
-    updateConfigAccountTab();
+    if (statusEl) {
+      statusEl.textContent = 'Listo!';
+      statusEl.className = 'sync-status success';
+    }
     showToast('Actualizacion completa finalizada', 'success');
   } catch (e) {
     console.error('[FullRefresh] Error:', e);
+    if (statusEl) {
+      statusEl.textContent = 'Error';
+      statusEl.className = 'sync-status error';
+    }
     showToast('Error en la actualizacion: ' + (e.message || 'Desconocido'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (statusEl) {
+      setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+    }
   }
 }
 
@@ -3305,6 +3328,10 @@ function renderConfigSections() {
       btn.addEventListener('click', async () => {
         ConfigManager.removeValue(key, btn.dataset.val);
         renderConfigSections();
+        // Auto-upload to Supabase
+        if (supabaseClient && navigator.onLine) {
+          await ConfigManager.uploadToSupabase();
+        }
       });
     });
 
@@ -3315,6 +3342,10 @@ function renderConfigSections() {
       if (ConfigManager.addValue(key, input.value)) {
         input.value = '';
         renderConfigSections();
+        // Auto-upload to Supabase
+        if (supabaseClient && navigator.onLine) {
+          await ConfigManager.uploadToSupabase();
+        }
       } else {
         showToast('Opcion duplicada o vacia', 'error');
       }
