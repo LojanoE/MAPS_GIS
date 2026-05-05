@@ -120,7 +120,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.5.5';
+const APP_VERSION = '1.6.0';
 
 // ============================================
 // APP STATE
@@ -312,7 +312,7 @@ const LSMUserManager = {
 };
 
 // ============================================
-// CONFIG MANAGER (Dropdown lists + Supabase sync)
+// CONFIG MANAGER (Simple: localStorage + Supabase overwrite)
 // ============================================
 const CONFIG_KEY = 'maps_gis_config_v2';
 const CONFIG_KEYS = [
@@ -322,12 +322,7 @@ const CONFIG_KEYS = [
   'fuente', 'ensayos'
 ];
 
-const DELETED_CONFIG_KEY = 'maps_gis_deleted_config';
-
 const ConfigManager = {
-  _syncing: false,
-  _localVersion: 0,
-
   getLocal() {
     try {
       return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
@@ -338,23 +333,6 @@ const ConfigManager = {
 
   saveLocal(config) {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
-    this._localVersion++;
-  },
-
-  getDeletedValues() {
-    try {
-      return JSON.parse(localStorage.getItem(DELETED_CONFIG_KEY)) || {};
-    } catch {
-      return {};
-    }
-  },
-
-  saveDeletedValues(deleted) {
-    localStorage.setItem(DELETED_CONFIG_KEY, JSON.stringify(deleted));
-  },
-
-  clearDeletedValues() {
-    localStorage.removeItem(DELETED_CONFIG_KEY);
   },
 
   getValues(key) {
@@ -364,73 +342,33 @@ const ConfigManager = {
 
   addValue(key, value) {
     const trimmed = (value || '').trim();
-    if (!trimmed) {
-      console.log('[Config] addValue: empty value');
-      return false;
-    }
+    if (!trimmed) return false;
     const cfg = this.getLocal();
     if (!Array.isArray(cfg[key])) cfg[key] = [];
-    if (cfg[key].includes(trimmed)) {
-      console.log('[Config] addValue: duplicate', key, '=', trimmed);
-      return false;
-    }
+    if (cfg[key].includes(trimmed)) return false;
     cfg[key].push(trimmed);
     this.saveLocal(cfg);
-    console.log('[Config] addValue: added', key, '=', trimmed, 'total:', cfg[key].length);
-    // Remove from deleted tracking if it was previously deleted
-    const deleted = this.getDeletedValues();
-    if (deleted[key]) {
-      const before = deleted[key].length;
-      deleted[key] = deleted[key].filter(v => v !== trimmed);
-      if (deleted[key].length !== before) {
-        this.saveDeletedValues(deleted);
-        console.log('[Config] addValue: removed from deleted tracking', key, '=', trimmed);
-      }
-    }
     return true;
   },
 
   removeValue(key, value) {
     const cfg = this.getLocal();
-    if (!Array.isArray(cfg[key])) {
-      console.log('[Config] removeValue: key not array', key);
-      return false;
-    }
+    if (!Array.isArray(cfg[key])) return false;
     const before = cfg[key].length;
     cfg[key] = cfg[key].filter(v => v !== value);
-    const after = cfg[key].length;
-    if (before === after) {
-      console.log('[Config] removeValue: value not found', key, '=', value);
-      return false;
-    }
+    if (before === cfg[key].length) return false;
     this.saveLocal(cfg);
-    console.log('[Config] removeValue: removed', key, '=', value, 'before:', before, 'after:', after);
-    // Track deletion so it doesn't come back on download
-    const deleted = this.getDeletedValues();
-    if (!deleted[key]) deleted[key] = [];
-    if (!deleted[key].includes(value)) deleted[key].push(value);
-    this.saveDeletedValues(deleted);
     return true;
   },
 
-
-  async downloadFromSupabase(force = false) {
+  // Download from Supabase - OVERWRITE local completely
+  async downloadFromSupabase() {
     if (!supabaseClient) {
       console.warn('[Config] No Supabase client');
       return false;
     }
-    if (ConfigManager._syncing) {
-      console.log('[Config] Sync in progress');
-      return false;
-    }
-    const configModal = document.getElementById('config-modal');
-    if (configModal && !configModal.classList.contains('hidden') && !force) {
-      console.log('[Config] Config modal open, frozen (use force=true to override)');
-      return false;
-    }
-    ConfigManager._syncing = true;
     try {
-      console.log('[Config] Downloading from Supabase... force=' + force);
+      console.log('[Config] Downloading from Supabase...');
       const { data, error } = await supabaseClient
         .from('app_config')
         .select('config_key, config_values');
@@ -442,9 +380,6 @@ const ConfigManager = {
         console.warn('[Config] No data from Supabase');
         return false;
       }
-      data.forEach(row => {
-        console.log('[Config] Row:', row.config_key, '=', JSON.stringify(row.config_values), 'length:', Array.isArray(row.config_values) ? row.config_values.length : 0);
-      });
       const remoteCfg = {};
       data.forEach(row => {
         remoteCfg[row.config_key] = parsePostgresArray(row.config_values);
@@ -452,46 +387,8 @@ const ConfigManager = {
       CONFIG_KEYS.forEach(k => {
         if (!remoteCfg[k]) remoteCfg[k] = [];
       });
-
-      if (force) {
-        // Force mode (button "Download from DB"): OVERWRITE local with remote, no merge
-        console.log('[Config] FORCE MODE: overwriting local with remote');
-        this.saveLocal(remoteCfg);
-        this.clearDeletedValues();
-        console.log('[Config] Saved fresh from remote, deleted tracking cleared');
-      } else {
-        // Normal mode (polling/realtime): merge with tracking
-        const localCfg = this.getLocal();
-        const deleted = this.getDeletedValues();
-        const mergedCfg = {};
-        CONFIG_KEYS.forEach(k => {
-          const localVals = Array.isArray(localCfg[k]) ? localCfg[k] : [];
-          const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
-          const merged = [...localVals];
-          remoteVals.forEach(v => {
-            if (!merged.includes(v)) merged.push(v);
-          });
-          if (deleted[k] && deleted[k].length > 0) {
-            mergedCfg[k] = merged.filter(v => !deleted[k].includes(v));
-          } else {
-            mergedCfg[k] = merged;
-          }
-        });
-        CONFIG_KEYS.forEach(k => {
-          const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
-          if (deleted[k] && deleted[k].length > 0) {
-            const before = deleted[k].length;
-            deleted[k] = deleted[k].filter(v => remoteVals.includes(v));
-            if (deleted[k].length !== before) {
-              console.log('[Config] Cleaned deleted tracking for', k, ': removed', before - deleted[k].length, 'values');
-            }
-          }
-        });
-        this.saveDeletedValues(deleted);
-        this.saveLocal(mergedCfg);
-      }
-
-      console.log('[Config] Downloaded and saved', Object.keys(remoteCfg).length, 'keys');
+      this.saveLocal(remoteCfg);
+      console.log('[Config] Overwritten local with remote. Keys:', Object.keys(remoteCfg).length);
       if (typeof renderConfigSections === 'function') {
         try { renderConfigSections(); } catch(e) { console.error('[Config] Render error:', e); }
       }
@@ -499,127 +396,36 @@ const ConfigManager = {
     } catch (e) {
       console.error('[Config] Download exception:', e);
       return false;
-    } finally {
-      ConfigManager._syncing = false;
     }
   },
 
+  // Upload to Supabase - OVERWRITE remote completely
   async uploadToSupabase() {
     if (!supabaseClient) {
       console.warn('[Config] No Supabase client');
       return false;
     }
-    if (ConfigManager._syncing) {
-      setTimeout(() => ConfigManager.uploadToSupabase(), 500);
-      return false;
-    }
-    ConfigManager._syncing = true;
     try {
-      // First, download remote config
-      const { data: remoteData, error: fetchError } = await supabaseClient
-        .from('app_config')
-        .select('config_key, config_values');
-      const remoteCfg = {};
-      if (!fetchError && remoteData) {
-        remoteData.forEach(row => {
-          remoteCfg[row.config_key] = parsePostgresArray(row.config_values);
-        });
-      }
-
-      const localCfg = this.getLocal();
-      const deleted = this.getDeletedValues();
-      const mergedCfg = {};
-
-      CONFIG_KEYS.forEach(k => {
-        const localVals = Array.isArray(localCfg[k]) ? localCfg[k] : [];
-        const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
-        // Start with LOCAL values (source of truth for this device)
-        const merged = [...localVals];
-        // Add remote values that are not in local AND not deleted
-        remoteVals.forEach(v => {
-          if (!merged.includes(v) && !(deleted[k] && deleted[k].includes(v))) {
-            merged.push(v);
-          }
-        });
-        mergedCfg[k] = merged;
-      });
-
-      // Save merged locally too
-      this.saveLocal(mergedCfg);
-
+      const cfg = this.getLocal();
       const updates = CONFIG_KEYS.map(k => ({
         config_key: k,
-        config_values: mergedCfg[k] || [],
+        config_values: cfg[k] || [],
         updated_at: new Date().toISOString()
       }));
-      console.log('[Config] Uploading merged', updates.length, 'keys...');
-      const { data, error } = await supabaseClient
+      console.log('[Config] Uploading to Supabase...');
+      const { error } = await supabaseClient
         .from('app_config')
         .upsert(updates, { onConflict: 'config_key' });
       if (error) {
         console.error('[Config] Upload error:', error.message);
-        showToast('Error al subir: ' + error.message, 'error');
         return false;
       }
       console.log('[Config] Upload OK');
-      showToast('Config subida correctamente', 'success');
       return true;
     } catch (e) {
       console.error('[Config] Upload exception:', e);
       return false;
-    } finally {
-      ConfigManager._syncing = false;
     }
-  },
-
-  subscribeToRealtime() {
-    if (!supabaseClient) {
-      console.warn('[Config] No Supabase client, skipping Realtime subscription');
-      return;
-    }
-    try {
-      if (ConfigManager._realtimeChannel) {
-        try { supabaseClient.removeChannel(ConfigManager._realtimeChannel); } catch(e) {}
-      }
-      const channel = supabaseClient
-        .channel('app_config_changes')
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'app_config' },
-          () => {
-            console.log('[Config] Realtime change detected, scheduling download...');
-            clearTimeout(ConfigManager._realtimeDebounce);
-            ConfigManager._realtimeDebounce = setTimeout(() => {
-              ConfigManager.downloadFromSupabase();
-            }, 1000);
-          }
-        )
-        .subscribe((status) => {
-          console.log('[Config] Realtime subscription status:', status);
-        });
-      ConfigManager._realtimeChannel = channel;
-      console.log('[Config] Subscribed to Realtime for app_config');
-    } catch (e) {
-      console.error('[Config] Realtime subscription failed:', e);
-    }
-  },
-
-  startPolling() {
-    this.stopPolling();
-    ConfigManager._pollInterval = setInterval(async () => {
-      if (navigator.onLine && supabaseClient) {
-        console.log('[Config] Polling for changes...');
-        await ConfigManager.downloadFromSupabase();
-      }
-    }, 30 * 1000);
-    console.log('[Config] Started polling every 30 seconds');
-  },
-
-  stopPolling() {
-    if (ConfigManager._pollInterval) {
-      clearInterval(ConfigManager._pollInterval);
-      ConfigManager._pollInterval = null;
-    }
-    console.log('[Config] Stopped polling');
   }
 };
 
@@ -628,32 +434,12 @@ const ConfigManager = {
 // ============================================
 const LSMSyncManager = {
   async shouldUpload() {
-    // Always try if online
     if (!navigator.onLine) return false;
-    // Check network type - but don't block if unknown
-    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-    if (conn && conn.effectiveType) {
-      const good = ['4g', '5g'].includes(conn.effectiveType);
-      if (!good) {
-        console.log('[Sync] Network type:', conn.effectiveType, '- not uploading');
-        return false;
-      }
-    }
-    // Quick ping to Supabase
-    if (!supabaseClient) {
-      console.log('[Sync] No Supabase client');
-      return false;
-    }
+    if (!supabaseClient) return false;
     try {
-      const { data, error } = await supabaseClient.from('app_config').select('id').limit(1);
-      if (error) {
-        console.log('[Sync] Supabase ping error:', error.message);
-        return false;
-      }
-      console.log('[Sync] Supabase is reachable, can upload');
-      return true;
+      const { error } = await supabaseClient.from('app_config').select('id').limit(1);
+      return !error;
     } catch (e) {
-      console.log('[Sync] Supabase unreachable:', e.message);
       return false;
     }
   },
@@ -684,13 +470,11 @@ const LSMSyncManager = {
         fuente: marker.lsmData?.fuente || null,
         ensayos: marker.lsmData?.ensayos || []
       };
-      console.log('[Sync] Uploading marker to Supabase:', data.nombre_muestra);
-      const { data: result, error } = await supabaseClient.from('lsm_markers').insert(data).select();
+      const { error } = await supabaseClient.from('lsm_markers').insert(data);
       if (error) {
-        console.error('[Sync] Insert error:', error.message, error.code, error.details, error.hint);
+        console.error('[Sync] Insert error:', error.message);
         return false;
       }
-      console.log('[Sync] Upload successful:', result);
       return true;
     } catch (e) {
       console.error('[Sync] Upload exception:', e);
@@ -702,7 +486,6 @@ const LSMSyncManager = {
     const markers = MarkerManager.getAll().filter(m => m.markerType === 'lsm' && m.pendingUpload);
     if (markers.length === 0) return;
     if (!await this.shouldUpload()) return;
-
     showToast('Sincronizando ' + markers.length + ' muestra(s)...', 'info');
     let success = 0;
     for (const marker of markers) {
@@ -713,48 +496,34 @@ const LSMSyncManager = {
       }
     }
     if (success > 0) {
-      showToast(success + ' muestra(s) subidas a la nube', 'success');
+      showToast(success + ' muestra(s) subidas', 'success');
     }
   },
 
   async syncMarkersFromSupabase() {
-    if (!supabaseClient) {
-      console.warn('[Sync] No Supabase client');
-      return false;
-    }
+    if (!supabaseClient) return false;
     const nickname = LSMUserManager.getNickname();
-    if (!nickname) {
-      console.log('[Sync] No nickname set, skipping marker download');
-      return false;
-    }
+    if (!nickname) return false;
     try {
-      console.log('[Sync] Downloading LSM markers for nickname:', nickname);
       const { data, error } = await supabaseClient
         .from('lsm_markers')
         .select('*')
         .eq('nickname', nickname)
         .order('created_at', { ascending: true });
-
       if (error) {
         console.error('[Sync] Download markers error:', error.message);
         return false;
       }
-      if (!data || data.length === 0) {
-        console.log('[Sync] No markers found for nickname:', nickname);
-        return true;
-      }
+      if (!data || data.length === 0) return true;
 
       const markers = MarkerManager.getAll();
       const localById = {};
       markers.forEach(m => { localById[m.id] = m; });
 
-      let updated = 0;
-      let created = 0;
-
+      let updated = 0, created = 0;
       data.forEach(remote => {
         const localId = remote.local_marker_id;
         const local = localId ? localById[localId] : null;
-
         const lsmData = {
           tipoMuestra: remote.tipo_muestra || '',
           nombreProyecto: remote.nombre_proyecto || '',
@@ -767,9 +536,8 @@ const LSMSyncManager = {
           proveniencia: remote.proveniencia || '',
           localizacion: remote.localizacion || '',
           fuente: remote.fuente || '',
-          ensayos: Array.isArray(remote.ensayos) ? remote.ensayos : (typeof remote.ensayos === 'string' ? parsePostgresArray(remote.ensayos) : [])
+          ensayos: Array.isArray(remote.ensayos) ? remote.ensayos : []
         };
-
         if (local) {
           MarkerManager.update(local.id, {
             name: (remote.nombre_muestra || '').trim(),
@@ -787,8 +555,7 @@ const LSMSyncManager = {
           created++;
         }
       });
-
-      console.log('[Sync] Markers synced:', updated, 'updated,', created, 'created from', data.length, 'remote');
+      console.log('[Sync] Markers synced:', updated, 'updated,', created, 'new');
       return true;
     } catch (e) {
       console.error('[Sync] Download markers exception:', e);
@@ -839,27 +606,23 @@ const AdminManager = {
 
   async fetchAllMarkers() {
     if (!supabaseClient) {
-      console.error('[Admin] No Supabase client available');
       showToast('No hay conexion con la base de datos', 'error');
       return [];
     }
     try {
-      console.log('[Admin] Fetching all LSM markers from Supabase...');
       const { data, error } = await supabaseClient
         .from('lsm_markers')
         .select('*')
         .order('created_at', { ascending: false });
       if (error) {
-        console.error('[Admin] Supabase query error:', error.message, error.code, error.details, error.hint);
+        console.error('[Admin] Error:', error.message);
         showToast('Error de base de datos: ' + error.message, 'error');
         return [];
       }
-      console.log('[Admin] Fetched', data ? data.length : 0, 'markers from Supabase');
       adminMarkersCache = data || [];
       return data || [];
     } catch (e) {
       console.error('[Admin] Fetch exception:', e);
-      showToast('Error al descargar datos: ' + e.message, 'error');
       return [];
     }
   },
@@ -879,14 +642,12 @@ const AdminManager = {
     this.stopAutoRefresh();
     AdminManager._refreshInterval = setInterval(async () => {
       if (!AppState.isAdmin || !supabaseClient) return;
-      console.log('[Admin] Auto-refreshing markers...');
       await AdminManager.fetchAllMarkers();
       if (AppState.isAdmin) {
         addAdminMarkersToMap();
         renderAdminPanel();
       }
     }, 60000);
-    console.log('[Admin] Auto-refresh started (60s)');
   },
 
   stopAutoRefresh() {
@@ -894,7 +655,6 @@ const AdminManager = {
       clearInterval(AdminManager._refreshInterval);
       AdminManager._refreshInterval = null;
     }
-    console.log('[Admin] Auto-refresh stopped');
   }
 };
 
@@ -903,13 +663,8 @@ async function activateAdmin(password) {
     showToast('Contrasena incorrecta', 'error');
     return;
   }
-  showToast('Modo Admin activado. Descargando datos...', 'info');
-  const markers = await AdminManager.fetchAllMarkers();
-  if (markers.length === 0) {
-    showToast('No hay muestras LSM en la base de datos', 'info');
-  } else {
-    showToast(markers.length + ' muestras LSM descargadas', 'success');
-  }
+  showToast('Modo Admin activado', 'info');
+  await AdminManager.fetchAllMarkers();
   renderAdminPanel();
   updateConfigAccountTab();
   addAdminMarkersToMap();
@@ -929,47 +684,22 @@ function deactivateAdmin() {
 function addAdminMarkersToMap(filterNickname) {
   if (!AppState.map) return;
   removeAdminMarkersFromMap();
-
   if (!AppState.adminMarkersLayer) {
     AppState.adminMarkersLayer = L.layerGroup();
   }
   AppState.adminMarkersLayer.clearLayers();
-
-  const markers = filterNickname
-    ? AdminManager.filterByNickname(filterNickname)
-    : adminMarkersCache;
-
+  const markers = filterNickname ? AdminManager.filterByNickname(filterNickname) : adminMarkersCache;
   markers.forEach(m => {
     const color = MARKER_COLORS[m.color]?.hex || '#58a6ff';
     const initial = (m.nombre_muestra || 'X').charAt(0).toUpperCase();
     const icon = L.divIcon({
       className: '',
-      html: '<div class="custom-marker-pin admin-marker-pin">' +
-        '<svg viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg">' +
-          '<path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 24 16 24s16-12 16-24C32 7.16 24.84 0 16 0z" fill="' + color + '"/>' +
-          '<circle cx="16" cy="15" r="10" fill="rgba(255,255,255,0.3)"/>' +
-          '<text x="16" y="19" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold" font-family="sans-serif">' + initial + '</text>' +
-        '</svg>' +
-      '</div>',
+      html: '<div class="custom-marker-pin admin-marker-pin"><svg viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg"><path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 24 16 24s16-12 16-24C32 7.16 24.84 0 16 0z" fill="' + color + '"/></svg></div>',
       iconSize: [32, 40],
-      iconAnchor: [16, 40],
-      popupAnchor: [0, -40]
+      iconAnchor: [16, 40]
     });
-
-    const ensayos = (m.ensayos || []).join(', ');
-    const popupContent =
-      '<div style="min-width:180px;padding:6px;font-size:0.8rem;">' +
-      '<strong>' + escapeHtml(m.nombre_muestra || '') + '</strong> <span style="background:#58a6ff;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.65rem;">LSM</span><br>' +
-      '<span style="color:#666;">' + escapeHtml(m.nickname || '') + ' | ' + formatDate(m.created_at) + '</span><br>' +
-      '<span style="color:#666;font-size:0.7rem;">N: ' + (m.norte || '') + ' | E: ' + (m.este || '') + '</span>' +
-      (ensayos ? '<br><span style="color:#666;font-size:0.7rem;">Ensayos: ' + escapeHtml(ensayos) + '</span>' : '') +
-      '</div>';
-
-    L.marker([m.lat, m.lng], { icon: icon })
-      .bindPopup(popupContent)
-      .addTo(AppState.adminMarkersLayer);
+    L.marker([m.lat, m.lng], { icon: icon }).addTo(AppState.adminMarkersLayer);
   });
-
   AppState.adminMarkersLayer.addTo(AppState.map);
 }
 
@@ -983,189 +713,66 @@ function removeAdminMarkersFromMap() {
 function renderAdminPanel() {
   const tab = document.getElementById('config-tab-admin');
   if (!tab) return;
-
   const isAdmin = AppState.isAdmin;
   const markers = adminMarkersCache;
   const nicknames = AdminManager.getUniqueNicknames();
 
   if (!isAdmin) {
-    tab.innerHTML =
-      '<div class="form-group">' +
-        '<label>Acceso Admin</label>' +
-        '<p class="config-hint">Ingresa la contrasena de admin para ver todas las muestras LSM de todos los usuarios.</p>' +
-        '<div class="admin-login-row">' +
-          '<input type="password" id="admin-password" placeholder="Contrasena de admin" maxlength="20" autocomplete="off">' +
-          '<button id="btn-admin-login" class="btn-primary btn-sm">Ingresar</button>' +
-        '</div>' +
-      '</div>';
+    tab.innerHTML = '<div class="form-group"><label>Acceso Admin</label><p class="config-hint">Ingresa la contrasena de admin.</p><div class="admin-login-row"><input type="password" id="admin-password" placeholder="Contrasena" maxlength="20" autocomplete="off"><button id="btn-admin-login" class="btn-primary btn-sm">Ingresar</button></div></div>';
   } else {
-    const count = markers.length;
     const nickOptions = nicknames.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>').join('');
-
-    tab.innerHTML =
-      '<div class="admin-status">' +
-        '<div class="admin-status-icon">&#9989;</div>' +
-        '<div class="admin-status-info">' +
-          '<span class="admin-status-label">Modo Admin activo</span>' +
-          '<span class="admin-status-count">' + count + ' muestras LSM en la base de datos</span>' +
-        '</div>' +
-      '</div>' +
-      '<div class="form-group">' +
-        '<label>Filtrar por Nickname</label>' +
-        '<select id="admin-nickname-filter" class="crs-select">' +
-          '<option value="">Todos</option>' +
-          nickOptions +
-        '</select>' +
-      '</div>' +
-      '<div class="admin-actions-row">' +
-        '<button id="btn-admin-refresh" class="btn-secondary btn-sm">Actualizar datos</button>' +
-        '<button id="btn-admin-export" class="btn-primary btn-sm">Exportar Excel</button>' +
-        '<button id="btn-admin-logout" class="btn-danger btn-sm">Salir de Admin</button>' +
-      '</div>' +
-      '<div id="admin-markers-list" class="admin-markers-list"></div>';
-
+    tab.innerHTML = '<div class="admin-status"><div class="admin-status-icon">&#9989;</div><div class="admin-status-info"><span class="admin-status-label">Admin activo</span><span class="admin-status-count">' + markers.length + ' muestras</span></div></div><div class="form-group"><label>Filtrar por Nickname</label><select id="admin-nickname-filter" class="crs-select"><option value="">Todos</option>' + nickOptions + '</select></div><div class="admin-actions-row"><button id="btn-admin-refresh" class="btn-secondary btn-sm">Actualizar</button><button id="btn-admin-export" class="btn-primary btn-sm">Exportar Excel</button><button id="btn-admin-logout" class="btn-danger btn-sm">Salir</button></div><div id="admin-markers-list" class="admin-markers-list"></div>';
     setTimeout(() => {
       const filterEl = document.getElementById('admin-nickname-filter');
-      if (filterEl) {
-        filterEl.addEventListener('change', () => {
-          addAdminMarkersToMap(filterEl.value);
-          renderAdminMarkersList(filterEl.value);
-        });
-      }
-      const refreshBtn = document.getElementById('btn-admin-refresh');
-      if (refreshBtn) {
-        refreshBtn.addEventListener('click', async () => {
-          showToast('Actualizando datos...', 'info');
-          await AdminManager.fetchAllMarkers();
-          renderAdminPanel();
-          addAdminMarkersToMap();
-        });
-      }
-      const exportBtn = document.getElementById('btn-admin-export');
-      if (exportBtn) {
-        exportBtn.addEventListener('click', adminExportExcel);
-      }
-      const logoutBtn = document.getElementById('btn-admin-logout');
-      if (logoutBtn) {
-        logoutBtn.addEventListener('click', deactivateAdmin);
-      }
+      if (filterEl) filterEl.addEventListener('change', () => { addAdminMarkersToMap(filterEl.value); renderAdminMarkersList(filterEl.value); });
+      document.getElementById('btn-admin-refresh')?.addEventListener('click', async () => { await AdminManager.fetchAllMarkers(); renderAdminPanel(); addAdminMarkersToMap(); });
+      document.getElementById('btn-admin-export')?.addEventListener('click', adminExportExcel);
+      document.getElementById('btn-admin-logout')?.addEventListener('click', deactivateAdmin);
       renderAdminMarkersList();
     }, 50);
   }
-
   setTimeout(() => {
-    const loginBtn = document.getElementById('btn-admin-login');
-    if (loginBtn) {
-      loginBtn.addEventListener('click', () => {
-        const pwd = document.getElementById('admin-password').value;
-        activateAdmin(pwd);
-      });
-    }
-    const pwdInput = document.getElementById('admin-password');
-    if (pwdInput) {
-      pwdInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          const pwd = pwdInput.value;
-          activateAdmin(pwd);
-        }
-      });
-    }
+    document.getElementById('btn-admin-login')?.addEventListener('click', () => activateAdmin(document.getElementById('admin-password').value));
+    document.getElementById('admin-password')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') activateAdmin(document.getElementById('admin-password').value); });
   }, 50);
 }
 
 function renderAdminMarkersList(filterNickname) {
   const listEl = document.getElementById('admin-markers-list');
   if (!listEl) return;
-
-  const filtered = filterNickname
-    ? AdminManager.filterByNickname(filterNickname)
-    : adminMarkersCache;
-
+  const filtered = filterNickname ? AdminManager.filterByNickname(filterNickname) : adminMarkersCache;
   if (filtered.length === 0) {
-    listEl.innerHTML = '<p class="empty-msg">No hay muestras LSM</p>';
+    listEl.innerHTML = '<p class="empty-msg">No hay muestras</p>';
     return;
   }
-
   listEl.innerHTML = filtered.slice(0, 50).map(m => {
     const color = MARKER_COLORS[m.color]?.hex || '#58a6ff';
-    return '<div class="admin-marker-item" data-lat="' + m.lat + '" data-lng="' + m.lng + '">' +
-      '<span class="marker-item-dot" style="background:' + color + ';"></span>' +
-      '<div class="marker-item-info">' +
-        '<div class="marker-item-name">' + escapeHtml(m.nombre_muestra || '') + ' <span class="marker-type-badge">LSM</span></div>' +
-        '<div class="marker-item-coords">' + escapeHtml(m.nickname || '') + ' | ' + formatDate(m.created_at) + '</div>' +
-      '</div>' +
-    '</div>';
+    return '<div class="admin-marker-item" data-lat="' + m.lat + '" data-lng="' + m.lng + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.nombre_muestra || '') + '</div><div class="marker-item-coords">' + escapeHtml(m.nickname || '') + '</div></div></div>';
   }).join('');
-
-  if (filtered.length > 50) {
-    listEl.innerHTML += '<p class="empty-msg">Mostrando 50 de ' + filtered.length + '</p>';
-  }
-
+  if (filtered.length > 50) listEl.innerHTML += '<p class="empty-msg">Mostrando 50 de ' + filtered.length + '</p>';
   listEl.querySelectorAll('.admin-marker-item').forEach(item => {
     item.addEventListener('click', () => {
       const lat = parseFloat(item.dataset.lat);
       const lng = parseFloat(item.dataset.lng);
-      if (AppState.map && !isNaN(lat) && !isNaN(lng)) {
-        AppState.map.setView([lat, lng], 17);
-      }
+      if (AppState.map && !isNaN(lat) && !isNaN(lng)) AppState.map.setView([lat, lng], 17);
     });
   });
 }
 
 async function adminExportExcel() {
   const markers = adminMarkersCache;
-  if (markers.length === 0) {
-    showToast('No hay datos para exportar', 'error');
-    return;
-  }
-
-  showToast('Generando Excel...', 'info');
-
-  try {
-    const data = [];
-    data.push([
-      'Nickname', 'Nombre_Muestra', 'Tipo_Muestra', 'Nombre_Proyecto', 'Solicitante',
-      'Estructura_Deposito', 'Subestructuras', 'Categoria', 'Tipo_Material',
-      'Proveniencia', 'Localizacion', 'Fuente', 'Ensayos',
-      'Norte', 'Este', 'Latitud', 'Longitud', 'Fecha_Hora'
-    ]);
-
-    markers.forEach(m => {
-      data.push([
-        m.nickname || '',
-        m.nombre_muestra || '',
-        m.tipo_muestra || '',
-        m.nombre_proyecto || '',
-        m.solicitante || '',
-        m.estructura_deposito || '',
-        m.subestructuras || '',
-        m.categoria || '',
-        m.tipo_material || '',
-        m.proveniencia || '',
-        m.localizacion || '',
-        m.fuente || '',
-        (m.ensayos || []).join(', '),
-        m.norte || '',
-        m.este || '',
-        m.lat,
-        m.lng,
-        m.created_at ? formatDateTime(m.created_at) : ''
-      ]);
-    });
-
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    XLSX.utils.book_append_sheet(wb, ws, 'LSM_Admin');
-    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const dateStr = new Date().toISOString().slice(0, 10);
-    saveAs(blob, 'LSM_Admin_' + dateStr + '.xlsx');
-
-    showToast(markers.length + ' muestras exportadas', 'success');
-  } catch (error) {
-    console.error('Admin export error:', error);
-    showToast('Error al exportar: ' + (error.message || 'Desconocido'), 'error');
-  }
+  if (markers.length === 0) { showToast('No hay datos', 'error'); return; }
+  const data = [['Nickname', 'Nombre_Muestra', 'Tipo_Muestra', 'Nombre_Proyecto', 'Solicitante', 'Estructura_Deposito', 'Subestructuras', 'Categoria', 'Tipo_Material', 'Proveniencia', 'Localizacion', 'Fuente', 'Ensayos', 'Norte', 'Este', 'Latitud', 'Longitud', 'Fecha_Hora']];
+  markers.forEach(m => {
+    data.push([m.nickname || '', m.nombre_muestra || '', m.tipo_muestra || '', m.nombre_proyecto || '', m.solicitante || '', m.estructura_deposito || '', m.subestructuras || '', m.categoria || '', m.tipo_material || '', m.proveniencia || '', m.localizacion || '', m.fuente || '', (m.ensayos || []).join(', '), m.norte || '', m.este || '', m.lat, m.lng, m.created_at ? formatDateTime(m.created_at) : '']);
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  XLSX.utils.book_append_sheet(wb, ws, 'LSM');
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  saveAs(blob, 'LSM_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  showToast(markers.length + ' muestras exportadas', 'success');
 }
 
 // ============================================
@@ -1195,10 +802,7 @@ function formatDate(isoString) {
 
 function formatDateTime(isoString) {
   const d = new Date(isoString);
-  return d.toLocaleDateString('es-EC', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
-  });
+  return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function escapeHtml(text) {
@@ -1215,37 +819,19 @@ function compressImage(file, maxWidth = 1024, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();
-
-    reader.onload = (e) => {
-      img.src = e.target.result;
-    };
-
+    reader.onload = (e) => { img.src = e.target.result; };
     img.onload = () => {
       const canvas = document.createElement('canvas');
       let width = img.width;
       let height = img.height;
-
-      if (width > maxWidth) {
-        height = Math.round((height * maxWidth) / width);
-        width = maxWidth;
-      }
-
+      if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-
-      canvas.toBlob((blob) => {
-        if (blob) {
-          resolve(blob);
-        } else {
-          reject(new Error('Error al comprimir imagen'));
-        }
-      }, 'image/jpeg', quality);
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => { if (blob) resolve(blob); else reject(new Error('Error')); }, 'image/jpeg', quality);
     };
-
-    img.onerror = () => reject(new Error('Error al cargar imagen'));
-    reader.onerror = () => reject(new Error('Error al leer archivo'));
+    img.onerror = () => reject(new Error('Error'));
+    reader.onerror = () => reject(new Error('Error'));
     reader.readAsDataURL(file);
   });
 }
@@ -1261,23 +847,16 @@ function blobToDataURL(blob) {
 
 async function handlePhotoCapture(file) {
   if (!file) return;
-
   try {
     showToast('Procesando foto...', 'info');
     const compressedBlob = await compressImage(file, 1600, 0.90);
     const dataUrl = await blobToDataURL(compressedBlob);
-
-    if (AppState.pendingPhotos.length >= 2) {
-      showToast('Solo se permiten 2 fotos por marcador', 'error');
-      return;
-    }
-
+    if (AppState.pendingPhotos.length >= 2) { showToast('Max 2 fotos', 'error'); return; }
     AppState.pendingPhotos.push({ blob: compressedBlob, dataUrl: dataUrl });
     renderPhotoGrid();
     showToast('Foto agregada', 'success');
   } catch (error) {
-    console.error('Error processing photo:', error);
-    showToast('Error al procesar la foto', 'error');
+    showToast('Error al procesar foto', 'error');
   }
 }
 
@@ -1292,27 +871,18 @@ function getAddPhotoBtnId() {
 function renderPhotoGrid() {
   const grid = document.getElementById(getPhotoGridId());
   if (!grid) return;
-
   grid.innerHTML = AppState.pendingPhotos.map((photo, index) => {
-    return '<div class="photo-thumb">' +
-      '<img src="' + photo.dataUrl + '" alt="Foto ' + (index + 1) + '">' +
-      '<button class="photo-remove" data-index="' + index + '" title="Eliminar foto">&times;</button>' +
-      '</div>';
+    return '<div class="photo-thumb"><img src="' + photo.dataUrl + '" alt="Foto"><button class="photo-remove" data-index="' + index + '">&times;</button></div>';
   }).join('');
-
   grid.querySelectorAll('.photo-remove').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const idx = parseInt(btn.dataset.index);
-      AppState.pendingPhotos.splice(idx, 1);
+      AppState.pendingPhotos.splice(parseInt(btn.dataset.index), 1);
       renderPhotoGrid();
     });
   });
-
   const btnAddPhoto = document.getElementById(getAddPhotoBtnId());
-  if (btnAddPhoto) {
-    btnAddPhoto.style.display = AppState.pendingPhotos.length >= 2 ? 'none' : 'flex';
-  }
+  if (btnAddPhoto) btnAddPhoto.style.display = AppState.pendingPhotos.length >= 2 ? 'none' : 'flex';
 }
 
 function clearPendingPhotos() {
@@ -1334,44 +904,19 @@ function showScreen(screenId) {
 // ============================================
 
 function initMap() {
-  if (AppState.map) {
-    AppState.map.invalidateSize();
-    return;
-  }
-
-  AppState.map = L.map('map', {
-    center: [-0.1807, -78.4678],
-    zoom: 13,
-    zoomControl: false
-  });
-
+  if (AppState.map) { AppState.map.invalidateSize(); return; }
+  AppState.map = L.map('map', { center: [-0.1807, -78.4678], zoom: 13, zoomControl: false });
   L.control.zoom({ position: 'topleft' }).addTo(AppState.map);
-
-  AppState.darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 19
-  });
-
-  AppState.lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 19
-  });
-
+  AppState.darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19 });
+  AppState.lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19 });
   AppState.darkTiles.addTo(AppState.map);
   AppState.markersLayer = L.layerGroup().addTo(AppState.map);
-
   AppState.map.on('click', (e) => {
     if (AppState.isAddMarkerMode) {
-      if (AppState.currentMarkerMode === 'lsm') {
-        openLSMLoginOrMarkerModal(e.latlng);
-      } else {
-        openMarkerModal(e.latlng);
-      }
+      if (AppState.currentMarkerMode === 'lsm') openLSMLoginOrMarkerModal(e.latlng);
+      else openMarkerModal(e.latlng);
     }
   });
-
   AppState.map.on('mousemove', (e) => updateCoordsDisplay(e.latlng));
 }
 
@@ -1385,7 +930,7 @@ function updateCoordsDisplay(latlng) {
 }
 
 // ============================================
-// GEO TIFF LOADING
+// GEO TIFF / PDF LOADING
 // ============================================
 
 async function loadGeoTiff(mapId) {
@@ -1395,76 +940,34 @@ async function loadGeoTiff(mapId) {
     const image = await tiff.getImage();
     const raster = await image.readRasters();
     const bbox = image.getBoundingBox();
-    const width = image.getWidth();
-    const height = image.getHeight();
-
-    const geoOptions = {
+    const geoRaster = new GeoRaster({
       values: raster.length >= 3 ? [raster[0], raster[1], raster[2]] : [raster[0]],
-      width: width,
-      height: height,
+      width: image.getWidth(), height: image.getHeight(),
       numberOfBands: raster.length >= 3 ? 3 : 1,
-      pixelWidth: (bbox[2] - bbox[0]) / width,
-      pixelHeight: (bbox[3] - bbox[1]) / height,
-      xmin: bbox[0],
-      ymin: bbox[1],
-      xmax: bbox[2],
-      ymax: bbox[3]
-    };
-
-    const geoRaster = new GeoRaster(geoOptions);
-
-    if (AppState.mapOverlay) {
-      AppState.map.removeLayer(AppState.mapOverlay);
-    }
-
-    AppState.mapOverlay = new GeoRasterLayer({
-      georaster: geoRaster,
-      opacity: 0.85,
-      resolution: 256
+      pixelWidth: (bbox[2] - bbox[0]) / image.getWidth(),
+      pixelHeight: (bbox[3] - bbox[1]) / image.getHeight(),
+      xmin: bbox[0], ymin: bbox[1], xmax: bbox[2], ymax: bbox[3]
     });
-
+    if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
+    AppState.mapOverlay = new GeoRasterLayer({ georaster: geoRaster, opacity: 0.85, resolution: 256 });
     AppState.mapOverlay.addTo(AppState.map);
     AppState.map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
-
-    showToast('Mapa cargado correctamente', 'success');
-  } catch (error) {
-    console.error('Error loading GeoTIFF:', error);
-    showToast('Error al cargar el mapa', 'error');
-  }
+    showToast('Mapa cargado', 'success');
+  } catch (error) { showToast('Error al cargar mapa', 'error'); }
 }
-
-// ============================================
-// PDF MAP LOADING
-// ============================================
 
 async function loadPDFMap(mapId) {
   try {
     const record = await MapStorage.getMapRecord(mapId);
-    const georef = record.georef;
-
-    if (!georef || !georef.corners) {
-      showToast('El PDF no tiene georreferenciacion', 'error');
-      return;
-    }
-
+    if (!record.georef || !record.georef.corners) { showToast('PDF sin georreferenciacion', 'error'); return; }
     const pdf = await PDFProcessor.loadPDF(record.data);
     const { canvas } = await PDFProcessor.renderPage(pdf, 2);
-
-    if (AppState.mapOverlay) {
-      AppState.map.removeLayer(AppState.mapOverlay);
-    }
-
-    AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, georef.corners, georef.crs);
+    if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
+    AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs);
     AppState.mapOverlay.addTo(AppState.map);
-
-    const bounds = AppState.mapOverlay.getBounds();
-    AppState.map.fitBounds(bounds);
-
-    showToast('PDF cargado correctamente', 'success');
-  } catch (error) {
-    console.error('Error loading PDF:', error);
-    showToast('Error al cargar el PDF', 'error');
-  }
+    AppState.map.fitBounds(AppState.mapOverlay.getBounds());
+    showToast('PDF cargado', 'success');
+  } catch (error) { showToast('Error al cargar PDF', 'error'); }
 }
 
 // ============================================
@@ -1472,54 +975,24 @@ async function loadPDFMap(mapId) {
 // ============================================
 
 function goToMyLocation() {
-  if (!navigator.geolocation) {
-    showToast('Geolocalizacion no disponible', 'error');
-    return;
-  }
-
+  if (!navigator.geolocation) { showToast('Geolocalizacion no disponible', 'error'); return; }
   showToast('Obteniendo ubicacion...', 'info');
-
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
-      const accuracy = position.coords.accuracy;
-
-      if (AppState.userLocationLayer) {
-        AppState.map.removeLayer(AppState.userLocationLayer);
-      }
-
-      const pulseIcon = L.divIcon({
-        className: 'user-location-pulse',
-        html: '<div class="user-location-pulse"></div>',
-        iconSize: [18, 18],
-        iconAnchor: [9, 9]
-      });
-
-      AppState.userLocationLayer = L.layerGroup([
-        L.circle([lat, lng], {
-          radius: accuracy,
-          color: '#58a6ff',
-          fillColor: '#58a6ff',
-          fillOpacity: 0.1,
-          weight: 1
-        }),
-        L.marker([lat, lng], { icon: pulseIcon })
-      ]);
-
-      AppState.userLocationLayer.addTo(AppState.map);
-      AppState.map.setView([lat, lng], 16);
-      updateCoordsDisplay({ lat, lng });
-
-      const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
-      showToast('Ubicacion obtenida', 'success');
-    },
-    (error) => {
-      const msgs = { 1: 'Permiso denegado', 2: 'No disponible', 3: 'Tiempo agotado' };
-      showToast('Error: ' + (msgs[error.code] || 'Desconocido'), 'error');
-    },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-  );
+  navigator.geolocation.getCurrentPosition((position) => {
+    const { latitude: lat, longitude: lng, accuracy } = position.coords;
+    if (AppState.userLocationLayer) AppState.map.removeLayer(AppState.userLocationLayer);
+    const pulseIcon = L.divIcon({ className: 'user-location-pulse', html: '<div class="user-location-pulse"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
+    AppState.userLocationLayer = L.layerGroup([
+      L.circle([lat, lng], { radius: accuracy, color: '#58a6ff', fillColor: '#58a6ff', fillOpacity: 0.1, weight: 1 }),
+      L.marker([lat, lng], { icon: pulseIcon })
+    ]);
+    AppState.userLocationLayer.addTo(AppState.map);
+    AppState.map.setView([lat, lng], 16);
+    updateCoordsDisplay({ lat, lng });
+    showToast('Ubicacion obtenida', 'success');
+  }, (error) => {
+    const msgs = { 1: 'Permiso denegado', 2: 'No disponible', 3: 'Tiempo agotado' };
+    showToast('Error: ' + (msgs[error.code] || 'Desconocido'), 'error');
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
 }
 
 // ============================================
@@ -1528,25 +1001,11 @@ function goToMyLocation() {
 
 function createMarkerSVG(color, initial) {
   const hex = MARKER_COLORS[color]?.hex || MARKER_COLORS.red.hex;
-  return '<div class="custom-marker-pin">' +
-    '<svg viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg">' +
-      '<path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 24 16 24s16-12 16-24C32 7.16 24.84 0 16 0z" fill="' + hex + '"/>' +
-      '<circle cx="16" cy="15" r="10" fill="rgba(0,0,0,0.15)"/>' +
-      '<text x="16" y="19" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold" font-family="sans-serif">' + initial + '</text>' +
-    '</svg>' +
-  '</div>';
+  return '<div class="custom-marker-pin"><svg viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg"><path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 24 16 24s16-12 16-24C32 7.16 24.84 0 16 0z" fill="' + hex + '"/></svg></div>';
 }
 
 function createMarkerIcon(marker) {
-  const initial = marker.name.charAt(0).toUpperCase();
-  const color = marker.color || 'red';
-  return L.divIcon({
-    className: '',
-    html: createMarkerSVG(color, initial),
-    iconSize: [32, 40],
-    iconAnchor: [16, 40],
-    popupAnchor: [0, -40]
-  });
+  return L.divIcon({ className: '', html: createMarkerSVG(marker.color || 'red', marker.name.charAt(0).toUpperCase()), iconSize: [32, 40], iconAnchor: [16, 40], popupAnchor: [0, -40] });
 }
 
 // ============================================
@@ -1569,14 +1028,8 @@ function selectMarkerType(type) {
   closeMarkerTypeModal();
   const latlng = AppState.pendingMarkerLatLng;
   if (!latlng) return;
-
-  if (type === 'qc') {
-    AppState.pendingMarkerType = 'qc';
-    openMarkerModal(latlng);
-  } else {
-    AppState.pendingMarkerType = 'lsm';
-    openLSMLoginOrMarkerModal(latlng);
-  }
+  if (type === 'qc') { AppState.pendingMarkerType = 'qc'; openMarkerModal(latlng); }
+  else { AppState.pendingMarkerType = 'lsm'; openLSMLoginOrMarkerModal(latlng); }
 }
 
 // ============================================
@@ -1584,11 +1037,8 @@ function selectMarkerType(type) {
 // ============================================
 
 function openLSMLoginOrMarkerModal(latlng) {
-  if (LSMUserManager.isLoggedIn()) {
-    openLSMMarkerModal(latlng);
-  } else {
-    openLSMLoginModal(latlng);
-  }
+  if (LSMUserManager.isLoggedIn()) openLSMMarkerModal(latlng);
+  else openLSMLoginModal(latlng);
 }
 
 function openLSMLoginModal(latlng) {
@@ -1610,25 +1060,12 @@ function closeLSMLoginModal() {
 function confirmLSMLogin() {
   const nickname = document.getElementById('lsm-nickname').value.trim();
   const password = document.getElementById('lsm-password').value.trim();
-
-  if (!nickname) {
-    showToast('Ingresa un nickname', 'error');
-    return;
-  }
-
-  if (!LSMUserManager.validate(nickname, password)) {
-    showToast('Contrasena incorrecta', 'error');
-    return;
-  }
-
+  if (!nickname) { showToast('Ingresa un nickname', 'error'); return; }
+  if (!LSMUserManager.validate(nickname, password)) { showToast('Contrasena incorrecta', 'error'); return; }
   LSMUserManager.set(nickname);
   showToast('Bienvenido, ' + nickname, 'success');
   closeLSMLoginModal();
-
-  const latlng = AppState.pendingMarkerLatLng;
-  if (latlng) {
-    openLSMMarkerModal(latlng);
-  }
+  if (AppState.pendingMarkerLatLng) openLSMMarkerModal(AppState.pendingMarkerLatLng);
 }
 
 function populateLsmSelect(id, key, required) {
@@ -1638,14 +1075,12 @@ function populateLsmSelect(id, key, required) {
   select.innerHTML = '';
   if (!required) {
     const opt = document.createElement('option');
-    opt.value = '';
-    opt.textContent = '-- Seleccionar --';
+    opt.value = ''; opt.textContent = '-- Seleccionar --';
     select.appendChild(opt);
   }
   values.forEach(v => {
     const opt = document.createElement('option');
-    opt.value = v;
-    opt.textContent = v;
+    opt.value = v; opt.textContent = v;
     select.appendChild(opt);
   });
 }
@@ -1672,11 +1107,8 @@ function updateLSMCategorySelector() {
 const LAST_LSM_KEY = 'maps_gis_last_lsm_form';
 
 function getLastLSMForm() {
-  try {
-    return JSON.parse(localStorage.getItem(LAST_LSM_KEY)) || {};
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(localStorage.getItem(LAST_LSM_KEY)) || {}; }
+  catch { return {}; }
 }
 
 function saveLastLSMForm(data) {
@@ -1691,8 +1123,6 @@ async function openLSMMarkerModal(latlng, editId) {
   AppState.editingMarkerId = editId || null;
   AppState.pendingMarkerType = 'lsm';
   clearPendingPhotos();
-
-  // Populate selects
   populateLsmSelect('lsm-tipo-muestra', 'tipo_muestra');
   populateLsmSelect('lsm-nombre-proyecto', 'nombre_proyecto');
   populateLsmSelect('lsm-solicitante', 'solicitante');
@@ -1704,11 +1134,8 @@ async function openLSMMarkerModal(latlng, editId) {
   populateLsmSelect('lsm-localizacion', 'localizacion');
   populateLsmSelect('lsm-fuente', 'fuente');
   populateLsmEnsayos();
-
   const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
-  document.getElementById('lsm-coords-display').textContent =
-    'N: ' + north.toFixed(3) + ' | E: ' + east.toFixed(3);
-
+  document.getElementById('lsm-coords-display').textContent = 'N: ' + north.toFixed(3) + ' | E: ' + east.toFixed(3);
   if (editId) {
     const marker = MarkerManager.getById(editId);
     if (!marker || marker.markerType !== 'lsm') return;
@@ -1725,16 +1152,9 @@ async function openLSMMarkerModal(latlng, editId) {
     document.getElementById('lsm-proveniencia').value = d.proveniencia || '';
     document.getElementById('lsm-localizacion').value = d.localizacion || '';
     document.getElementById('lsm-fuente').value = d.fuente || '';
-
-    // Check ensayos
     const ensayos = d.ensayos || [];
-    document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]').forEach(cb => {
-      cb.checked = ensayos.includes(cb.value);
-    });
-
+    document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]').forEach(cb => { cb.checked = ensayos.includes(cb.value); });
     AppState.lsmSelectedCategory = marker.color || 'red';
-
-    // Load photos
     if (marker.photos && marker.photos.length > 0) {
       for (const photoId of marker.photos) {
         try {
@@ -1743,9 +1163,7 @@ async function openLSMMarkerModal(latlng, editId) {
             const dataUrl = await blobToDataURL(photoRecord.blob);
             AppState.pendingPhotos.push({ photoId: photoId, blob: photoRecord.blob, dataUrl: dataUrl });
           }
-        } catch (e) {
-          console.warn('Could not load photo:', photoId, e);
-        }
+        } catch (e) { console.warn('Could not load photo:', photoId); }
       }
       renderPhotoGrid();
     }
@@ -1766,7 +1184,6 @@ async function openLSMMarkerModal(latlng, editId) {
     document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]').forEach(cb => cb.checked = false);
     AppState.lsmSelectedCategory = 'red';
   }
-
   updateLSMCategorySelector();
   document.getElementById('lsm-marker-modal').classList.remove('hidden');
   setTimeout(() => document.getElementById('lsm-nombre-muestra').focus(), 100);
@@ -1783,12 +1200,7 @@ function closeLSMMarkerModal() {
 
 async function saveLSMMarker() {
   const nombreMuestra = document.getElementById('lsm-nombre-muestra').value.trim();
-  if (!nombreMuestra) {
-    showToast('Ingresa el Nombre de Muestra', 'error');
-    return;
-  }
-
-  // Gather LSM data
+  if (!nombreMuestra) { showToast('Ingresa el Nombre de Muestra', 'error'); return; }
   const lsmData = {
     tipoMuestra: document.getElementById('lsm-tipo-muestra').value.trim(),
     nombreProyecto: document.getElementById('lsm-nombre-proyecto').value.trim(),
@@ -1803,36 +1215,25 @@ async function saveLSMMarker() {
     fuente: document.getElementById('lsm-fuente').value.trim(),
     ensayos: Array.from(document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]:checked')).map(cb => cb.value)
   };
-
-  // Save photos
   const photoIds = [];
   for (const photo of AppState.pendingPhotos) {
     try {
-      if (photo.photoId) {
-        photoIds.push(photo.photoId);
-      } else if (photo.blob) {
+      if (photo.photoId) photoIds.push(photo.photoId);
+      else if (photo.blob) {
         const markerId = AppState.editingMarkerId || ('m_' + Date.now());
         const photoId = await MapStorage.savePhoto(photo.blob, markerId);
         photoIds.push(photoId);
       }
-    } catch (e) {
-      console.error('Error saving photo:', e);
-    }
+    } catch (e) { console.error('Error saving photo:', e); }
   }
-
   if (AppState.editingMarkerId) {
     const oldMarker = MarkerManager.getById(AppState.editingMarkerId);
     if (oldMarker && oldMarker.photos) {
       const removedPhotos = oldMarker.photos.filter(id => !photoIds.includes(id));
       for (const photoId of removedPhotos) {
-        try {
-          await MapStorage.deletePhoto(photoId);
-        } catch (e) {
-          console.warn('Could not delete old photo:', photoId);
-        }
+        try { await MapStorage.deletePhoto(photoId); } catch (e) { console.warn('Could not delete old photo:', photoId); }
       }
     }
-
     MarkerManager.update(AppState.editingMarkerId, {
       name: nombreMuestra,
       color: AppState.lsmSelectedCategory,
@@ -1846,16 +1247,11 @@ async function saveLSMMarker() {
     MarkerManager.createLSM(lat, lng, AppState.lsmSelectedCategory, photoIds, lsmData);
     showToast('Muestra LSM "' + nombreMuestra + '" guardada', 'success');
   }
-
   saveLastLSMForm(lsmData);
-  refreshMarkersOnMap();
+  if (AppState.markersLayer) refreshMarkersOnMap();
   updateMarkerCountBadge();
   closeLSMMarkerModal();
-
-  // Try sync
-  if (await LSMSyncManager.shouldUpload()) {
-    LSMSyncManager.syncPending();
-  }
+  if (await LSMSyncManager.shouldUpload()) LSMSyncManager.syncPending();
 }
 
 // ============================================
@@ -1867,21 +1263,15 @@ async function openMarkerModal(latlng, editId) {
   AppState.pendingMarkerLatLng = latlng;
   AppState.editingMarkerId = editId || null;
   clearPendingPhotos();
-
   if (editId) {
     const marker = MarkerManager.getById(editId);
     if (!marker) return;
-
     document.getElementById('marker-modal-title').textContent = 'Editar Marcador';
     document.getElementById('marker-name').value = marker.name;
     document.getElementById('marker-description').value = marker.description || '';
     AppState.selectedCategory = marker.color || 'red';
-
     const [east, north] = proj4(WGS84, 'EPSG:24877', [marker.lng, marker.lat]);
-    document.getElementById('marker-coords-display').textContent =
-      'N: ' + north.toFixed(3) + ' | E: ' + east.toFixed(3);
-
-    // Load existing photos
+    document.getElementById('marker-coords-display').textContent = 'N: ' + north.toFixed(3) + ' | E: ' + east.toFixed(3);
     if (marker.photos && marker.photos.length > 0) {
       for (const photoId of marker.photos) {
         try {
@@ -1890,9 +1280,7 @@ async function openMarkerModal(latlng, editId) {
             const dataUrl = await blobToDataURL(photoRecord.blob);
             AppState.pendingPhotos.push({ photoId: photoId, blob: photoRecord.blob, dataUrl: dataUrl });
           }
-        } catch (e) {
-          console.warn('Could not load photo:', photoId, e);
-        }
+        } catch (e) { console.warn('Could not load photo:', photoId); }
       }
       renderPhotoGrid();
     }
@@ -1901,15 +1289,11 @@ async function openMarkerModal(latlng, editId) {
     document.getElementById('marker-name').value = '';
     document.getElementById('marker-description').value = '';
     AppState.selectedCategory = 'red';
-
     const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
-    document.getElementById('marker-coords-display').textContent =
-      'N: ' + north.toFixed(3) + ' | E: ' + east.toFixed(3);
+    document.getElementById('marker-coords-display').textContent = 'N: ' + north.toFixed(3) + ' | E: ' + east.toFixed(3);
   }
-
   updateCategorySelector();
   document.getElementById('marker-modal').classList.remove('hidden');
-
   setTimeout(() => document.getElementById('marker-name').focus(), 100);
 }
 
@@ -1925,58 +1309,34 @@ function closeMarkerModal() {
 async function saveMarker() {
   const name = document.getElementById('marker-name').value.trim();
   const description = document.getElementById('marker-description').value.trim();
-
-  if (!name) {
-    showToast('Ingresa un nombre', 'error');
-    return;
-  }
-
-  // Save photos to IndexedDB and collect photoIds
+  if (!name) { showToast('Ingresa un nombre', 'error'); return; }
   const photoIds = [];
   for (const photo of AppState.pendingPhotos) {
     try {
-      if (photo.photoId) {
-        // Existing photo, keep the ID
-        photoIds.push(photo.photoId);
-      } else if (photo.blob) {
-        // New photo, save to IndexedDB
+      if (photo.photoId) photoIds.push(photo.photoId);
+      else if (photo.blob) {
         const markerId = AppState.editingMarkerId || ('m_' + Date.now());
         const photoId = await MapStorage.savePhoto(photo.blob, markerId);
         photoIds.push(photoId);
       }
-    } catch (e) {
-      console.error('Error saving photo:', e);
-    }
+    } catch (e) { console.error('Error saving photo:', e); }
   }
-
   if (AppState.editingMarkerId) {
-    // Delete old photos that were removed
     const oldMarker = MarkerManager.getById(AppState.editingMarkerId);
     if (oldMarker && oldMarker.photos) {
       const removedPhotos = oldMarker.photos.filter(id => !photoIds.includes(id));
       for (const photoId of removedPhotos) {
-        try {
-          await MapStorage.deletePhoto(photoId);
-        } catch (e) {
-          console.warn('Could not delete old photo:', photoId);
-        }
+        try { await MapStorage.deletePhoto(photoId); } catch (e) { console.warn('Could not delete old photo:', photoId); }
       }
     }
-
-    MarkerManager.update(AppState.editingMarkerId, {
-      name: name,
-      description: description,
-      color: AppState.selectedCategory,
-      photos: photoIds
-    });
+    MarkerManager.update(AppState.editingMarkerId, { name: name, description: description, color: AppState.selectedCategory, photos: photoIds });
     showToast('Marcador actualizado', 'success');
   } else if (AppState.pendingMarkerLatLng) {
     const { lat, lng } = AppState.pendingMarkerLatLng;
     MarkerManager.createQC(name, description, lat, lng, AppState.selectedCategory, photoIds);
     showToast('Marcador "' + name + '" guardado', 'success');
   }
-
-  refreshMarkersOnMap();
+  if (AppState.markersLayer) refreshMarkersOnMap();
   updateMarkerCountBadge();
   closeMarkerModal();
 }
@@ -1994,64 +1354,27 @@ function updateCategorySelector() {
 async function openMarkerDetail(id) {
   const marker = MarkerManager.getById(id);
   if (!marker) return;
-
   const color = MARKER_COLORS[marker.color]?.hex || MARKER_COLORS.red.hex;
   const initial = marker.name.charAt(0).toUpperCase();
-
   document.getElementById('detail-marker-icon').style.background = color;
   document.getElementById('detail-marker-icon').textContent = initial;
   document.getElementById('detail-marker-name').textContent = marker.name;
   document.getElementById('detail-marker-date').textContent = formatDateTime(marker.createdAt);
   document.getElementById('detail-marker-category').textContent = MARKER_COLORS[marker.color]?.label || 'Rojo';
-
   const detailBody = document.querySelector('#marker-detail-modal .detail-body');
-
   if (marker.markerType === 'lsm') {
     const d = marker.lsmData || {};
     const ensayosStr = (d.ensayos || []).join(', ');
-    detailBody.innerHTML =
-      '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">LSM</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Tipo de Muestra</span><span class="detail-value">' + escapeHtml(d.tipoMuestra || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Proyecto</span><span class="detail-value">' + escapeHtml(d.nombreProyecto || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Solicitante</span><span class="detail-value">' + escapeHtml(d.solicitante || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Estructura/Deposito</span><span class="detail-value">' + escapeHtml(d.estructuraDeposito || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Subestructuras</span><span class="detail-value">' + escapeHtml(d.subestructuras || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + escapeHtml(d.categoria || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Tipo de Material</span><span class="detail-value">' + escapeHtml(d.tipoMaterial || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Proveniencia</span><span class="detail-value">' + escapeHtml(d.proveniencia || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Localizacion</span><span class="detail-value">' + escapeHtml(d.localizacion || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Fuente</span><span class="detail-value">' + escapeHtml(d.fuente || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Ensayos</span><span class="detail-value">' + escapeHtml(ensayosStr || '-') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div>' +
-      '<div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
+    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">LSM</span></div><div class="detail-row"><span class="detail-label">Tipo de Muestra</span><span class="detail-value">' + escapeHtml(d.tipoMuestra || '-') + '</span></div><div class="detail-row"><span class="detail-label">Proyecto</span><span class="detail-value">' + escapeHtml(d.nombreProyecto || '-') + '</span></div><div class="detail-row"><span class="detail-label">Solicitante</span><span class="detail-value">' + escapeHtml(d.solicitante || '-') + '</span></div><div class="detail-row"><span class="detail-label">Estructura/Deposito</span><span class="detail-value">' + escapeHtml(d.estructuraDeposito || '-') + '</span></div><div class="detail-row"><span class="detail-label">Subestructuras</span><span class="detail-value">' + escapeHtml(d.subestructuras || '-') + '</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + escapeHtml(d.categoria || '-') + '</span></div><div class="detail-row"><span class="detail-label">Tipo de Material</span><span class="detail-value">' + escapeHtml(d.tipoMaterial || '-') + '</span></div><div class="detail-row"><span class="detail-label">Proveniencia</span><span class="detail-value">' + escapeHtml(d.proveniencia || '-') + '</span></div><div class="detail-row"><span class="detail-label">Localizacion</span><span class="detail-value">' + escapeHtml(d.localizacion || '-') + '</span></div><div class="detail-row"><span class="detail-label">Fuente</span><span class="detail-value">' + escapeHtml(d.fuente || '-') + '</span></div><div class="detail-row"><span class="detail-label">Ensayos</span><span class="detail-value">' + escapeHtml(ensayosStr || '-') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
   } else {
-    detailBody.innerHTML =
-      '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">QC</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + (MARKER_COLORS[marker.color]?.label || 'Rojo') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div>' +
-      '<div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div>' +
-      '<div id="detail-description-row" class="detail-row detail-description"><span class="detail-label">Descripcion</span><p id="detail-marker-description"></p></div>' +
-      '<div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
-
+    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">QC</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + (MARKER_COLORS[marker.color]?.label || 'Rojo') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-description-row" class="detail-row detail-description"><span class="detail-label">Descripcion</span><p id="detail-marker-description"></p></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
     const descRow = document.getElementById('detail-description-row');
-    if (marker.description) {
-      descRow.classList.remove('hidden');
-      document.getElementById('detail-marker-description').textContent = marker.description;
-    } else {
-      descRow.classList.add('hidden');
-    }
+    if (marker.description) { descRow.classList.remove('hidden'); document.getElementById('detail-marker-description').textContent = marker.description; }
+    else { descRow.classList.add('hidden'); }
   }
-
-  // Load and display photos
   const photosRow = document.getElementById('detail-photos-row');
   const photosGrid = document.getElementById('detail-marker-photos');
   photosGrid.innerHTML = '';
-
   if (marker.photos && marker.photos.length > 0) {
     photosRow.classList.remove('hidden');
     for (const photoId of marker.photos) {
@@ -2062,20 +1385,12 @@ async function openMarkerDetail(id) {
           const img = document.createElement('img');
           img.src = dataUrl;
           img.alt = 'Foto';
-          img.addEventListener('click', () => {
-            const win = window.open();
-            win.document.write('<img src="' + dataUrl + '" style="max-width:100%">');
-          });
+          img.addEventListener('click', () => { const win = window.open(); win.document.write('<img src="' + dataUrl + '" style="max-width:100%">'); });
           photosGrid.appendChild(img);
         }
-      } catch (e) {
-        console.warn('Could not load photo for detail:', photoId);
-      }
+      } catch (e) { console.warn('Could not load photo for detail:', photoId); }
     }
-  } else {
-    photosRow.classList.add('hidden');
-  }
-
+  } else { photosRow.classList.add('hidden'); }
   document.getElementById('marker-detail-modal').dataset.markerId = id;
   document.getElementById('marker-detail-modal').classList.remove('hidden');
 }
@@ -2088,32 +1403,21 @@ function editCurrentMarker() {
   const id = document.getElementById('marker-detail-modal').dataset.markerId;
   const marker = MarkerManager.getById(id);
   if (!marker) return;
-
   closeMarkerDetail();
-  if (marker.markerType === 'lsm') {
-    openLSMMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
-  } else {
-    openMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
-  }
+  if (marker.markerType === 'lsm') openLSMMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
+  else openMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
 }
 
 async function deleteCurrentMarker() {
   const id = document.getElementById('marker-detail-modal').dataset.markerId;
   const marker = MarkerManager.getById(id);
-
-  // Delete associated photos
   if (marker && marker.photos && marker.photos.length > 0) {
     for (const photoId of marker.photos) {
-      try {
-        await MapStorage.deletePhoto(photoId);
-      } catch (e) {
-        console.warn('Could not delete photo:', photoId);
-      }
+      try { await MapStorage.deletePhoto(photoId); } catch (e) { console.warn('Could not delete photo:', photoId); }
     }
   }
-
   MarkerManager.remove(id);
-  refreshMarkersOnMap();
+  if (AppState.markersLayer) refreshMarkersOnMap();
   updateMarkerCountBadge();
   closeMarkerDetail();
   showToast('Marcador eliminado', 'info');
@@ -2125,24 +1429,16 @@ async function deleteCurrentMarker() {
 
 function addMarkerToMap(marker) {
   const icon = createMarkerIcon(marker);
-  const popupContent =
-    '<div style="min-width:140px;padding:4px;">' +
-    '<strong style="font-size:0.9rem;">' + escapeHtml(marker.name) + '</strong><br>' +
-    '<span style="font-size:0.75rem;color:#666;">N: ' + marker.norte + ' | E: ' + marker.este + '</span>' +
-    '</div>';
-
-  L.marker([marker.lat, marker.lng], { icon: icon })
-    .bindPopup(popupContent)
-    .on('click', () => {
-      AppState.map.setView([marker.lat, marker.lng], AppState.map.getZoom());
-    })
-    .addTo(AppState.markersLayer);
+  const popupContent = '<div style="min-width:140px;padding:4px;"><strong style="font-size:0.9rem;">' + escapeHtml(marker.name) + '</strong><br><span style="font-size:0.75rem;color:#666;">N: ' + marker.norte + ' | E: ' + marker.este + '</span></div>';
+  L.marker([marker.lat, marker.lng], { icon: icon }).bindPopup(popupContent).on('click', () => {
+    AppState.map.setView([marker.lat, marker.lng], AppState.map.getZoom());
+  }).addTo(AppState.markersLayer);
 }
 
 function refreshMarkersOnMap() {
+  if (!AppState.markersLayer) return;
   AppState.markersLayer.clearLayers();
-  const markers = MarkerManager.getAll();
-  markers.forEach(m => addMarkerToMap(m));
+  MarkerManager.getAll().forEach(m => addMarkerToMap(m));
 }
 
 // ============================================
@@ -2161,78 +1457,42 @@ function closeMarkersPanel() {
 function renderMarkersList(filter = '') {
   const container = document.getElementById('markers-list-container');
   let markers = MarkerManager.getAll();
-
   if (filter) {
     const q = filter.toLowerCase();
-    markers = markers.filter(m =>
-      m.name.toLowerCase().includes(q) ||
-      (m.description && m.description.toLowerCase().includes(q))
-    );
+    markers = markers.filter(m => m.name.toLowerCase().includes(q) || (m.description && m.description.toLowerCase().includes(q)));
   }
-
   if (markers.length === 0) {
-    container.innerHTML = '<p class="empty-msg">' +
-      (filter ? 'Sin resultados para "' + escapeHtml(filter) + '"' : 'No hay marcadores guardados') +
-      '</p>';
+    container.innerHTML = '<p class="empty-msg">' + (filter ? 'Sin resultados' : 'No hay marcadores') + '</p>';
     return;
   }
-
   markers.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
   container.innerHTML = markers.map(m => {
     const color = MARKER_COLORS[m.color]?.hex || MARKER_COLORS.red.hex;
     const typeLabel = m.markerType === 'lsm' ? 'LSM' : 'QC';
-    return '<div class="marker-item" data-id="' + m.id + '">' +
-      '<span class="marker-item-dot" style="background:' + color + ';"></span>' +
-      '<div class="marker-item-info">' +
-        '<div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div>' +
-        '<div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + '</div>' +
-      '</div>' +
-      '<div class="marker-item-actions">' +
-        '<button class="marker-item-btn edit" data-id="' + m.id + '" title="Editar">' +
-          '<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' +
-        '</button>' +
-        '<button class="marker-item-btn delete" data-id="' + m.id + '" title="Eliminar">' +
-          '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>' +
-        '</button>' +
-      '</div>' +
-    '</div>';
+    return '<div class="marker-item" data-id="' + m.id + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div><div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + '</div></div><div class="marker-item-actions"><button class="marker-item-btn edit" data-id="' + m.id + '" title="Editar">Edit</button><button class="marker-item-btn delete" data-id="' + m.id + '" title="Eliminar">Del</button></div></div>';
   }).join('');
-
   container.querySelectorAll('.marker-item').forEach(item => {
     item.addEventListener('click', (e) => {
       if (e.target.closest('.marker-item-btn')) return;
       const id = item.dataset.id;
       const marker = MarkerManager.getById(id);
-      if (marker) {
-        AppState.map.setView([marker.lat, marker.lng], 17);
-        closeMarkersPanel();
-      }
+      if (marker) { AppState.map.setView([marker.lat, marker.lng], 17); closeMarkersPanel(); }
     });
   });
-
   container.querySelectorAll('.marker-item-btn.edit').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = btn.dataset.id;
       const marker = MarkerManager.getById(id);
-      if (marker) {
-        closeMarkersPanel();
-        if (marker.markerType === 'lsm') {
-          openLSMMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
-        } else {
-          openMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
-        }
-      }
+      if (marker) { closeMarkersPanel(); if (marker.markerType === 'lsm') openLSMMarkerModal({ lat: marker.lat, lng: marker.lng }, id); else openMarkerModal({ lat: marker.lat, lng: marker.lng }, id); }
     });
   });
-
   container.querySelectorAll('.marker-item-btn.delete').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = btn.dataset.id;
       MarkerManager.remove(id);
-      refreshMarkersOnMap();
+      if (AppState.markersLayer) refreshMarkersOnMap();
       updateMarkerCountBadge();
       renderMarkersList(document.getElementById('marker-search').value);
       showToast('Marcador eliminado', 'info');
@@ -2243,12 +1503,8 @@ function renderMarkersList(filter = '') {
 function updateMarkerCountBadge() {
   const count = MarkerManager.getCount();
   const badge = document.getElementById('marker-count-badge');
-  if (count > 0) {
-    badge.textContent = count > 99 ? '99+' : count;
-    badge.classList.remove('hidden');
-  } else {
-    badge.classList.add('hidden');
-  }
+  if (count > 0) { badge.textContent = count > 99 ? '99+' : count; badge.classList.remove('hidden'); }
+  else { badge.classList.add('hidden'); }
   document.getElementById('markers-count').textContent = count;
 }
 
@@ -2261,7 +1517,6 @@ function openExportModal() {
   document.getElementById('export-today-date').textContent = formatDate(today);
   document.getElementById('export-date-from').value = today;
   document.getElementById('export-date-to').value = today;
-
   updateExportSummary();
   document.getElementById('export-modal').classList.remove('hidden');
 }
@@ -2277,68 +1532,39 @@ function getExportType() {
 function getExportMarkers() {
   const markers = MarkerManager.getAll();
   const type = getExportType();
-
   if (type === 'today') {
     const todayStr = new Date().toISOString().slice(0, 10);
     return markers.filter(m => m.createdAt && m.createdAt.startsWith(todayStr));
   } else {
-    const fromVal = document.getElementById('export-date-from').value;
-    const toVal = document.getElementById('export-date-to').value;
-    if (!fromVal || !toVal) return markers;
-
-    const fromDate = new Date(fromVal);
+    const fromDate = new Date(document.getElementById('export-date-from').value);
     fromDate.setHours(0, 0, 0, 0);
-    const toDate = new Date(toVal);
+    const toDate = new Date(document.getElementById('export-date-to').value);
     toDate.setHours(23, 59, 59, 999);
-
-    return markers.filter(m => {
-      if (!m.createdAt) return false;
-      const d = new Date(m.createdAt);
-      return d >= fromDate && d <= toDate;
-    });
+    return markers.filter(m => { if (!m.createdAt) return false; const d = new Date(m.createdAt); return d >= fromDate && d <= toDate; });
   }
 }
 
 function updateExportSummary() {
-  const count = getExportMarkers().length;
-  document.getElementById('export-count').textContent = count;
+  document.getElementById('export-count').textContent = getExportMarkers().length;
 }
 
 async function exportToZIP() {
   const markers = getExportMarkers();
-
-  if (markers.length === 0) {
-    showToast('No hay marcadores para exportar en el rango seleccionado', 'error');
-    return;
-  }
-
+  if (markers.length === 0) { showToast('No hay marcadores para exportar', 'error'); return; }
   showToast('Generando ZIP...', 'info');
-
   try {
     const zip = new JSZip();
     const folder = zip.folder('fotos');
-
+    const wb = XLSX.utils.book_new();
     const qcMarkers = markers.filter(m => m.markerType === 'qc');
     const lsmMarkers = markers.filter(m => m.markerType === 'lsm');
-
-    // Create Excel workbook
-    const wb = XLSX.utils.book_new();
-
-    // Sheet 1: QC
     if (qcMarkers.length > 0) {
-      const qcData = [];
-      qcData.push([
-        'Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)',
-        'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2'
-      ]);
-
+      const qcData = [['Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2']];
       for (let i = 0; i < qcMarkers.length; i++) {
         const m = qcMarkers[i];
         const safeName = (m.name || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '_');
         const rowNum = String(i + 1).padStart(3, '0');
-        let foto1Name = '';
-        let foto2Name = '';
-
+        let foto1 = '', foto2 = '';
         if (m.photos && m.photos.length > 0) {
           for (let p = 0; p < m.photos.length && p < 2; p++) {
             const photoId = m.photos[p];
@@ -2347,50 +1573,24 @@ async function exportToZIP() {
               if (photoRecord && photoRecord.blob) {
                 const fileName = safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
                 folder.file(fileName, photoRecord.blob);
-                if (p === 0) foto1Name = fileName;
-                if (p === 1) foto2Name = fileName;
+                if (p === 0) foto1 = fileName;
+                if (p === 1) foto2 = fileName;
               }
-            } catch (e) {
-              console.warn('Could not add photo to zip:', photoId);
-            }
+            } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-
-        qcData.push([
-          m.name || '',
-          MARKER_COLORS[m.color]?.label || '',
-          m.description || '',
-          m.norte,
-          m.este,
-          m.lat,
-          m.lng,
-          formatDateTime(m.createdAt),
-          foto1Name,
-          foto2Name
-        ]);
+        qcData.push([m.name || '', MARKER_COLORS[m.color]?.label || '', m.description || '', m.norte, m.este, m.lat, m.lng, formatDateTime(m.createdAt), foto1, foto2]);
       }
-      const wsQC = XLSX.utils.aoa_to_sheet(qcData);
-      XLSX.utils.book_append_sheet(wb, wsQC, 'Marcadores_QC');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(qcData), 'QC');
     }
-
-    // Sheet 2: LSM
     if (lsmMarkers.length > 0) {
-      const lsmData = [];
-      lsmData.push([
-        'Nombre_Muestra', 'Tipo_Muestra', 'Nombre_Proyecto', 'Solicitante',
-        'Estructura_Deposito', 'Subestructuras', 'Categoria', 'Tipo_Material',
-        'Proveniencia', 'Localizacion', 'Fuente', 'Ensayos',
-        'Norte (m)', 'Este (m)', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2'
-      ]);
-
+      const lsmData = [['Nombre_Muestra', 'Tipo_Muestra', 'Proyecto', 'Solicitante', 'Estructura', 'Subestructuras', 'Categoria', 'Tipo_Material', 'Proveniencia', 'Localizacion', 'Fuente', 'Ensayos', 'Norte', 'Este', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2']];
       for (let i = 0; i < lsmMarkers.length; i++) {
         const m = lsmMarkers[i];
         const d = m.lsmData || {};
         const safeName = (m.name || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '_');
         const rowNum = String(i + 1).padStart(3, '0');
-        let foto1Name = '';
-        let foto2Name = '';
-
+        let foto1 = '', foto2 = '';
         if (m.photos && m.photos.length > 0) {
           for (let p = 0; p < m.photos.length && p < 2; p++) {
             const photoId = m.photos[p];
@@ -2399,55 +1599,23 @@ async function exportToZIP() {
               if (photoRecord && photoRecord.blob) {
                 const fileName = safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
                 folder.file(fileName, photoRecord.blob);
-                if (p === 0) foto1Name = fileName;
-                if (p === 1) foto2Name = fileName;
+                if (p === 0) foto1 = fileName;
+                if (p === 1) foto2 = fileName;
               }
-            } catch (e) {
-              console.warn('Could not add photo to zip:', photoId);
-            }
+            } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-
-        lsmData.push([
-          m.name || '',
-          d.tipoMuestra || '',
-          d.nombreProyecto || '',
-          d.solicitante || '',
-          d.estructuraDeposito || '',
-          d.subestructuras || '',
-          d.categoria || '',
-          d.tipoMaterial || '',
-          d.proveniencia || '',
-          d.localizacion || '',
-          d.fuente || '',
-          (d.ensayos || []).join(', '),
-          m.norte,
-          m.este,
-          m.lat,
-          m.lng,
-          formatDateTime(m.createdAt),
-          foto1Name,
-          foto2Name
-        ]);
+        lsmData.push([m.name || '', d.tipoMuestra || '', d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', d.tipoMaterial || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', (d.ensayos || []).join(', '), m.norte, m.este, m.lat, m.lng, formatDateTime(m.createdAt), foto1, foto2]);
       }
-      const wsLSM = XLSX.utils.aoa_to_sheet(lsmData);
-      XLSX.utils.book_append_sheet(wb, wsLSM, 'Marcadores_LSM');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(lsmData), 'LSM');
     }
-
     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     zip.file('marcadores.xlsx', excelBuffer);
-
-    // Generate and download ZIP
     const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const dateStr = new Date().toISOString().slice(0, 10);
-    saveAs(zipBlob, 'marcadores_' + dateStr + '.zip');
-
-    showToast(markers.length + ' marcadores exportados en ZIP', 'success');
+    saveAs(zipBlob, 'marcadores_' + new Date().toISOString().slice(0, 10) + '.zip');
+    showToast(markers.length + ' marcadores exportados', 'success');
     closeExportModal();
-  } catch (error) {
-    console.error('Export error:', error);
-    showToast('Error al generar ZIP: ' + (error.message || 'Desconocido'), 'error');
-  }
+  } catch (error) { showToast('Error al generar ZIP', 'error'); }
 }
 
 // ============================================
@@ -2456,58 +1624,24 @@ async function exportToZIP() {
 
 async function loadMapsList() {
   const container = document.getElementById('maps-list');
-
   try {
     const maps = await MapStorage.getAllMaps();
     document.getElementById('maps-count').textContent = maps.length;
-
-    if (maps.length === 0) {
-      container.innerHTML = '<p class="empty-msg">No hay mapas cargados aun</p>';
-      return;
-    }
-
+    if (maps.length === 0) { container.innerHTML = '<p class="empty-msg">No hay mapas cargados</p>'; return; }
     container.innerHTML = maps.map(map => {
-      const typeIcon = map.type === 'pdf'
-        ? '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>'
-        : '<svg viewBox="0 0 24 24"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4zM8 2v16M16 6v16"/></svg>';
-
-      const typeLabel = map.type === 'pdf' ? 'PDF' : 'TIFF';
-
-      return '<div class="map-card" data-id="' + map.id + '">' +
-        '<div class="map-card-icon">' + typeIcon + '</div>' +
-        '<div class="map-card-info">' +
-          '<div class="map-card-name">' + escapeHtml(map.name) + '</div>' +
-          '<div class="map-card-meta">' + typeLabel + ' - ' + formatBytes(map.size) + ' - ' + formatDate(map.createdAt) + '</div>' +
-        '</div>' +
-        '<button class="map-card-delete" data-id="' + map.id + '" data-name="' + escapeHtml(map.name) + '" title="Eliminar">' +
-          '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>' +
-        '</button>' +
-      '</div>';
+      const typeIcon = map.type === 'pdf' ? '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4zM8 2v16M16 6v16"/></svg>';
+      return '<div class="map-card" data-id="' + map.id + '"><div class="map-card-icon">' + typeIcon + '</div><div class="map-card-info"><div class="map-card-name">' + escapeHtml(map.name) + '</div><div class="map-card-meta">' + (map.type || 'tiff').toUpperCase() + ' - ' + formatBytes(map.size) + ' - ' + formatDate(map.createdAt) + '</div></div><button class="map-card-delete" data-id="' + map.id + '" data-name="' + escapeHtml(map.name) + '" title="Eliminar">X</button></div>';
     }).join('');
-
     container.querySelectorAll('.map-card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        if (e.target.closest('.map-card-delete')) return;
-        openMap(card.dataset.id);
-      });
+      card.addEventListener('click', (e) => { if (!e.target.closest('.map-card-delete')) openMap(card.dataset.id); });
     });
-
     container.querySelectorAll('.map-card-delete').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openDeleteMapModal(btn.dataset.id, btn.dataset.name);
-      });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteMapModal(btn.dataset.id, btn.dataset.name); });
     });
-
-  } catch (error) {
-    container.innerHTML = '<p class="empty-msg">Error al cargar mapas</p>';
-  }
-
+  } catch (error) { container.innerHTML = '<p class="empty-msg">Error al cargar mapas</p>'; }
   const total = await MapStorage.getTotalStorage();
   const storageInfoEl = document.getElementById('storage-info');
-  if (storageInfoEl) {
-    storageInfoEl.textContent = MapStorage.formatBytes(total) + ' usado';
-  }
+  if (storageInfoEl) storageInfoEl.textContent = MapStorage.formatBytes(total) + ' usado';
 }
 
 // ============================================
@@ -2516,16 +1650,10 @@ async function loadMapsList() {
 
 function handleFileUpload(file) {
   if (!file) return;
-
   const ext = '.' + file.name.split('.').pop().toLowerCase();
-
-  if (ext === '.tif' || ext === '.tiff') {
-    handleTIFFUpload(file);
-  } else if (ext === '.pdf') {
-    handlePDFUpload(file);
-  } else {
-    showToast('Solo archivos .TIF, .TIFF o .PDF', 'error');
-  }
+  if (ext === '.tif' || ext === '.tiff') handleTIFFUpload(file);
+  else if (ext === '.pdf') handlePDFUpload(file);
+  else showToast('Solo archivos .TIF, .TIFF o .PDF', 'error');
 }
 
 function handleTIFFUpload(file) {
@@ -2535,43 +1663,22 @@ function handleTIFFUpload(file) {
   progressEl.classList.remove('hidden');
   progressFill.style.width = '30%';
   progressText.textContent = 'Leyendo archivo...';
-
   const reader = new FileReader();
-
-  reader.onprogress = (e) => {
-    if (e.lengthComputable) {
-      progressFill.style.width = (Math.round((e.loaded / e.total) * 70) + 30) + '%';
-    }
+  reader.onprogress = (e) => { if (e.lengthComputable) progressFill.style.width = (Math.round((e.loaded / e.total) * 70) + 30) + '%'; };
+  reader.onload = async (e) => {
+    progressFill.style.width = '80%';
+    progressText.textContent = 'Guardando...';
+    try {
+      await MapStorage.saveMap(file.name, e.target.result, file.size);
+      progressFill.style.width = '100%';
+      progressText.textContent = 'Completado!';
+      showToast('Mapa "' + file.name + '" guardado', 'success');
+      await loadMapsList();
+      document.getElementById('map-input').value = '';
+      setTimeout(() => { progressEl.classList.add('hidden'); progressFill.style.width = '0%'; }, 1500);
+    } catch (error) { showToast(error.message || 'Error al guardar', 'error'); progressEl.classList.add('hidden'); }
   };
-
-    reader.onload = async (e) => {
-      progressFill.style.width = '80%';
-      progressText.textContent = 'Guardando...';
-
-      try {
-        await MapStorage.saveMap(file.name, e.target.result, file.size);
-        progressFill.style.width = '100%';
-        progressText.textContent = 'Completado!';
-        showToast('Mapa "' + file.name + '" guardado', 'success');
-        await loadMapsList();
-        document.getElementById('map-input').value = '';
-        setTimeout(() => {
-          progressEl.classList.add('hidden');
-          progressFill.style.width = '0%';
-        }, 1500);
-      } catch (error) {
-        console.error('Error guardando mapa:', error);
-        const msg = error && error.message ? error.message : 'Error al guardar el mapa';
-        showToast(msg, 'error');
-        progressEl.classList.add('hidden');
-      }
-    };
-
-  reader.onerror = () => {
-    showToast('Error al leer el archivo', 'error');
-    progressEl.classList.add('hidden');
-  };
-
+  reader.onerror = () => { showToast('Error al leer archivo', 'error'); progressEl.classList.add('hidden'); };
   reader.readAsArrayBuffer(file);
 }
 
@@ -2582,59 +1689,27 @@ async function handlePDFUpload(file) {
   progressEl.classList.remove('hidden');
   progressFill.style.width = '30%';
   progressText.textContent = 'Procesando PDF...';
-
   try {
     const arrayBuffer = await file.arrayBuffer();
-    // Hacer una copia inmediata ANTES de que PDF.js la modifique/detache
     const arrayBufferForStorage = arrayBuffer.slice(0);
-    // Pasar otra copia a PDFProcessor
     const processed = await PDFProcessor.processPDF(arrayBuffer.slice(0));
-
     progressFill.style.width = '60%';
-    progressText.textContent = 'Renderizando vista previa...';
-
-    // Show preview in georef modal
+    progressText.textContent = 'Renderizando...';
     const previewCanvas = document.getElementById('pdf-preview-canvas');
     const ctx = previewCanvas.getContext('2d');
     previewCanvas.width = processed.canvas.width;
     previewCanvas.height = processed.canvas.height;
     ctx.drawImage(processed.canvas, 0, 0);
-    previewCanvas.style.maxWidth = '100%';
-    previewCanvas.style.height = 'auto';
-
-    // Store pending PDF data - usar la copia que NUNCA paso por PDF.js
-    AppState.pendingPDF = {
-      name: file.name,
-      arrayBuffer: arrayBufferForStorage,
-      size: file.size,
-      isGeoPDF: processed.isGeoPDF,
-      geoData: processed.geoData || null
-    };
-
-    progressFill.style.width = '80%';
-
-    // Check if geo data was auto-extracted
+    AppState.pendingPDF = { name: file.name, arrayBuffer: arrayBufferForStorage, size: file.size, isGeoPDF: processed.isGeoPDF, geoData: processed.geoData || null };
     const geoData = processed.geoData;
-
     if (geoData && geoData.corners) {
-      // Auto-fill the georef modal with extracted coordinates
-      progressText.textContent = 'Coordenadas detectadas automaticamente!';
-
+      progressText.textContent = 'Coordenadas detectadas!';
       const crs = geoData.crs || 'EPSG:4326';
       document.getElementById('georef-crs').value = crs;
-
       const c = geoData.corners;
-
       if (crs === 'EPSG:4326') {
-        // Coordinates are [lon, lat] - display as lat/lon or convert to UTM
-        // Convert all corners to PSAD56 UTM 17S for display
         const cornersUTM = {};
-        for (const key of ['tl', 'tr', 'bl', 'br']) {
-          const [lon, lat] = c[key];
-          const [e, n] = proj4('EPSG:4326', 'EPSG:24877', [lon, lat]);
-          cornersUTM[key] = { e, n };
-        }
-
+        for (const key of ['tl', 'tr', 'bl', 'br']) { const [lon, lat] = c[key]; const [e, n] = proj4('EPSG:4326', 'EPSG:24877', [lon, lat]); cornersUTM[key] = { e, n }; }
         document.getElementById('georef-tl-e').value = cornersUTM.tl.e.toFixed(2);
         document.getElementById('georef-tl-n').value = cornersUTM.tl.n.toFixed(2);
         document.getElementById('georef-tr-e').value = cornersUTM.tr.e.toFixed(2);
@@ -2643,11 +1718,8 @@ async function handlePDFUpload(file) {
         document.getElementById('georef-bl-n').value = cornersUTM.bl.n.toFixed(2);
         document.getElementById('georef-br-e').value = cornersUTM.br.e.toFixed(2);
         document.getElementById('georef-br-n').value = cornersUTM.br.n.toFixed(2);
-
-        // Set CRS to PSAD56 since we pre-converted
         document.getElementById('georef-crs').value = 'EPSG:24877';
       } else {
-        // Coordinates are already in projected CRS (easting, northing)
         document.getElementById('georef-tl-e').value = c.tl[0].toFixed(2);
         document.getElementById('georef-tl-n').value = c.tl[1].toFixed(2);
         document.getElementById('georef-tr-e').value = c.tr[0].toFixed(2);
@@ -2656,50 +1728,16 @@ async function handlePDFUpload(file) {
         document.getElementById('georef-bl-n').value = c.bl[1].toFixed(2);
         document.getElementById('georef-br-e').value = c.br[0].toFixed(2);
         document.getElementById('georef-br-n').value = c.br[1].toFixed(2);
-
         document.getElementById('georef-crs').value = crs;
       }
-
-      // Update info text
-      const infoEl = document.querySelector('.georef-info');
-      if (infoEl) {
-        infoEl.textContent = 'Coordenadas detectadas automaticamente (' + geoData.source + '). Verifica y ajusta si es necesario.';
-        infoEl.style.background = 'rgba(63, 185, 80, 0.1)';
-        infoEl.style.borderColor = 'rgba(63, 185, 80, 0.3)';
-        infoEl.style.color = 'var(--success)';
-      }
-
-      showToast('Coordenadas del GeoPDF detectadas!', 'success');
+      showToast('Coordenadas detectadas!', 'success');
     } else {
-      progressText.textContent = 'Ingresa las coordenadas de las esquinas';
-
-      // Reset info text
-      const infoEl = document.querySelector('.georef-info');
-      if (infoEl) {
-        infoEl.textContent = 'Ingresa las coordenadas de las 4 esquinas del mapa en PSAD56 UTM 17S';
-        infoEl.style.background = '';
-        infoEl.style.borderColor = '';
-        infoEl.style.color = '';
-      }
-
-      // Clear fields
-      ['georef-tl-e', 'georef-tl-n', 'georef-tr-e', 'georef-tr-n',
-       'georef-bl-e', 'georef-bl-n', 'georef-br-e', 'georef-br-n'].forEach(id => {
-        document.getElementById(id).value = '';
-      });
+      progressText.textContent = 'Ingresa coordenadas';
       document.getElementById('georef-crs').value = 'EPSG:24877';
-
-      showToast('PDF sin georreferenciacion. Ingresa coordenadas manualmente.', 'info');
+      showToast('PDF sin georreferenciacion', 'info');
     }
-
-    // Show georef modal
     document.getElementById('georef-modal').classList.remove('hidden');
-
-  } catch (error) {
-    console.error('PDF processing error:', error);
-    showToast('Error al procesar el PDF: ' + error.message, 'error');
-    progressEl.classList.add('hidden');
-  }
+  } catch (error) { showToast('Error al procesar PDF: ' + error.message, 'error'); progressEl.classList.add('hidden'); }
 }
 
 // ============================================
@@ -2713,8 +1751,6 @@ function closeGeorefModal() {
 
 async function applyGeoref() {
   const crs = document.getElementById('georef-crs').value;
-
-  // Read corner values
   const tlE = parseFloat(document.getElementById('georef-tl-e').value);
   const tlN = parseFloat(document.getElementById('georef-tl-n').value);
   const trE = parseFloat(document.getElementById('georef-tr-e').value);
@@ -2723,20 +1759,9 @@ async function applyGeoref() {
   const blN = parseFloat(document.getElementById('georef-bl-n').value);
   const brE = parseFloat(document.getElementById('georef-br-e').value);
   const brN = parseFloat(document.getElementById('georef-br-n').value);
-
-  // Validate
-  if ([tlE, tlN, trE, trN, blE, blN, brE, brN].some(v => isNaN(v))) {
-    showToast('Completa todas las coordenadas', 'error');
-    return;
-  }
-
+  if ([tlE, tlN, trE, trN, blE, blN, brE, brN].some(v => isNaN(v))) { showToast('Completa coordenadas', 'error'); return; }
   const pending = AppState.pendingPDF;
-  if (!pending) {
-    showToast('Error: no hay PDF pendiente', 'error');
-    return;
-  }
-
-  // Generate thumbnail
+  if (!pending) { showToast('Error: no hay PDF', 'error'); return; }
   const previewCanvas = document.getElementById('pdf-preview-canvas');
   const thumbCanvas = document.createElement('canvas');
   const scale = 200 / previewCanvas.width;
@@ -2744,40 +1769,14 @@ async function applyGeoref() {
   thumbCanvas.height = previewCanvas.height * scale;
   thumbCanvas.getContext('2d').drawImage(previewCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
   const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.5);
-
-  const georef = {
-    corners: {
-      tl: [tlE, tlN],
-      tr: [trE, trN],
-      bl: [blE, blN],
-      br: [brE, brN]
-    },
-    crs: crs
-  };
-
+  const georef = { corners: { tl: [tlE, tlN], tr: [trE, trN], bl: [blE, blN], br: [brE, brN] }, crs: crs };
   try {
-    const progressText = document.querySelector('#upload-progress .progress-text');
-    progressText.textContent = 'Guardando PDF...';
-
     await MapStorage.savePDFMap(pending.name, pending.arrayBuffer, pending.size, georef, thumbnail);
-
-    document.querySelector('#upload-progress .progress-fill').style.width = '100%';
-    progressText.textContent = 'Completado!';
-    showToast('PDF "' + pending.name + '" guardado', 'success');
-
+    showToast('PDF guardado', 'success');
     closeGeorefModal();
     await loadMapsList();
     document.getElementById('map-input').value = '';
-
-    setTimeout(() => {
-      document.getElementById('upload-progress').classList.add('hidden');
-      document.querySelector('#upload-progress .progress-fill').style.width = '0%';
-    }, 1500);
-  } catch (error) {
-    console.error('Error guardando PDF:', error);
-    const msg = error && error.message ? error.message : 'Error al guardar el PDF';
-    showToast(msg, 'error');
-  }
+  } catch (error) { showToast(error.message || 'Error al guardar PDF', 'error'); }
 }
 
 // ============================================
@@ -2788,16 +1787,9 @@ function updateModeToggleButton() {
   const btn = document.getElementById('btn-mode-toggle');
   const label = document.getElementById('mode-label');
   if (!btn || !label) return;
-  if (AppState.isAdmin) {
-    label.textContent = 'ADMIN';
-    btn.classList.add('mode-lsm');
-  } else if (AppState.currentMarkerMode === 'lsm') {
-    label.textContent = 'LSM';
-    btn.classList.add('mode-lsm');
-  } else {
-    label.textContent = 'QC';
-    btn.classList.remove('mode-lsm');
-  }
+  if (AppState.isAdmin) { label.textContent = 'ADMIN'; btn.classList.add('mode-lsm'); }
+  else if (AppState.currentMarkerMode === 'lsm') { label.textContent = 'LSM'; btn.classList.add('mode-lsm'); }
+  else { label.textContent = 'QC'; btn.classList.remove('mode-lsm'); }
 }
 
 async function openMap(mapId) {
@@ -2807,22 +1799,13 @@ async function openMap(mapId) {
   AppState.currentMapType = map ? (map.type || 'tiff') : 'tiff';
   AppState.mapTitle = map ? map.name : 'Mapa';
   document.getElementById('map-title').textContent = AppState.mapTitle;
-
-  // Reset mode to QC by default when entering map
   AppState.currentMarkerMode = 'qc';
   updateModeToggleButton();
-
   showScreen('map-screen');
   initMap();
-
   setTimeout(() => AppState.map.invalidateSize(), 200);
-
-  if (AppState.currentMapType === 'pdf') {
-    await loadPDFMap(mapId);
-  } else {
-    await loadGeoTiff(mapId);
-  }
-
+  if (AppState.currentMapType === 'pdf') await loadPDFMap(mapId);
+  else await loadGeoTiff(mapId);
   refreshMarkersOnMap();
   updateMarkerCountBadge();
 }
@@ -2841,13 +1824,8 @@ function openDeleteMapModal(id, name) {
 
 async function confirmDeleteMap() {
   if (!pendingDeleteMapId) return;
-  try {
-    await MapStorage.deleteMap(pendingDeleteMapId);
-    showToast('Mapa eliminado', 'info');
-    await loadMapsList();
-  } catch {
-    showToast('Error al eliminar', 'error');
-  }
+  try { await MapStorage.deleteMap(pendingDeleteMapId); showToast('Mapa eliminado', 'info'); await loadMapsList(); }
+  catch { showToast('Error al eliminar', 'error'); }
   pendingDeleteMapId = null;
   document.getElementById('delete-map-modal').classList.add('hidden');
 }
@@ -2859,24 +1837,15 @@ async function confirmDeleteMap() {
 function toggleTheme() {
   document.body.classList.toggle('light-mode');
   const isLight = document.body.classList.contains('light-mode');
-
   if (AppState.map) {
-    if (isLight) {
-      AppState.map.removeLayer(AppState.darkTiles);
-      AppState.lightTiles.addTo(AppState.map);
-    } else {
-      AppState.map.removeLayer(AppState.lightTiles);
-      AppState.darkTiles.addTo(AppState.map);
-    }
+    if (isLight) { AppState.map.removeLayer(AppState.darkTiles); AppState.lightTiles.addTo(AppState.map); }
+    else { AppState.map.removeLayer(AppState.lightTiles); AppState.darkTiles.addTo(AppState.map); }
   }
-
   localStorage.setItem('maps_gis_theme', isLight ? 'light' : 'dark');
 }
 
 function loadThemePreference() {
-  if (localStorage.getItem('maps_gis_theme') === 'light') {
-    document.body.classList.add('light-mode');
-  }
+  if (localStorage.getItem('maps_gis_theme') === 'light') document.body.classList.add('light-mode');
 }
 
 // ============================================
@@ -2885,18 +1854,9 @@ function loadThemePreference() {
 
 function updateOnlineStatus() {
   const badge = document.getElementById('online-status');
-  if (!navigator.onLine) {
-    badge.textContent = 'Sin conexion';
-    badge.className = 'status-badge offline';
-    return;
-  }
-  if (supabaseClient) {
-    badge.textContent = 'En linea + Sync';
-    badge.className = 'status-badge online';
-  } else {
-    badge.textContent = 'En linea (sin DB)';
-    badge.className = 'status-badge offline';
-  }
+  if (!navigator.onLine) { badge.textContent = 'Sin conexion'; badge.className = 'status-badge offline'; return; }
+  if (supabaseClient) { badge.textContent = 'En linea + Sync'; badge.className = 'status-badge online'; }
+  else { badge.textContent = 'En linea (sin DB)'; badge.className = 'status-badge offline'; }
 }
 
 // ============================================
@@ -2904,189 +1864,81 @@ function updateOnlineStatus() {
 // ============================================
 
 function initEventListeners() {
-  // File input (now supports TIFF + PDF)
-  document.getElementById('map-input').addEventListener('change', (e) => {
-    if (e.target.files.length > 0) handleFileUpload(e.target.files[0]);
-  });
-
-  // Back button
-  document.getElementById('btn-back').addEventListener('click', () => {
-    showScreen('home-screen');
-    loadMapsList();
-    updateMarkerCountBadge();
-  });
-
-  // Theme
+  document.getElementById('map-input').addEventListener('change', (e) => { if (e.target.files.length > 0) handleFileUpload(e.target.files[0]); });
+  document.getElementById('btn-back').addEventListener('click', () => { showScreen('home-screen'); loadMapsList(); updateMarkerCountBadge(); });
   document.getElementById('btn-theme').addEventListener('click', toggleTheme);
-
-  // Location
   document.getElementById('btn-location').addEventListener('click', goToMyLocation);
-
-  // Center map
-  document.getElementById('btn-center').addEventListener('click', () => {
-    if (AppState.mapOverlay) {
-      AppState.map.fitBounds(AppState.mapOverlay.getBounds());
-    }
-  });
-
-  // Add marker toggle
+  document.getElementById('btn-center').addEventListener('click', () => { if (AppState.mapOverlay) AppState.map.fitBounds(AppState.mapOverlay.getBounds()); });
   document.getElementById('btn-add-marker').addEventListener('click', () => {
     AppState.isAddMarkerMode = !AppState.isAddMarkerMode;
     document.getElementById('btn-add-marker').classList.toggle('active', AppState.isAddMarkerMode);
-    const modeText = AppState.currentMarkerMode === 'lsm' ? 'LSM' : 'QC';
-    showToast(
-      AppState.isAddMarkerMode ? 'Modo ' + modeText + ': Toca el mapa para colocar un marcador' : 'Modo marcador desactivado',
-      'info'
-    );
+    showToast(AppState.isAddMarkerMode ? 'Modo marcador activo' : 'Modo marcador desactivado', 'info');
   });
-
-  // Mode toggle (QC / LSM)
   document.getElementById('btn-mode-toggle').addEventListener('click', () => {
-    if (AppState.isAdmin) {
-      showToast('Modo Admin activo. Desactiva Admin primero para cambiar modo.', 'info');
-      return;
-    }
+    if (AppState.isAdmin) { showToast('Desactiva Admin primero', 'info'); return; }
     AppState.currentMarkerMode = AppState.currentMarkerMode === 'qc' ? 'lsm' : 'qc';
     updateModeToggleButton();
     showToast('Modo: ' + (AppState.currentMarkerMode === 'lsm' ? 'LSM' : 'QC'), 'info');
   });
-
-  // Marker modal
   document.getElementById('btn-save-marker').addEventListener('click', saveMarker);
   document.getElementById('btn-cancel-marker').addEventListener('click', closeMarkerModal);
-  document.getElementById('marker-name').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveMarker();
-    if (e.key === 'Escape') closeMarkerModal();
-  });
-
-  // Category selector
+  document.getElementById('marker-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveMarker(); if (e.key === 'Escape') closeMarkerModal(); });
   document.querySelectorAll('.category-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      AppState.selectedCategory = btn.dataset.color;
-      updateCategorySelector();
-    });
+    btn.addEventListener('click', () => { AppState.selectedCategory = btn.dataset.color; updateCategorySelector(); });
   });
-
-  // Marker detail modal
   document.getElementById('btn-close-detail').addEventListener('click', closeMarkerDetail);
   document.getElementById('btn-edit-marker').addEventListener('click', editCurrentMarker);
   document.getElementById('btn-delete-marker').addEventListener('click', deleteCurrentMarker);
-
-  // Photo capture
-  document.getElementById('btn-add-photo').addEventListener('click', () => {
-    document.getElementById('photo-input').click();
-  });
-  document.getElementById('photo-input').addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-      handlePhotoCapture(e.target.files[0]);
-      e.target.value = '';
-    }
-  });
-
-  // Export
+  document.getElementById('btn-add-photo').addEventListener('click', () => { document.getElementById('photo-input').click(); });
+  document.getElementById('photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0]); e.target.value = ''; } });
   document.getElementById('btn-export').addEventListener('click', openExportModal);
-
-  // Markers panel
   document.getElementById('btn-markers-panel').addEventListener('click', openMarkersPanel);
   document.getElementById('btn-close-panel').addEventListener('click', closeMarkersPanel);
   document.getElementById('btn-export-panel').addEventListener('click', openExportModal);
-  document.getElementById('marker-search').addEventListener('input', (e) => {
-    renderMarkersList(e.target.value);
-  });
-
-  // Export modal
+  document.getElementById('marker-search').addEventListener('input', (e) => { renderMarkersList(e.target.value); });
   document.getElementById('btn-cancel-export').addEventListener('click', closeExportModal);
   document.getElementById('btn-confirm-export').addEventListener('click', exportToZIP);
   document.querySelectorAll('input[name="export-type"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const isRange = getExportType() === 'range';
-      document.getElementById('export-range-fields').classList.toggle('hidden', !isRange);
-      updateExportSummary();
-    });
+    radio.addEventListener('change', () => { document.getElementById('export-range-fields').classList.toggle('hidden', getExportType() !== 'range'); updateExportSummary(); });
   });
   document.getElementById('export-date-from').addEventListener('change', updateExportSummary);
   document.getElementById('export-date-to').addEventListener('change', updateExportSummary);
-
-  // Delete map modal
   document.getElementById('btn-confirm-delete').addEventListener('click', confirmDeleteMap);
-  document.getElementById('btn-cancel-delete').addEventListener('click', () => {
-    pendingDeleteMapId = null;
-    document.getElementById('delete-map-modal').classList.add('hidden');
-  });
-
-  // Georef modal
+  document.getElementById('btn-cancel-delete').addEventListener('click', () => { pendingDeleteMapId = null; document.getElementById('delete-map-modal').classList.add('hidden'); });
   document.getElementById('btn-apply-georef').addEventListener('click', applyGeoref);
   document.getElementById('btn-cancel-georef').addEventListener('click', closeGeorefModal);
-
-  // Close modals on backdrop click
   document.querySelectorAll('.modal').forEach(modal => {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
-        if (modal.id === 'marker-modal') {
-          closeMarkerModal();
-        } else if (modal.id === 'georef-modal') {
-          closeGeorefModal();
-        } else if (modal.id === 'export-modal') {
-          closeExportModal();
-        } else if (modal.id === 'marker-type-modal') {
-          closeMarkerTypeModal();
-        } else if (modal.id === 'lsm-login-modal') {
-          closeLSMLoginModal();
-        } else if (modal.id === 'lsm-marker-modal') {
-          closeLSMMarkerModal();
-        } else if (modal.id === 'config-modal') {
-          closeConfigModal();
-        } else if (modal.id === 'marker-detail-modal') {
-          closeMarkerDetail();
-        } else if (modal.id === 'delete-map-modal') {
-          pendingDeleteMapId = null;
-          modal.classList.add('hidden');
-        } else {
-          modal.classList.add('hidden');
-        }
+        if (modal.id === 'marker-modal') closeMarkerModal();
+        else if (modal.id === 'georef-modal') closeGeorefModal();
+        else if (modal.id === 'export-modal') closeExportModal();
+        else if (modal.id === 'marker-type-modal') closeMarkerTypeModal();
+        else if (modal.id === 'lsm-login-modal') closeLSMLoginModal();
+        else if (modal.id === 'lsm-marker-modal') closeLSMMarkerModal();
+        else if (modal.id === 'config-modal') closeConfigModal();
+        else if (modal.id === 'marker-detail-modal') closeMarkerDetail();
+        else if (modal.id === 'delete-map-modal') { pendingDeleteMapId = null; modal.classList.add('hidden'); }
+        else modal.classList.add('hidden');
       }
     });
   });
-
-  // Marker type selector
   document.getElementById('btn-type-qc').addEventListener('click', () => selectMarkerType('qc'));
   document.getElementById('btn-type-lsm').addEventListener('click', () => selectMarkerType('lsm'));
   document.getElementById('btn-cancel-type').addEventListener('click', closeMarkerTypeModal);
-
-  // LSM login modal
   document.getElementById('btn-confirm-lsm-login').addEventListener('click', confirmLSMLogin);
   document.getElementById('btn-cancel-lsm-login').addEventListener('click', closeLSMLoginModal);
-  document.getElementById('lsm-nickname').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') confirmLSMLogin();
-  });
-
-  // LSM marker modal
+  document.getElementById('lsm-nickname').addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmLSMLogin(); });
   document.getElementById('btn-save-lsm-marker').addEventListener('click', saveLSMMarker);
   document.getElementById('btn-cancel-lsm-marker').addEventListener('click', closeLSMMarkerModal);
-  document.getElementById('lsm-nombre-muestra').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveLSMMarker();
-  });
-
-  // LSM category selector
+  document.getElementById('lsm-nombre-muestra').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveLSMMarker(); });
   document.querySelectorAll('#lsm-category-selector .category-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      AppState.lsmSelectedCategory = btn.dataset.color;
-      updateLSMCategorySelector();
-    });
+    btn.addEventListener('click', () => { AppState.lsmSelectedCategory = btn.dataset.color; updateLSMCategorySelector(); });
   });
+  document.getElementById('btn-lsm-add-photo').addEventListener('click', () => { document.getElementById('lsm-photo-input').click(); });
+  document.getElementById('lsm-photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0]); e.target.value = ''; } });
 
-  // LSM photo capture
-  document.getElementById('btn-lsm-add-photo').addEventListener('click', () => {
-    document.getElementById('lsm-photo-input').click();
-  });
-  document.getElementById('lsm-photo-input').addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-      handlePhotoCapture(e.target.files[0]);
-      e.target.value = '';
-    }
-  });
-
-  // Home: download from Supabase
+  // Home buttons
   document.getElementById('btn-home-pull').addEventListener('click', pullConfigFromHome);
   document.getElementById('btn-home-refresh').addEventListener('click', forceFullRefresh);
 
@@ -3097,9 +1949,7 @@ function initEventListeners() {
   document.getElementById('btn-close-config-login').addEventListener('click', closeConfigLoginModal);
   document.getElementById('btn-config-login-cancel').addEventListener('click', closeConfigLoginModal);
   document.getElementById('btn-config-login-enter').addEventListener('click', attemptConfigLogin);
-  document.getElementById('config-login-password').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') attemptConfigLogin();
-  });
+  document.getElementById('config-login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptConfigLogin(); });
   document.querySelectorAll('.config-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.config-tab').forEach(t => t.classList.remove('active'));
@@ -3117,11 +1967,7 @@ function initEventListeners() {
   // Online status + sync
   window.addEventListener('online', () => {
     updateOnlineStatus();
-    if (!supabaseClient) {
-      console.log('[App] Back online, attempting to reconnect to Supabase...');
-      initSupabase();
-      updateOnlineStatus();
-    }
+    if (!supabaseClient) { initSupabase(); updateOnlineStatus(); }
     LSMSyncManager.syncPending();
   });
   window.addEventListener('offline', updateOnlineStatus);
@@ -3132,23 +1978,12 @@ function initEventListeners() {
 // ============================================
 
 function openConfigModal() {
-  // Always show login first - require password every time
   document.getElementById('config-login-modal').classList.remove('hidden');
   setTimeout(() => document.getElementById('config-login-password').focus(), 100);
 }
 
 function closeConfigModal() {
   document.getElementById('config-modal').classList.add('hidden');
-  // Upload local changes to Supabase, then resume sync
-  if (supabaseClient && navigator.onLine) {
-    ConfigManager.uploadToSupabase().then(ok => {
-      if (ok) console.log('[Config] Uploaded on close');
-    });
-  }
-  // Resume sync
-  ConfigManager.subscribeToRealtime();
-  ConfigManager.startPolling();
-  // Log out so next time requires password again
   AdminManager.logout();
 }
 
@@ -3161,60 +1996,13 @@ async function syncConfigWithSupabase() {
   statusEl.className = 'sync-status syncing';
   try {
     const up = await ConfigManager.uploadToSupabase();
-    if (up) {
-      statusEl.textContent = 'Subido!';
-      statusEl.className = 'sync-status success';
-      showToast('Config subida a Supabase', 'success');
-    } else {
-      statusEl.textContent = 'Sin cambios';
-      statusEl.className = 'sync-status';
-    }
+    if (up) { statusEl.textContent = 'Subido!'; statusEl.className = 'sync-status success'; showToast('Config subida', 'success'); }
+    else { statusEl.textContent = 'Sin cambios'; statusEl.className = 'sync-status'; }
   } catch (e) {
-    console.error('[Config] Sync failed:', e);
-    statusEl.textContent = 'Error al subir';
-    statusEl.className = 'sync-status error';
-    showToast('Error al subir', 'error');
+    statusEl.textContent = 'Error'; statusEl.className = 'sync-status error'; showToast('Error al subir', 'error');
   } finally {
     btn.disabled = false;
     setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
-  }
-}
-
-async function pullConfigFromSupabase() {
-  const statusEl = document.getElementById('config-sync-status');
-  if (!supabaseClient) {
-    showToast('No hay conexion con Supabase', 'error');
-    return;
-  }
-  if (statusEl) {
-    statusEl.textContent = 'Descargando...';
-    statusEl.className = 'sync-status syncing';
-  }
-  try {
-    const ok = await ConfigManager.downloadFromSupabase(true);
-    if (ok) {
-      if (statusEl) {
-        statusEl.textContent = 'Descargado!';
-        statusEl.className = 'sync-status success';
-      }
-      showToast('Config descargada de Supabase', 'success');
-    } else {
-      if (statusEl) {
-        statusEl.textContent = 'Sin cambios';
-        statusEl.className = 'sync-status';
-      }
-    }
-  } catch (e) {
-    console.error('[Config] Pull failed:', e);
-    if (statusEl) {
-      statusEl.textContent = 'Error al descargar';
-      statusEl.className = 'sync-status error';
-    }
-    showToast('Error al descargar', 'error');
-  } finally {
-    if (statusEl) {
-      setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
-    }
   }
 }
 
@@ -3222,101 +2010,57 @@ async function pullConfigFromHome() {
   const btn = document.getElementById('btn-home-pull');
   const statusEl = document.getElementById('home-sync-status');
   if (!btn) return;
-
-  if (!supabaseClient) {
-    showToast('No hay conexion con Supabase', 'error');
-    return;
-  }
-
+  if (!supabaseClient) { showToast('No hay conexion con Supabase', 'error'); return; }
   btn.disabled = true;
-  if (statusEl) {
-    statusEl.textContent = 'Descargando...';
-    statusEl.className = 'sync-status syncing';
-  }
+  if (statusEl) { statusEl.textContent = 'Descargando...'; statusEl.className = 'sync-status syncing'; }
   try {
-    const configOk = await ConfigManager.downloadFromSupabase(true);
+    const configOk = await ConfigManager.downloadFromSupabase();
     const markersOk = await LSMSyncManager.syncMarkersFromSupabase();
     if (configOk || markersOk) {
       if (AppState.markersLayer) refreshMarkersOnMap();
       updateMarkerCountBadge();
-      if (statusEl) {
-        statusEl.textContent = 'Datos actualizados!';
-        statusEl.className = 'sync-status success';
-      }
-      showToast('Datos descargados de la base de datos', 'success');
+      if (statusEl) { statusEl.textContent = 'Datos actualizados!'; statusEl.className = 'sync-status success'; }
+      showToast('Datos descargados', 'success');
     } else {
-      if (statusEl) {
-        statusEl.textContent = 'Sin cambios nuevos';
-        statusEl.className = 'sync-status';
-      }
+      if (statusEl) { statusEl.textContent = 'Sin cambios'; statusEl.className = 'sync-status'; }
     }
   } catch (e) {
     console.error('[Home] Pull failed:', e);
-    if (statusEl) {
-      statusEl.textContent = 'Error al descargar';
-      statusEl.className = 'sync-status error';
-    }
-    showToast('Error al descargar datos', 'error');
+    if (statusEl) { statusEl.textContent = 'Error'; statusEl.className = 'sync-status error'; }
+    showToast('Error al descargar', 'error');
   } finally {
     btn.disabled = false;
-    if (statusEl) {
-      setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
-    }
+    if (statusEl) { setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000); }
   }
 }
 
 async function forceFullRefresh() {
-  if (!supabaseClient) {
-    showToast('No hay conexion con Supabase', 'error');
-    return;
-  }
-  if (!confirm('Esto limpiara los datos locales y descargara todo de la base de datos.\n\nNo se perderan los mapas ni fotos guardados.\n\nContinuar?')) {
-    return;
-  }
-
+  if (!supabaseClient) { showToast('No hay conexion', 'error'); return; }
+  if (!confirm('Esto limpiara datos locales y descargara todo de la base de datos.\n\nNo se perderan mapas ni fotos.\n\nContinuar?')) return;
   const btn = document.getElementById('btn-home-refresh');
   const statusEl = document.getElementById('home-refresh-status');
   if (btn) btn.disabled = true;
-  if (statusEl) {
-    statusEl.textContent = 'Actualizando...';
-    statusEl.className = 'sync-status syncing';
-  }
-
+  if (statusEl) { statusEl.textContent = 'Actualizando...'; statusEl.className = 'sync-status syncing'; }
   const savedNickname = LSMUserManager.getNickname();
-
   localStorage.removeItem('maps_gis_markers_v3');
   localStorage.removeItem('maps_gis_config_v2');
   localStorage.removeItem('maps_gis_last_lsm_form');
-  ConfigManager.clearDeletedValues();
-
   try {
-    await ConfigManager.downloadFromSupabase(true);
-
-    if (savedNickname) {
-      LSMUserManager.set(savedNickname);
-    }
+    await ConfigManager.downloadFromSupabase();
+    if (savedNickname) LSMUserManager.set(savedNickname);
     await LSMSyncManager.syncMarkersFromSupabase();
     await LSMSyncManager.syncPending();
-
     if (AppState.markersLayer) refreshMarkersOnMap();
     updateMarkerCountBadge();
-    if (statusEl) {
-      statusEl.textContent = 'Listo!';
-      statusEl.className = 'sync-status success';
-    }
-    showToast('Actualizacion completa finalizada', 'success');
+    if (statusEl) { statusEl.textContent = 'Listo!'; statusEl.className = 'sync-status success'; }
+    showToast('Actualizacion completa', 'success');
   } catch (e) {
     console.error('[FullRefresh] Error:', e);
-    if (statusEl) {
-      statusEl.textContent = 'Error';
-      statusEl.className = 'sync-status error';
-    }
-    showToast('Error en la actualizacion: ' + (e.message || 'Desconocido'), 'error');
+    if (statusEl) { statusEl.textContent = 'Error'; statusEl.className = 'sync-status error'; }
+    showToast('Error: ' + (e.message || 'Desconocido'), 'error');
   } finally {
     if (btn) btn.disabled = false;
-    if (statusEl) {
-      setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
-    }
+    if (statusEl) { setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000); }
   }
 }
 
@@ -3327,12 +2071,8 @@ function closeConfigLoginModal() {
 
 function attemptConfigLogin() {
   const pwd = document.getElementById('config-login-password').value;
-  if (!pwd) {
-    showToast('Ingresa la contrasena', 'error');
-    return;
-  }
+  if (!pwd) { showToast('Ingresa la contrasena', 'error'); return; }
   if (pwd === ADMIN_PASS) {
-    console.log('[Config] Login successful');
     AdminManager.login(pwd);
     closeConfigLoginModal();
     AppState.isAdmin = true;
@@ -3340,22 +2080,9 @@ function attemptConfigLogin() {
     updateConfigAccountTab();
     renderAdminPanel();
     document.getElementById('config-modal').classList.remove('hidden');
-    // Freeze sync while editing config
-    ConfigManager.stopPolling();
-    if (ConfigManager._realtimeChannel) {
-      try { supabaseClient.removeChannel(ConfigManager._realtimeChannel); } catch(e) {}
-      ConfigManager._realtimeChannel = null;
-    }
-    // Show connection status
-    if (!supabaseClient) {
-      showToast('Admin activado pero sin conexion a Supabase', 'warning');
-    } else {
-      showToast('Admin activado. Conectado a Supabase.', 'success');
-    }
-  } else {
-    console.warn('[Config] Login failed - incorrect password');
-    showToast('Contrasena incorrecta', 'error');
-  }
+    if (!supabaseClient) showToast('Admin activado sin conexion', 'warning');
+    else showToast('Admin activado', 'success');
+  } else { showToast('Contrasena incorrecta', 'error'); }
 }
 
 function updateConfigAccountTab() {
@@ -3366,20 +2093,13 @@ function updateConfigAccountTab() {
 function renderConfigSections() {
   const container = document.getElementById('config-sections');
   const labels = {
-    tipo_muestra: 'Tipo de Muestra',
-    nombre_proyecto: 'Nombre del Proyecto',
-    solicitante: 'Solicitante',
-    estructura_deposito: 'Estructura / Deposito',
-    subestructuras: 'Subestructuras',
-    categoria: 'Categoria',
-    tipo_material: 'Tipo de Material',
-    proveniencia: 'Proveniencia',
-    localizacion: 'Localizacion',
-    fuente: 'Fuente',
-    ensayos: 'Ensayos'
+    tipo_muestra: 'Tipo de Muestra', nombre_proyecto: 'Nombre del Proyecto', solicitante: 'Solicitante',
+    estructura_deposito: 'Estructura / Deposito', subestructuras: 'Subestructuras', categoria: 'Categoria',
+    tipo_material: 'Tipo de Material', proveniencia: 'Proveniencia', localizacion: 'Localizacion',
+    fuente: 'Fuente', ensayos: 'Ensayos'
   };
 
-  // Check if container already has sections (re-render vs first render)
+  // First render: create sections
   const existingSections = container.querySelectorAll('.config-section');
   const isFirstRender = existingSections.length === 0;
 
@@ -3390,86 +2110,41 @@ function renderConfigSections() {
       section.className = 'config-section open';
       section.dataset.key = key;
       section.innerHTML =
-        '<div class="config-section-header">' +
-          '<h4>' + labels[key] + '</h4>' +
-          '<span class="config-section-toggle">&#9650;</span>' +
-        '</div>' +
-        '<div class="config-section-body">' +
-          '<div class="config-tag-list"></div>' +
-          '<div class="config-input-row">' +
-            '<input type="text" placeholder="Nueva opcion..." maxlength="50">' +
-            '<button class="btn-primary btn-sm btn-add-config">Agregar</button>' +
-          '</div>' +
-        '</div>';
-
+        '<div class="config-section-header"><h4>' + labels[key] + '</h4><span class="config-section-toggle">&#9650;</span></div>' +
+        '<div class="config-section-body"><div class="config-tag-list"></div><div class="config-input-row"><input type="text" placeholder="Nueva opcion..." maxlength="50"><button class="btn-primary btn-sm btn-add-config">Agregar</button></div></div>';
       container.appendChild(section);
-
-      // Toggle section
-      section.querySelector('.config-section-header').addEventListener('click', () => {
-        section.classList.toggle('open');
-      });
-
-      // Add value handler
+      section.querySelector('.config-section-header').addEventListener('click', () => { section.classList.toggle('open'); });
       const addBtn = section.querySelector('.btn-add-config');
       const input = section.querySelector('input');
       const doAdd = async () => {
         const val = input.value.trim();
-        if (!val) {
-          showToast('Ingresa un valor', 'error');
-          return;
-        }
+        if (!val) { showToast('Ingresa un valor', 'error'); return; }
         if (ConfigManager.addValue(key, val)) {
           input.value = '';
-          // Add to DOM directly without full re-render
           const tagList = section.querySelector('.config-tag-list');
           const tag = createConfigTag(key, val);
           tagList.appendChild(tag);
-          console.log('[Config] Added value:', key, '=', val, 'Total:', ConfigManager.getValues(key).length);
-          // Auto-upload to Supabase
           if (supabaseClient && navigator.onLine) {
-            try {
-              showToast('Subiendo cambios...', 'info');
-              await ConfigManager.uploadToSupabase();
-              showToast('Cambios subidos', 'success');
-            } catch (err) {
-              console.error('[Config] Auto-upload failed after add:', err);
-              showToast('Error al subir: ' + (err.message || 'Desconocido'), 'error');
-            }
+            try { await ConfigManager.uploadToSupabase(); } catch (err) { console.error('[Config] Auto-upload failed:', err); }
           }
-        } else {
-          showToast('Opcion duplicada o vacia', 'error');
-        }
+        } else { showToast('Opcion duplicada o vacia', 'error'); }
       };
       addBtn.addEventListener('click', doAdd);
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') doAdd();
-      });
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
     });
   }
 
-  // Always refresh tag lists (for first render and external updates)
+  // Always refresh tag lists
   CONFIG_KEYS.forEach(key => {
     const section = container.querySelector('.config-section[data-key="' + key + '"]');
     if (!section) return;
     const values = ConfigManager.getValues(key);
     const tagList = section.querySelector('.config-tag-list');
-    
-    // Get current values in DOM
     const currentTags = Array.from(tagList.querySelectorAll('.config-tag'));
     const currentValues = currentTags.map(tag => tag.dataset.val);
-    
-    // Remove tags that no longer exist
-    currentTags.forEach(tag => {
-      if (!values.includes(tag.dataset.val)) {
-        console.log('[Config] Removing tag from DOM:', key, '=', tag.dataset.val);
-        tag.remove();
-      }
-    });
-    
-    // Add new tags
+    currentTags.forEach(tag => { if (!values.includes(tag.dataset.val)) tag.remove(); });
     values.forEach(val => {
       if (!currentValues.includes(val)) {
-        console.log('[Config] Adding tag to DOM:', key, '=', val);
         const tag = createConfigTag(key, val);
         tagList.appendChild(tag);
       }
@@ -3482,40 +2157,15 @@ function createConfigTag(key, val) {
   tag.className = 'config-tag';
   tag.dataset.val = val;
   tag.innerHTML = escapeHtml(val) + '<button>&times;</button>';
-  
   tag.querySelector('button').addEventListener('click', async (e) => {
     e.stopPropagation();
-    console.log('[Config] Clicked delete:', key, '=', val);
-    console.log('[Config] Before delete:', key, '=', JSON.stringify(ConfigManager.getValues(key)));
-    
-    const removed = ConfigManager.removeValue(key, val);
-    console.log('[Config] removeValue returned:', removed);
-    console.log('[Config] After delete:', key, '=', JSON.stringify(ConfigManager.getValues(key)));
-    
-    if (removed) {
+    if (ConfigManager.removeValue(key, val)) {
       tag.remove();
-      console.log('[Config] Tag removed from DOM');
-      
       if (supabaseClient && navigator.onLine) {
-        try {
-          showToast('Subiendo cambios...', 'info');
-          const ok = await ConfigManager.uploadToSupabase();
-          if (ok) {
-            showToast('Cambios subidos', 'success');
-          }
-        } catch (err) {
-          console.error('[Config] Auto-upload failed after remove:', err);
-          showToast('Error al subir: ' + (err.message || 'Desconocido'), 'error');
-        }
-      } else {
-        showToast('Guardado localmente (sin conexion)', 'info');
+        try { await ConfigManager.uploadToSupabase(); } catch (err) { console.error('[Config] Auto-upload failed:', err); }
       }
-    } else {
-      console.error('[Config] removeValue failed for:', key, '=', val);
-      showToast('Error al borrar', 'error');
-    }
+    } else { showToast('Error al borrar', 'error'); }
   });
-  
   return tag;
 }
 
@@ -3531,22 +2181,15 @@ async function initApp() {
   initEventListeners();
   await loadMapsList();
   updateMarkerCountBadge();
-
   if (supabaseClient) {
-    // Sync config from Supabase on startup
     await ConfigManager.downloadFromSupabase();
-    ConfigManager.subscribeToRealtime();
-    ConfigManager.startPolling();
     LSMSyncManager.syncPending();
     LSMSyncManager.syncMarkersFromSupabase();
   } else {
-    console.warn('[App] No Supabase client - running in offline mode');
+    console.warn('[App] No Supabase client - offline mode');
   }
-
-  // Re-sync config when user returns to the tab
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && supabaseClient && navigator.onLine) {
-      console.log('[App] Tab regained focus, syncing...');
       ConfigManager.downloadFromSupabase();
       LSMSyncManager.syncMarkersFromSupabase();
     }
