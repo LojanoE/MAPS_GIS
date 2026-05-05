@@ -297,7 +297,7 @@ const ConfigManager = {
   },
 
 
-  async downloadFromSupabase() {
+  async downloadFromSupabase(force = false) {
     if (!supabaseClient) {
       console.warn('[Config] No Supabase client');
       return false;
@@ -307,8 +307,8 @@ const ConfigManager = {
       return false;
     }
     const configModal = document.getElementById('config-modal');
-    if (configModal && !configModal.classList.contains('hidden')) {
-      console.log('[Config] Config modal open, frozen');
+    if (configModal && !configModal.classList.contains('hidden') && !force) {
+      console.log('[Config] Config modal open, frozen (use force=true to override)');
       return false;
     }
     ConfigManager._syncing = true;
@@ -325,6 +325,10 @@ const ConfigManager = {
         console.warn('[Config] No data from Supabase');
         return false;
       }
+      // Log each row for debugging
+      data.forEach(row => {
+        console.log('[Config] Row:', row.config_key, '=', JSON.stringify(row.config_values), 'length:', Array.isArray(row.config_values) ? row.config_values.length : 0);
+      });
       const remoteCfg = {};
       data.forEach(row => {
         let vals = row.config_values;
@@ -346,11 +350,12 @@ const ConfigManager = {
       CONFIG_KEYS.forEach(k => {
         if (!remoteCfg[k]) remoteCfg[k] = [];
       });
+      console.log('[Config] localizacion downloaded:', JSON.stringify(remoteCfg.localizacion));
       this.saveLocal(remoteCfg);
       console.log('[Config] Downloaded and saved', Object.keys(remoteCfg).length, 'keys');
       showToast('Datos descargados correctamente', 'success');
       if (typeof renderConfigSections === 'function') {
-        try { renderConfigSections(); } catch(e) {}
+        try { renderConfigSections(); } catch(e) { console.error('[Config] Render error:', e); }
       }
       return true;
     } catch (e) {
@@ -2915,7 +2920,7 @@ async function pullConfigFromSupabase() {
   statusEl.textContent = 'Descargando...';
   statusEl.className = 'sync-status syncing';
   try {
-    const ok = await ConfigManager.downloadFromSupabase();
+    const ok = await ConfigManager.downloadFromSupabase(true);
     if (ok) {
       statusEl.textContent = 'Descargado!';
       statusEl.className = 'sync-status success';
@@ -2951,7 +2956,7 @@ async function pullConfigFromHome() {
     statusEl.className = 'sync-status syncing';
   }
   try {
-    const ok = await ConfigManager.downloadFromSupabase();
+    const ok = await ConfigManager.downloadFromSupabase(true);
     if (ok) {
       if (statusEl) {
         statusEl.textContent = 'Datos actualizados!';
