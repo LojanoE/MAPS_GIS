@@ -17,6 +17,37 @@ proj4.defs('EPSG:24877', PSAD56_UTM_17S);
 // ============================================
 // SUPABASE CONFIG
 // ============================================
+function parsePostgresArray(val) {
+  if (Array.isArray(val)) return val;
+  if (typeof val !== 'string') return [];
+  if (val.startsWith('{') && val.endsWith('}')) {
+    const inner = val.slice(1, -1);
+    if (inner.trim() === '') return [];
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    if (current.trim()) result.push(current.trim());
+    return result;
+  }
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 const SUPABASE_URL = 'https://dzmhhlsttqygjvfabdxx.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6bWhobHN0dHF5Z2p2ZmFiZHh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTE3MDAsImV4cCI6MjA5MDcyNzcwMH0._Gf0G2gpV_9QAYqFx1Kn6TN0lFDq3LxmBdNI82Suj-o';
 let supabaseClient = null;
@@ -331,27 +362,24 @@ const ConfigManager = {
       });
       const remoteCfg = {};
       data.forEach(row => {
-        let vals = row.config_values;
-        if (typeof vals === 'string') {
-          try {
-            if (vals.startsWith('{') && vals.endsWith('}')) {
-              vals = vals.slice(1, -1).split(',').map(v => v.replace(/^"|"$/g, '')).filter(v => v.length > 0);
-            } else {
-              vals = JSON.parse(vals);
-            }
-          } catch (e) {
-            vals = [];
-          }
-        }
-        if (!Array.isArray(vals)) vals = [];
-        remoteCfg[row.config_key] = vals;
+        remoteCfg[row.config_key] = parsePostgresArray(row.config_values);
       });
-      // Ensure all keys exist
       CONFIG_KEYS.forEach(k => {
         if (!remoteCfg[k]) remoteCfg[k] = [];
       });
-      console.log('[Config] localizacion downloaded:', JSON.stringify(remoteCfg.localizacion));
-      this.saveLocal(remoteCfg);
+      const localCfg = this.getLocal();
+      const mergedCfg = {};
+      CONFIG_KEYS.forEach(k => {
+        const localVals = Array.isArray(localCfg[k]) ? localCfg[k] : [];
+        const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
+        const merged = [...localVals];
+        remoteVals.forEach(v => {
+          if (!merged.includes(v)) merged.push(v);
+        });
+        mergedCfg[k] = merged;
+      });
+      console.log('[Config] Merge result localizacion:', JSON.stringify(mergedCfg.localizacion));
+      this.saveLocal(mergedCfg);
       console.log('[Config] Downloaded and saved', Object.keys(remoteCfg).length, 'keys');
       showToast('Datos descargados correctamente', 'success');
       if (typeof renderConfigSections === 'function') {
@@ -377,13 +405,36 @@ const ConfigManager = {
     }
     ConfigManager._syncing = true;
     try {
-      const cfg = this.getLocal();
+      // First, download remote config to merge with local
+      const { data: remoteData, error: fetchError } = await supabaseClient
+        .from('app_config')
+        .select('config_key, config_values');
+      const remoteCfg = {};
+      if (!fetchError && remoteData) {
+        remoteData.forEach(row => {
+          remoteCfg[row.config_key] = parsePostgresArray(row.config_values);
+        });
+      }
+      const localCfg = this.getLocal();
+      const mergedCfg = {};
+      CONFIG_KEYS.forEach(k => {
+        const localVals = Array.isArray(localCfg[k]) ? localCfg[k] : [];
+        const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
+        const merged = [...remoteVals];
+        localVals.forEach(v => {
+          if (!merged.includes(v)) merged.push(v);
+        });
+        mergedCfg[k] = merged;
+      });
+      // Save merged locally too
+      this.saveLocal(mergedCfg);
+
       const updates = CONFIG_KEYS.map(k => ({
         config_key: k,
-        config_values: cfg[k] || [],
+        config_values: mergedCfg[k] || [],
         updated_at: new Date().toISOString()
       }));
-      console.log('[Config] Uploading', updates.length, 'keys...');
+      console.log('[Config] Uploading merged', updates.length, 'keys...');
       const { data, error } = await supabaseClient
         .from('app_config')
         .upsert(updates, { onConflict: 'config_key' });
@@ -625,6 +676,28 @@ const AdminManager = {
   filterByNickname(nickname) {
     if (!nickname) return adminMarkersCache;
     return adminMarkersCache.filter(m => m.nickname === nickname);
+  },
+
+  startAutoRefresh() {
+    this.stopAutoRefresh();
+    AdminManager._refreshInterval = setInterval(async () => {
+      if (!AppState.isAdmin || !supabaseClient) return;
+      console.log('[Admin] Auto-refreshing markers...');
+      await AdminManager.fetchAllMarkers();
+      if (AppState.isAdmin) {
+        addAdminMarkersToMap();
+        renderAdminPanel();
+      }
+    }, 60000);
+    console.log('[Admin] Auto-refresh started (60s)');
+  },
+
+  stopAutoRefresh() {
+    if (AdminManager._refreshInterval) {
+      clearInterval(AdminManager._refreshInterval);
+      AdminManager._refreshInterval = null;
+    }
+    console.log('[Admin] Auto-refresh stopped');
   }
 };
 
@@ -643,9 +716,11 @@ async function activateAdmin(password) {
   renderAdminPanel();
   updateConfigAccountTab();
   addAdminMarkersToMap();
+  AdminManager.startAutoRefresh();
 }
 
 function deactivateAdmin() {
+  AdminManager.stopAutoRefresh();
   AdminManager.logout();
   removeAdminMarkersFromMap();
   renderAdminPanel();
