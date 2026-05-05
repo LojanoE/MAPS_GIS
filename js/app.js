@@ -120,7 +120,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.4.6';
+const APP_VERSION = '1.5.0';
 
 // ============================================
 // APP STATE
@@ -210,6 +210,41 @@ const MarkerManager = {
       lsmData: lsmData,
       pendingUpload: true,
       createdAt: new Date().toISOString()
+    };
+    markers.push(marker);
+    this.saveAll(markers);
+    return marker;
+  },
+
+  createLSMFromRemote(remoteMarker, localId) {
+    const markers = this.getAll();
+    const lsmData = {
+      tipoMuestra: remoteMarker.tipo_muestra || '',
+      nombreProyecto: remoteMarker.nombre_proyecto || '',
+      solicitante: remoteMarker.solicitante || '',
+      estructuraDeposito: remoteMarker.estructura_deposito || '',
+      subestructuras: remoteMarker.subestructuras || '',
+      categoria: remoteMarker.categoria || '',
+      tipoMaterial: remoteMarker.tipo_material || '',
+      nombreMuestra: remoteMarker.nombre_muestra || '',
+      proveniencia: remoteMarker.proveniencia || '',
+      localizacion: remoteMarker.localizacion || '',
+      fuente: remoteMarker.fuente || '',
+      ensayos: Array.isArray(remoteMarker.ensayos) ? remoteMarker.ensayos : []
+    };
+    const marker = {
+      id: localId || ('m_' + Date.now() + '_r'),
+      markerType: 'lsm',
+      name: (remoteMarker.nombre_muestra || '').trim(),
+      lat: remoteMarker.lat,
+      lng: remoteMarker.lng,
+      norte: remoteMarker.norte || '',
+      este: remoteMarker.este || '',
+      color: remoteMarker.color || 'red',
+      photos: [],
+      lsmData: lsmData,
+      pendingUpload: false,
+      createdAt: remoteMarker.created_at || new Date().toISOString()
     };
     markers.push(marker);
     this.saveAll(markers);
@@ -596,6 +631,85 @@ const LSMSyncManager = {
     }
     if (success > 0) {
       showToast(success + ' muestra(s) subidas a la nube', 'success');
+    }
+  },
+
+  async syncMarkersFromSupabase() {
+    if (!supabaseClient) {
+      console.warn('[Sync] No Supabase client');
+      return false;
+    }
+    const nickname = LSMUserManager.getNickname();
+    if (!nickname) {
+      console.log('[Sync] No nickname set, skipping marker download');
+      return false;
+    }
+    try {
+      console.log('[Sync] Downloading LSM markers for nickname:', nickname);
+      const { data, error } = await supabaseClient
+        .from('lsm_markers')
+        .select('*')
+        .eq('nickname', nickname)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('[Sync] Download markers error:', error.message);
+        return false;
+      }
+      if (!data || data.length === 0) {
+        console.log('[Sync] No markers found for nickname:', nickname);
+        return true;
+      }
+
+      const markers = MarkerManager.getAll();
+      const localById = {};
+      markers.forEach(m => { localById[m.id] = m; });
+
+      let updated = 0;
+      let created = 0;
+
+      data.forEach(remote => {
+        const localId = remote.local_marker_id;
+        const local = localId ? localById[localId] : null;
+
+        const lsmData = {
+          tipoMuestra: remote.tipo_muestra || '',
+          nombreProyecto: remote.nombre_proyecto || '',
+          solicitante: remote.solicitante || '',
+          estructuraDeposito: remote.estructura_deposito || '',
+          subestructuras: remote.subestructuras || '',
+          categoria: remote.categoria || '',
+          tipoMaterial: remote.tipo_material || '',
+          nombreMuestra: remote.nombre_muestra || '',
+          proveniencia: remote.proveniencia || '',
+          localizacion: remote.localizacion || '',
+          fuente: remote.fuente || '',
+          ensayos: Array.isArray(remote.ensayos) ? remote.ensayos : (typeof remote.ensayos === 'string' ? parsePostgresArray(remote.ensayos) : [])
+        };
+
+        if (local) {
+          MarkerManager.update(local.id, {
+            name: (remote.nombre_muestra || '').trim(),
+            lat: remote.lat,
+            lng: remote.lng,
+            norte: remote.norte || String(remote.norte) || '',
+            este: remote.este || String(remote.este) || '',
+            color: remote.color || 'red',
+            lsmData: lsmData,
+            pendingUpload: false
+          });
+          updated++;
+        } else {
+          MarkerManager.createLSMFromRemote(remote, localId);
+          created++;
+        }
+      });
+
+      console.log('[Sync] Markers synced:', updated, 'updated,', created, 'created from', data.length, 'remote');
+      return true;
+    } catch (e) {
+      console.error('[Sync] Download markers exception:', e);
+      return false;
     }
   }
 };
@@ -2916,6 +3030,7 @@ function initEventListeners() {
     updateConfigAccountTab();
     showToast('Sesion LSM cerrada', 'info');
   });
+  document.getElementById('btn-force-refresh').addEventListener('click', forceFullRefresh);
 
   // Online status + sync
   window.addEventListener('online', () => {
@@ -3031,8 +3146,11 @@ async function pullConfigFromHome() {
     statusEl.className = 'sync-status syncing';
   }
   try {
-    const ok = await ConfigManager.downloadFromSupabase(true);
-    if (ok) {
+    const configOk = await ConfigManager.downloadFromSupabase(true);
+    const markersOk = await LSMSyncManager.syncMarkersFromSupabase();
+    if (configOk || markersOk) {
+      refreshMarkersOnMap();
+      updateMarkerCountBadge();
       if (statusEl) {
         statusEl.textContent = 'Datos actualizados!';
         statusEl.className = 'sync-status success';
@@ -3056,6 +3174,42 @@ async function pullConfigFromHome() {
     if (statusEl) {
       setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
     }
+  }
+}
+
+async function forceFullRefresh() {
+  if (!supabaseClient) {
+    showToast('No hay conexion con Supabase', 'error');
+    return;
+  }
+  if (!confirm('Esto limpiara los datos locales y descargara todo de la base de datos.\n\nNo se perderan los mapas ni fotos guardados.\n\nContinuar?')) {
+    return;
+  }
+  showToast('Forzando actualizacion completa...', 'info');
+
+  const savedNickname = LSMUserManager.getNickname();
+
+  localStorage.removeItem('maps_gis_markers_v3');
+  localStorage.removeItem('maps_gis_config_v2');
+  localStorage.removeItem('maps_gis_last_lsm_form');
+
+  try {
+    await ConfigManager.downloadFromSupabase(true);
+
+    if (savedNickname) {
+      LSMUserManager.set(savedNickname);
+    }
+    await LSMSyncManager.syncMarkersFromSupabase();
+    await LSMSyncManager.syncPending();
+
+    refreshMarkersOnMap();
+    updateMarkerCountBadge();
+    renderConfigSections();
+    updateConfigAccountTab();
+    showToast('Actualizacion completa finalizada', 'success');
+  } catch (e) {
+    console.error('[FullRefresh] Error:', e);
+    showToast('Error en la actualizacion: ' + (e.message || 'Desconocido'), 'error');
   }
 }
 
@@ -3191,6 +3345,7 @@ async function initApp() {
     ConfigManager.subscribeToRealtime();
     ConfigManager.startPolling();
     LSMSyncManager.syncPending();
+    LSMSyncManager.syncMarkersFromSupabase();
   } else {
     console.warn('[App] No Supabase client - running in offline mode');
   }
@@ -3198,8 +3353,9 @@ async function initApp() {
   // Re-sync config when user returns to the tab
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && supabaseClient && navigator.onLine) {
-      console.log('[App] Tab regained focus, syncing config...');
+      console.log('[App] Tab regained focus, syncing...');
       ConfigManager.downloadFromSupabase();
+      LSMSyncManager.syncMarkersFromSupabase();
     }
   });
 }
