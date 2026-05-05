@@ -279,27 +279,29 @@ const ConfigManager = {
         console.error('[Config] Supabase query error:', error.message, error.code, error.details);
         return false;
       }
-      console.log('[Config] Downloaded', data ? data.length : 0, 'config rows from Supabase');
-      const cfg = {};
-      if (data && data.length > 0) {
-        data.forEach(row => {
-          cfg[row.config_key] = row.config_values || [];
-        });
-      } else {
+      if (!data || data.length === 0) {
         console.warn('[Config] No data returned from Supabase');
+        return false;
       }
+      const remoteCfg = {};
+      data.forEach(row => {
+        remoteCfg[row.config_key] = row.config_values || [];
+      });
       const localCfg = this.getLocal();
       let changed = false;
       CONFIG_KEYS.forEach(k => {
-        const remoteVals = cfg[k] || [];
+        const remoteVals = remoteCfg[k] || [];
         const localVals = localCfg[k] || [];
-        const merged = [...new Set([...remoteVals, ...localVals])];
-        cfg[k] = merged;
+        if (JSON.stringify(remoteVals.sort()) !== JSON.stringify(localVals.sort())) {
+          changed = true;
+        }
       });
-      const localKeys = Object.keys(localCfg).sort().map(k => k + ':' + (localCfg[k] || []).join(',')).join('|');
-      const newKeys = Object.keys(cfg).sort().map(k => k + ':' + (cfg[k] || []).join(',')).join('|');
-      changed = localKeys !== newKeys;
-      this.saveLocal(cfg);
+      CONFIG_KEYS.forEach(k => {
+        if (!remoteCfg[k] || remoteCfg[k].length === 0) {
+          remoteCfg[k] = [];
+        }
+      });
+      this.saveLocal(remoteCfg);
       if (changed) {
         console.log('[Config] Remote changes detected, updating UI');
         if (typeof renderConfigSections === 'function') {
@@ -2882,8 +2884,9 @@ async function initApp() {
   await loadMapsList();
   updateMarkerCountBadge();
 
-  // Download config from Supabase
+  // Sync config: upload local changes first, then download remote (Supabase is truth)
   if (supabaseClient) {
+    await ConfigManager.uploadToSupabase();
     const ok = await ConfigManager.downloadFromSupabase();
     if (ok) {
       console.log('[App] Config synced from Supabase');
