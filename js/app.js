@@ -120,7 +120,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 
 // ============================================
 // APP STATE
@@ -332,7 +332,13 @@ const ConfigManager = {
   },
 
   saveLocal(config) {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    try {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    } catch (e) {
+      console.error('[Config] saveLocal FAILED:', e);
+      showToast('ERROR: No se pudo guardar en localStorage', 'error');
+      throw e;
+    }
   },
 
   getValues(key) {
@@ -361,50 +367,61 @@ const ConfigManager = {
     return true;
   },
 
-  // Download from Supabase - OVERWRITE local completely
+  // Download from Supabase using DIRECT FETCH (bypasses any client issues)
   async downloadFromSupabase() {
-    if (!supabaseClient) {
-      console.warn('[Config] No Supabase client');
-      return false;
-    }
+    console.log('[Config] === DOWNLOAD START ===');
     try {
-      console.log('[Config] Downloading from Supabase...');
-      const { data, error } = await supabaseClient
-        .from('app_config')
-        .select('config_key, config_values');
-      if (error) {
-        console.error('[Config] Download error:', error.message);
+      const url = SUPABASE_URL + '/rest/v1/app_config?select=config_key,config_values';
+      console.log('[Config] Fetching:', url);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log('[Config] Response status:', response.status);
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('[Config] HTTP error:', response.status, text);
+        showToast('Error ' + response.status + ': ' + text, 'error');
         return false;
       }
+      const data = await response.json();
+      console.log('[Config] Received rows:', data.length);
       if (!data || data.length === 0) {
-        console.warn('[Config] No data from Supabase');
+        showToast('Error: Base de datos vacia', 'error');
         return false;
       }
       const remoteCfg = {};
       data.forEach(row => {
+        console.log('[Config] Processing:', row.config_key, '->', JSON.stringify(row.config_values));
         remoteCfg[row.config_key] = parsePostgresArray(row.config_values);
       });
       CONFIG_KEYS.forEach(k => {
         if (!remoteCfg[k]) remoteCfg[k] = [];
       });
+      console.log('[Config] Saving to localStorage:', JSON.stringify(remoteCfg).substring(0, 200) + '...');
       this.saveLocal(remoteCfg);
-      console.log('[Config] Overwritten local with remote. Keys:', Object.keys(remoteCfg).length);
+      // VERIFY
+      const verify = this.getLocal();
+      console.log('[Config] VERIFY - localizacion has', (verify.localizacion || []).length, 'items');
       if (typeof renderConfigSections === 'function') {
         try { renderConfigSections(); } catch(e) { console.error('[Config] Render error:', e); }
       }
+      showToast('Descargado: ' + (verify.localizacion || []).length + ' localizaciones', 'success');
       return true;
     } catch (e) {
-      console.error('[Config] Download exception:', e);
+      console.error('[Config] Download FAILED:', e);
+      showToast('Error al descargar: ' + e.message, 'error');
       return false;
     }
   },
 
-  // Upload to Supabase - OVERWRITE remote completely
+  // Upload to Supabase using DIRECT FETCH
   async uploadToSupabase() {
-    if (!supabaseClient) {
-      console.warn('[Config] No Supabase client');
-      return false;
-    }
+    console.log('[Config] === UPLOAD START ===');
     try {
       const cfg = this.getLocal();
       const updates = CONFIG_KEYS.map(k => ({
@@ -412,18 +429,30 @@ const ConfigManager = {
         config_values: cfg[k] || [],
         updated_at: new Date().toISOString()
       }));
-      console.log('[Config] Uploading to Supabase...');
-      const { error } = await supabaseClient
-        .from('app_config')
-        .upsert(updates, { onConflict: 'config_key' });
-      if (error) {
-        console.error('[Config] Upload error:', error.message);
+      console.log('[Config] Uploading', updates.length, 'keys');
+      const url = SUPABASE_URL + '/rest/v1/app_config?on_conflict=config_key';
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(updates)
+      });
+      console.log('[Config] Upload status:', response.status);
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('[Config] Upload HTTP error:', response.status, text);
+        showToast('Error al subir: ' + response.status, 'error');
         return false;
       }
-      console.log('[Config] Upload OK');
+      showToast('Subido correctamente', 'success');
       return true;
     } catch (e) {
-      console.error('[Config] Upload exception:', e);
+      console.error('[Config] Upload FAILED:', e);
+      showToast('Error al subir: ' + e.message, 'error');
       return false;
     }
   }
@@ -2174,6 +2203,19 @@ function createConfigTag(key, val) {
 // ============================================
 
 async function initApp() {
+  // Version check: reload if code changed (bypass service worker cache)
+  const storedVersion = localStorage.getItem('maps_gis_app_version');
+  if (storedVersion && storedVersion !== APP_VERSION) {
+    console.log('[App] NEW VERSION:', APP_VERSION, '(was', storedVersion + '). Reloading...');
+    localStorage.setItem('maps_gis_app_version', APP_VERSION);
+    if (!sessionStorage.getItem('maps_gis_reloaded')) {
+      sessionStorage.setItem('maps_gis_reloaded', 'true');
+      window.location.reload();
+      return;
+    }
+  } else if (!storedVersion) {
+    localStorage.setItem('maps_gis_app_version', APP_VERSION);
+  }
   loadThemePreference();
   updateOnlineStatus();
   initSupabase();
