@@ -305,6 +305,11 @@ const ConfigManager = {
       console.log('[Config] Sync in progress, skipping download');
       return false;
     }
+    // Never download while config modal is open (user is editing)
+    const configModal = document.getElementById('config-modal');
+    if (configModal && !configModal.classList.contains('hidden')) {
+      return false;
+    }
     ConfigManager._syncing = true;
     const versionAtStart = this._localVersion;
     try {
@@ -2876,11 +2881,16 @@ function initEventListeners() {
 function openConfigModal() {
   if (AdminManager.isLoggedIn()) {
     AppState.isAdmin = true;
+    // Freeze all sync while editing
+    ConfigManager.stopPolling();
+    if (ConfigManager._realtimeChannel) {
+      try { supabaseClient.removeChannel(ConfigManager._realtimeChannel); } catch(e) {}
+      ConfigManager._realtimeChannel = null;
+    }
     renderConfigSections();
     updateConfigAccountTab();
     renderAdminPanel();
     document.getElementById('config-modal').classList.remove('hidden');
-    // Warn if no Supabase connection
     if (!supabaseClient) {
       showToast('Sin conexion a Supabase. Los cambios solo se guardaran localmente.', 'warning');
     }
@@ -2892,6 +2902,14 @@ function openConfigModal() {
 
 function closeConfigModal() {
   document.getElementById('config-modal').classList.add('hidden');
+  // Upload local changes to Supabase, then resume sync
+  if (supabaseClient && navigator.onLine) {
+    ConfigManager.uploadToSupabase().then(ok => {
+      if (ok) console.log('[Config] Uploaded on close');
+    });
+  }
+  ConfigManager.subscribeToRealtime();
+  ConfigManager.startPolling();
 }
 
 async function syncConfigWithSupabase() {
@@ -2899,24 +2917,23 @@ async function syncConfigWithSupabase() {
   const btn = document.getElementById('btn-config-sync');
   if (!statusEl || !btn) return;
   btn.disabled = true;
-  statusEl.textContent = 'Sincronizando...';
+  statusEl.textContent = 'Subiendo...';
   statusEl.className = 'sync-status syncing';
   try {
     const up = await ConfigManager.uploadToSupabase();
-    const down = await ConfigManager.downloadFromSupabase();
-    if (up || down) {
-      statusEl.textContent = 'Sincronizado!';
+    if (up) {
+      statusEl.textContent = 'Subido!';
       statusEl.className = 'sync-status success';
-      showToast('Config sincronizada con Supabase', 'success');
+      showToast('Config subida a Supabase', 'success');
     } else {
       statusEl.textContent = 'Sin cambios';
       statusEl.className = 'sync-status';
     }
   } catch (e) {
     console.error('[Config] Sync failed:', e);
-    statusEl.textContent = 'Error de sincronizacion';
+    statusEl.textContent = 'Error al subir';
     statusEl.className = 'sync-status error';
-    showToast('Error al sincronizar', 'error');
+    showToast('Error al subir', 'error');
   } finally {
     btn.disabled = false;
     setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
@@ -2924,31 +2941,7 @@ async function syncConfigWithSupabase() {
 }
 
 async function pullConfigFromSupabase() {
-  const statusEl = document.getElementById('config-sync-status');
-  const btn = document.getElementById('btn-config-pull');
-  if (!statusEl || !btn) return;
-  btn.disabled = true;
-  statusEl.textContent = 'Descargando...';
-  statusEl.className = 'sync-status syncing';
-  try {
-    const ok = await ConfigManager.downloadFromSupabase();
-    if (ok) {
-      statusEl.textContent = 'Descargado!';
-      statusEl.className = 'sync-status success';
-      showToast('Config descargada de Supabase', 'success');
-    } else {
-      statusEl.textContent = 'Sin cambios';
-      statusEl.className = 'sync-status';
-    }
-  } catch (e) {
-    console.error('[Config] Pull failed:', e);
-    statusEl.textContent = 'Error al descargar';
-    statusEl.className = 'sync-status error';
-    showToast('Error al descargar', 'error');
-  } finally {
-    btn.disabled = false;
-    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
-  }
+  showToast('Usa el boton "Jalar datos" en la pantalla principal', 'info');
 }
 
 async function pullConfigFromHome() {
