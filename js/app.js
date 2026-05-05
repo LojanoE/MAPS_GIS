@@ -363,17 +363,38 @@ const ConfigManager = {
         console.log('[Config] Local changed during download, skipping save');
         return false;
       }
+      console.log('[Config] Raw Supabase response:', JSON.stringify(data));
       const remoteCfg = {};
       data.forEach(row => {
-        remoteCfg[row.config_key] = row.config_values || [];
+        let vals = row.config_values;
+        // PostgreSQL text[] can come as a string like "{val1,val2}" or as JS array
+        if (typeof vals === 'string') {
+          try {
+            // Try parsing PostgreSQL array format: {val1,val2}
+            if (vals.startsWith('{') && vals.endsWith('}')) {
+              vals = vals.slice(1, -1).split(',').map(v => v.replace(/^"|"$/g, '')).filter(v => v.length > 0);
+            } else {
+              vals = JSON.parse(vals);
+            }
+          } catch (e) {
+            console.warn('[Config] Could not parse config_values for', row.config_key, ':', vals);
+            vals = [];
+          }
+        }
+        if (!Array.isArray(vals)) vals = [];
+        remoteCfg[row.config_key] = vals;
       });
       const localCfg = this.getLocal();
+      console.log('[Config] Remote config:', JSON.stringify(remoteCfg));
+      console.log('[Config] Local config:', JSON.stringify(localCfg));
       let changed = false;
+      let changeDetails = [];
       CONFIG_KEYS.forEach(k => {
         const remoteVals = remoteCfg[k] || [];
         const localVals = localCfg[k] || [];
-        if (JSON.stringify(remoteVals.sort()) !== JSON.stringify(localVals.sort())) {
+        if (JSON.stringify(remoteVals.slice().sort()) !== JSON.stringify(localVals.slice().sort())) {
           changed = true;
+          changeDetails.push(k + ': remote=' + JSON.stringify(remoteVals) + ' local=' + JSON.stringify(localVals));
         }
       });
       CONFIG_KEYS.forEach(k => {
@@ -383,7 +404,8 @@ const ConfigManager = {
       });
       this.saveLocal(remoteCfg);
       if (changed) {
-        console.log('[Config] Remote changes detected, updating UI');
+        console.log('[Config] Remote changes detected:', changeDetails.join('; '));
+        showToast('Datos actualizados desde la base de datos', 'success');
         if (typeof renderConfigSections === 'function') {
           try { renderConfigSections(); } catch(e) { console.warn('[Config] Error refreshing config UI:', e); }
         }
