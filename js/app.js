@@ -309,6 +309,7 @@ const ConfigManager = {
     console.log('[Config] Raw Supabase response:', JSON.stringify(data));
     const remoteCfg = {};
     data.forEach(row => {
+      console.log('[Config] Fetch row:', row.config_key, '=', JSON.stringify(row.config_values));
       let vals = row.config_values;
       if (typeof vals === 'string') {
         try {
@@ -325,6 +326,7 @@ const ConfigManager = {
       if (!Array.isArray(vals)) vals = [];
       remoteCfg[row.config_key] = vals;
     });
+    console.log('[Config] Parsed nombre_proyecto:', JSON.stringify(remoteCfg.nombre_proyecto));
     CONFIG_KEYS.forEach(k => {
       if (!remoteCfg[k]) remoteCfg[k] = [];
     });
@@ -363,11 +365,15 @@ const ConfigManager = {
       CONFIG_KEYS.forEach(k => {
         const remoteVals = remoteCfg[k] || [];
         const localVals = localCfg[k] || [];
-        if (JSON.stringify(remoteVals.slice().sort()) !== JSON.stringify(localVals.slice().sort())) {
+        const remoteSorted = JSON.stringify(remoteVals.slice().sort());
+        const localSorted = JSON.stringify(localVals.slice().sort());
+        if (remoteSorted !== localSorted) {
           changed = true;
-          changeDetails.push(k + ': remote=' + JSON.stringify(remoteVals) + ' local=' + JSON.stringify(localVals));
+          changeDetails.push(k + ': remote=' + remoteSorted + ' local=' + localSorted);
         }
       });
+      console.log('[Config] nombre_proyecto - remote:', JSON.stringify(remoteCfg.nombre_proyecto));
+      console.log('[Config] nombre_proyecto - local:', JSON.stringify(localCfg.nombre_proyecto));
       this.saveLocal(remoteCfg);
       if (changed) {
         console.log('[Config] Remote changes detected:', changeDetails.join('; '));
