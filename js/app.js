@@ -7,7 +7,7 @@ const PSAD56_UTM_17S = '+proj=utm +zone=17 +south +ellps=intl +towgs84=289,164,-
 const WGS84 = 'EPSG:4326';
 proj4.defs('EPSG:24877', PSAD56_UTM_17S);
 
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '2.0.2';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -1400,11 +1400,27 @@ async function initApp() {
   await loadMapsList();
   updateMarkerCountBadge();
 
+  // Migrar config si cambio la version de la app
+  migrateConfigIfNeeded();
+
   // Verificar registro del dispositivo (solo primera vez)
   if (!DeviceManager.isRegistered()) {
     openDeviceSetupModal();
   } else {
-    SyncManager.updateBadge();
+    if (typeof SyncManager !== 'undefined' && SyncManager.updateBadge) {
+      SyncManager.updateBadge();
+    }
+  }
+}
+
+function migrateConfigIfNeeded() {
+  const CONFIG_VERSION_KEY = 'maps_gis_config_version';
+  const storedVersion = localStorage.getItem(CONFIG_VERSION_KEY);
+  if (storedVersion !== APP_VERSION) {
+    // Resetear config a los nuevos valores por defecto
+    localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...DEFAULT_CONFIG }));
+    localStorage.setItem(CONFIG_VERSION_KEY, APP_VERSION);
+    console.log('[App] Config migrated to version', APP_VERSION);
   }
 }
 
