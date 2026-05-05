@@ -62,7 +62,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.2.7';
+const APP_VERSION = '1.2.8';
 
 // ============================================
 // APP STATE
@@ -231,6 +231,7 @@ const CONFIG_KEYS = [
 
 const ConfigManager = {
   _syncing: false,
+  _localVersion: 0,
 
   getLocal() {
     try {
@@ -242,6 +243,7 @@ const ConfigManager = {
 
   saveLocal(config) {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    this._localVersion++;
   },
 
   getValues(key) {
@@ -273,9 +275,17 @@ const ConfigManager = {
       return false;
     }
     if (ConfigManager._syncing) {
-      console.log('[Config] Upload in progress, skipping download');
+      console.log('[Config] Sync in progress, skipping download');
       return false;
     }
+    // Skip download if user is actively editing config to avoid overwriting their changes
+    const configModal = document.getElementById('config-modal');
+    if (configModal && !configModal.classList.contains('hidden')) {
+      console.log('[Config] Config modal is open, skipping download');
+      return false;
+    }
+    ConfigManager._syncing = true;
+    const versionAtStart = this._localVersion;
     try {
       console.log('[Config] Downloading from Supabase...');
       const { data, error } = await supabaseClient
@@ -287,6 +297,10 @@ const ConfigManager = {
       }
       if (!data || data.length === 0) {
         console.warn('[Config] No data returned from Supabase');
+        return false;
+      }
+      if (this._localVersion !== versionAtStart) {
+        console.log('[Config] Local changed during download, skipping save');
         return false;
       }
       const remoteCfg = {};
@@ -320,12 +334,19 @@ const ConfigManager = {
     } catch (e) {
       console.error('[Config] Download exception:', e);
       return false;
+    } finally {
+      ConfigManager._syncing = false;
     }
   },
 
   async uploadToSupabase() {
     if (!supabaseClient) {
       console.warn('[Config] No Supabase client, skipping upload');
+      return false;
+    }
+    if (ConfigManager._syncing) {
+      console.log('[Config] Sync in progress, queuing upload');
+      setTimeout(() => ConfigManager.uploadToSupabase(), 500);
       return false;
     }
     ConfigManager._syncing = true;
@@ -2926,9 +2947,8 @@ async function initApp() {
   await loadMapsList();
   updateMarkerCountBadge();
 
-  // Sync config: upload local changes first, then download remote (Supabase is truth)
+  // Sync config: download remote first (avoid overwriting remote changes on startup)
   if (supabaseClient) {
-    await ConfigManager.uploadToSupabase();
     const ok = await ConfigManager.downloadFromSupabase();
     if (ok) {
       console.log('[App] Config synced from Supabase');
