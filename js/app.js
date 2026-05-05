@@ -120,7 +120,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.5.4';
+const APP_VERSION = '1.5.5';
 
 // ============================================
 // APP STATE
@@ -430,7 +430,7 @@ const ConfigManager = {
     }
     ConfigManager._syncing = true;
     try {
-      console.log('[Config] Downloading from Supabase...');
+      console.log('[Config] Downloading from Supabase... force=' + force);
       const { data, error } = await supabaseClient
         .from('app_config')
         .select('config_key, config_values');
@@ -442,7 +442,6 @@ const ConfigManager = {
         console.warn('[Config] No data from Supabase');
         return false;
       }
-      // Log each row for debugging
       data.forEach(row => {
         console.log('[Config] Row:', row.config_key, '=', JSON.stringify(row.config_values), 'length:', Array.isArray(row.config_values) ? row.config_values.length : 0);
       });
@@ -453,41 +452,46 @@ const ConfigManager = {
       CONFIG_KEYS.forEach(k => {
         if (!remoteCfg[k]) remoteCfg[k] = [];
       });
-      const localCfg = this.getLocal();
-      const deleted = this.getDeletedValues();
-      const mergedCfg = {};
-      CONFIG_KEYS.forEach(k => {
-        const localVals = Array.isArray(localCfg[k]) ? localCfg[k] : [];
-        const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
-        const merged = [...localVals];
-        remoteVals.forEach(v => {
-          if (!merged.includes(v)) merged.push(v);
-        });
-        // Remove values that were deleted locally
-        if (deleted[k] && deleted[k].length > 0) {
-          mergedCfg[k] = merged.filter(v => !deleted[k].includes(v));
-        } else {
-          mergedCfg[k] = merged;
-        }
-      });
 
-      // Clean up deleted tracking: remove values that server no longer has
-      CONFIG_KEYS.forEach(k => {
-        const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
-        if (deleted[k] && deleted[k].length > 0) {
-          const before = deleted[k].length;
-          deleted[k] = deleted[k].filter(v => remoteVals.includes(v));
-          if (deleted[k].length !== before) {
-            console.log('[Config] Cleaned deleted tracking for', k, ': removed', before - deleted[k].length, 'values');
+      if (force) {
+        // Force mode (button "Download from DB"): OVERWRITE local with remote, no merge
+        console.log('[Config] FORCE MODE: overwriting local with remote');
+        this.saveLocal(remoteCfg);
+        this.clearDeletedValues();
+        console.log('[Config] Saved fresh from remote, deleted tracking cleared');
+      } else {
+        // Normal mode (polling/realtime): merge with tracking
+        const localCfg = this.getLocal();
+        const deleted = this.getDeletedValues();
+        const mergedCfg = {};
+        CONFIG_KEYS.forEach(k => {
+          const localVals = Array.isArray(localCfg[k]) ? localCfg[k] : [];
+          const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
+          const merged = [...localVals];
+          remoteVals.forEach(v => {
+            if (!merged.includes(v)) merged.push(v);
+          });
+          if (deleted[k] && deleted[k].length > 0) {
+            mergedCfg[k] = merged.filter(v => !deleted[k].includes(v));
+          } else {
+            mergedCfg[k] = merged;
           }
-        }
-      });
-      this.saveDeletedValues(deleted);
+        });
+        CONFIG_KEYS.forEach(k => {
+          const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
+          if (deleted[k] && deleted[k].length > 0) {
+            const before = deleted[k].length;
+            deleted[k] = deleted[k].filter(v => remoteVals.includes(v));
+            if (deleted[k].length !== before) {
+              console.log('[Config] Cleaned deleted tracking for', k, ': removed', before - deleted[k].length, 'values');
+            }
+          }
+        });
+        this.saveDeletedValues(deleted);
+        this.saveLocal(mergedCfg);
+      }
 
-      console.log('[Config] Merge result localizacion:', JSON.stringify(mergedCfg.localizacion));
-      this.saveLocal(mergedCfg);
       console.log('[Config] Downloaded and saved', Object.keys(remoteCfg).length, 'keys');
-      showToast('Datos descargados correctamente', 'success');
       if (typeof renderConfigSections === 'function') {
         try { renderConfigSections(); } catch(e) { console.error('[Config] Render error:', e); }
       }
