@@ -120,7 +120,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.5.2';
 
 // ============================================
 // APP STATE
@@ -238,8 +238,8 @@ const MarkerManager = {
       name: (remoteMarker.nombre_muestra || '').trim(),
       lat: remoteMarker.lat,
       lng: remoteMarker.lng,
-      norte: remoteMarker.norte || '',
-      este: remoteMarker.este || '',
+      norte: remoteMarker.norte != null ? String(remoteMarker.norte) : '',
+      este: remoteMarker.este != null ? String(remoteMarker.este) : '',
       color: remoteMarker.color || 'red',
       photos: [],
       lsmData: lsmData,
@@ -322,6 +322,8 @@ const CONFIG_KEYS = [
   'fuente', 'ensayos'
 ];
 
+const DELETED_CONFIG_KEY = 'maps_gis_deleted_config';
+
 const ConfigManager = {
   _syncing: false,
   _localVersion: 0,
@@ -339,6 +341,22 @@ const ConfigManager = {
     this._localVersion++;
   },
 
+  getDeletedValues() {
+    try {
+      return JSON.parse(localStorage.getItem(DELETED_CONFIG_KEY)) || {};
+    } catch {
+      return {};
+    }
+  },
+
+  saveDeletedValues(deleted) {
+    localStorage.setItem(DELETED_CONFIG_KEY, JSON.stringify(deleted));
+  },
+
+  clearDeletedValues() {
+    localStorage.removeItem(DELETED_CONFIG_KEY);
+  },
+
   getValues(key) {
     const cfg = this.getLocal();
     return Array.isArray(cfg[key]) ? cfg[key] : [];
@@ -351,6 +369,12 @@ const ConfigManager = {
     if (cfg[key].includes(value.trim())) return false;
     cfg[key].push(value.trim());
     this.saveLocal(cfg);
+    // Remove from deleted tracking if it was previously deleted
+    const deleted = this.getDeletedValues();
+    if (deleted[key]) {
+      deleted[key] = deleted[key].filter(v => v !== value.trim());
+      this.saveDeletedValues(deleted);
+    }
     return true;
   },
 
@@ -359,6 +383,11 @@ const ConfigManager = {
     if (!Array.isArray(cfg[key])) return false;
     cfg[key] = cfg[key].filter(v => v !== value);
     this.saveLocal(cfg);
+    // Track deletion so it doesn't come back on download
+    const deleted = this.getDeletedValues();
+    if (!deleted[key]) deleted[key] = [];
+    if (!deleted[key].includes(value)) deleted[key].push(value);
+    this.saveDeletedValues(deleted);
     return true;
   },
 
@@ -403,6 +432,7 @@ const ConfigManager = {
         if (!remoteCfg[k]) remoteCfg[k] = [];
       });
       const localCfg = this.getLocal();
+      const deleted = this.getDeletedValues();
       const mergedCfg = {};
       CONFIG_KEYS.forEach(k => {
         const localVals = Array.isArray(localCfg[k]) ? localCfg[k] : [];
@@ -411,7 +441,12 @@ const ConfigManager = {
         remoteVals.forEach(v => {
           if (!merged.includes(v)) merged.push(v);
         });
-        mergedCfg[k] = merged;
+        // Remove values that were deleted locally (but only if upload succeeded for them)
+        if (deleted[k] && deleted[k].length > 0) {
+          mergedCfg[k] = merged.filter(v => !deleted[k].includes(v));
+        } else {
+          mergedCfg[k] = merged;
+        }
       });
       console.log('[Config] Merge result localizacion:', JSON.stringify(mergedCfg.localizacion));
       this.saveLocal(mergedCfg);
@@ -480,6 +515,8 @@ const ConfigManager = {
       }
       console.log('[Config] Upload OK');
       showToast('Config subida correctamente', 'success');
+      // Clear deleted tracking since server now matches local
+      this.clearDeletedValues();
       return true;
     } catch (e) {
       console.error('[Config] Upload exception:', e);
@@ -692,8 +729,8 @@ const LSMSyncManager = {
             name: (remote.nombre_muestra || '').trim(),
             lat: remote.lat,
             lng: remote.lng,
-            norte: remote.norte || String(remote.norte) || '',
-            este: remote.este || String(remote.este) || '',
+            norte: remote.norte != null ? String(remote.norte) : '',
+            este: remote.este != null ? String(remote.este) : '',
             color: remote.color || 'red',
             lsmData: lsmData,
             pendingUpload: false
@@ -3204,6 +3241,7 @@ async function forceFullRefresh() {
   localStorage.removeItem('maps_gis_markers_v3');
   localStorage.removeItem('maps_gis_config_v2');
   localStorage.removeItem('maps_gis_last_lsm_form');
+  ConfigManager.clearDeletedValues();
 
   try {
     await ConfigManager.downloadFromSupabase(true);
@@ -3325,12 +3363,19 @@ function renderConfigSections() {
 
     // Remove value
     section.querySelectorAll('.config-tag button').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        ConfigManager.removeValue(key, btn.dataset.val);
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const val = btn.dataset.val;
+        console.log('[Config] Removing value:', key, '=', val);
+        ConfigManager.removeValue(key, val);
         renderConfigSections();
         // Auto-upload to Supabase
         if (supabaseClient && navigator.onLine) {
-          await ConfigManager.uploadToSupabase();
+          try {
+            await ConfigManager.uploadToSupabase();
+          } catch (err) {
+            console.error('[Config] Auto-upload failed after remove:', err);
+          }
         }
       });
     });
@@ -3339,12 +3384,21 @@ function renderConfigSections() {
     const addBtn = section.querySelector('.btn-add-config');
     const input = section.querySelector('input');
     const doAdd = async () => {
-      if (ConfigManager.addValue(key, input.value)) {
+      const val = input.value.trim();
+      if (!val) {
+        showToast('Ingresa un valor', 'error');
+        return;
+      }
+      if (ConfigManager.addValue(key, val)) {
         input.value = '';
         renderConfigSections();
         // Auto-upload to Supabase
         if (supabaseClient && navigator.onLine) {
-          await ConfigManager.uploadToSupabase();
+          try {
+            await ConfigManager.uploadToSupabase();
+          } catch (err) {
+            console.error('[Config] Auto-upload failed after add:', err);
+          }
         }
       } else {
         showToast('Opcion duplicada o vacia', 'error');
