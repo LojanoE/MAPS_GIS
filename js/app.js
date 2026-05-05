@@ -22,41 +22,24 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 let supabaseClient = null;
 
 function getSupabaseCreateClient() {
-  // The UMD bundle can expose supabase in multiple ways depending on CDN and version
   const candidates = [
     window.supabase?.createClient,
     typeof window.supabase === 'function' ? window.supabase : null,
     window.Supabase?.createClient,
     typeof window.Supabase === 'function' ? window.Supabase : null,
     window.supabaseJs?.createClient,
-    typeof window.supabaseJs === 'function' ? window.supabaseJs : null,
     window.createClient
   ];
   for (const fn of candidates) {
-    if (typeof fn === 'function') {
-      // Verify it looks like the Supabase createClient by checking its name or a quick test
-      return fn;
-    }
+    if (typeof fn === 'function') return fn;
   }
   return null;
 }
 
-async function waitForSupabaseScript(maxWaitMs = 10000, intervalMs = 250) {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    const fn = getSupabaseCreateClient();
-    if (fn) return fn;
-    await new Promise(r => setTimeout(r, intervalMs));
-  }
-  return null;
-}
-
-async function initSupabase() {
-  console.log('[Supabase] Initializing...');
-  const createClient = await waitForSupabaseScript();
+function initSupabase() {
+  const createClient = getSupabaseCreateClient();
   if (!createClient) {
-    console.error('[Supabase] createClient not found after waiting. Offline mode enabled.');
-    showToast('No se pudo cargar el cliente de Supabase. Modo offline.', 'error');
+    console.warn('[Supabase] createClient not found. Offline mode.');
     supabaseClient = null;
     return null;
   }
@@ -65,20 +48,10 @@ async function initSupabase() {
       auth: { persistSession: false },
       db: { schema: 'public' }
     });
-    console.log('[Supabase] Client created. Testing connection...');
-    // Quick connectivity test
-    const testResult = await pingSupabase();
-    if (testResult.ok) {
-      console.log('[Supabase] Connected and reachable. Tables:', testResult.tables);
-      showToast('Conectado a Supabase', 'success');
-    } else {
-      console.warn('[Supabase] Client created but ping failed:', testResult.error);
-      showToast('Cliente creado pero sin conexion a la base de datos', 'error');
-    }
+    console.log('[Supabase] Client initialized');
     return supabaseClient;
   } catch (e) {
     console.error('[Supabase] Failed to initialize:', e);
-    showToast('Error al inicializar Supabase: ' + e.message, 'error');
     supabaseClient = null;
     return null;
   }
@@ -94,19 +67,7 @@ async function pingSupabase() {
     if (error) {
       return { ok: false, error: error.message, code: error.code };
     }
-    // Also check lsm_markers
-    const { data: lsmData, error: lsmError } = await supabaseClient
-      .from('lsm_markers')
-      .select('id')
-      .limit(1);
-    return {
-      ok: true,
-      tables: {
-        app_config: !error,
-        lsm_markers: !lsmError
-      },
-      lsmError: lsmError ? lsmError.message : null
-    };
+    return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
   }
@@ -2896,11 +2857,11 @@ function initEventListeners() {
   });
 
   // Online status + sync
-  window.addEventListener('online', async () => {
+  window.addEventListener('online', () => {
     updateOnlineStatus();
     if (!supabaseClient) {
       console.log('[App] Back online, attempting to reconnect to Supabase...');
-      await initSupabase();
+      initSupabase();
       updateOnlineStatus();
     }
     LSMSyncManager.syncPending();
@@ -3150,7 +3111,7 @@ function renderConfigSections() {
 async function initApp() {
   loadThemePreference();
   updateOnlineStatus();
-  await initSupabase();
+  initSupabase();
   updateOnlineStatus();
   initEventListeners();
   await loadMapsList();
