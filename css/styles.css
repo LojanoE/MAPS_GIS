@@ -1939,3 +1939,175 @@ body {
 .admin-marker-pin svg {
   filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
 }
+
+/* ============================================
+   ADMIN PANEL STYLES v2.0
+   ============================================ */
+
+.modal-admin {
+  max-width: 960px;
+  width: 95%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.admin-panel-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.admin-panel-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-tab-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all var(--transition);
+}
+
+.admin-tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.admin-tab-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.admin-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-table-wrapper {
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-table th {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+
+.admin-table tr {
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.admin-table tr:hover {
+  background: var(--bg-tertiary);
+}
+
+.admin-row-deleted {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.admin-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.admin-badge.qc {
+  background: rgba(63, 185, 80, 0.2);
+  color: var(--success);
+}
+
+.admin-badge.lsm {
+  background: rgba(88, 166, 255, 0.2);
+  color: var(--accent);
+}
+
+.status-active {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.status-deleted {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.admin-detail-panel {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.admin-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.admin-detail-header h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.admin-detail-body {
+  font-size: 0.85rem;
+}
+
+.admin-detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}

@@ -1,13 +1,22 @@
 /**
- * app.js - MAPS GIS Main Application (LOCAL ONLY v1.7.0)
- * Visor de mapas y marcadores. Todo local, sin base de datos.
+ * app.js - MAPS GIS Main Application
+ *
+ * Avenza-like GIS viewer with advanced marker management.
+ * Supports GeoTIFF and PDF maps with georeferencing.
  */
+
+// ============================================
+// COORDINATE SYSTEM DEFINITIONS
+// ============================================
 
 const PSAD56_UTM_17S = '+proj=utm +zone=17 +south +ellps=intl +towgs84=289,164,-377,0,0,0,0 +units=m +no_defs';
 const WGS84 = 'EPSG:4326';
+
 proj4.defs('EPSG:24877', PSAD56_UTM_17S);
 
-const APP_VERSION = '2.0.0';
+// ============================================
+// MARKER COLORS CONFIG
+// ============================================
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -18,58 +27,140 @@ const MARKER_COLORS = {
   purple: { hex: '#a371f7', label: 'Morado' }
 };
 
+// ============================================
+// APP VERSION - Must match sw.js APP_VERSION
+// ============================================
+const APP_VERSION = '1.7.0';
+
+// ============================================
+// APP STATE
+// ============================================
+
 const AppState = {
-  map: null, mapOverlay: null, markersLayer: null, userLocationLayer: null,
-  isAddMarkerMode: false, pendingMarkerLatLng: null, currentMapId: null,
-  currentMapType: 'tiff', mapTitle: '', editingMarkerId: null,
-  selectedCategory: 'red', darkTiles: null, lightTiles: null,
-  pendingPDF: null, pendingPhotos: [], currentMarkerMode: 'qc',
-  lsmSelectedCategory: 'red'
+  map: null,
+  mapOverlay: null,
+  markersLayer: null,
+  userLocationLayer: null,
+  adminMarkersLayer: null,
+  isAddMarkerMode: false,
+  pendingMarkerLatLng: null,
+  currentMapId: null,
+  currentMapType: 'tiff',
+  mapTitle: '',
+  editingMarkerId: null,
+  selectedCategory: 'red',
+  darkTiles: null,
+  lightTiles: null,
+  pendingPDF: null,
+  pendingPhotos: [], // Array of { photoId, dataUrl } for current marker
+  currentMarkerMode: 'qc', // 'qc' or 'lsm' - persistent mode on map screen
+  lsmSelectedCategory: 'red',
+  isAdmin: false // admin mode active
 };
 
 // ============================================
 // MARKER MANAGER (LocalStorage)
 // ============================================
+
 const MarkerManager = {
   STORAGE_KEY: 'maps_gis_markers_v3',
+
   getAll() {
     try {
       const data = JSON.parse(localStorage.getItem(this.STORAGE_KEY));
       if (!Array.isArray(data)) return [];
-      return data.map(m => ({ ...m, markerType: m.markerType || 'qc' }));
-    } catch { return []; }
+      // Migrate old markers without markerType to QC
+      return data.map(m => ({
+        ...m,
+        markerType: m.markerType || 'qc'
+      }));
+    } catch {
+      return [];
+    }
   },
-  saveAll(markers) { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(markers)); },
+
+  saveAll(markers) {
+    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(markers));
+  },
+
   createQC(name, description, lat, lng, color, photos) {
     const markers = this.getAll();
     const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
     const marker = {
-      id: 'm_' + Date.now(), markerType: 'qc', name: name.trim(), description: description.trim(),
-      lat, lng, norte: north.toFixed(3), este: east.toFixed(3),
-      color: color || 'red', photos: photos || [],
-      deviceId: DeviceManager.getId(),
-      userName: DeviceManager.getName(),
-      pendingUpload: true,
-      syncedAt: null,
+      id: 'm_' + Date.now(),
+      markerType: 'qc',
+      name: name.trim(),
+      description: description.trim(),
+      lat: lat,
+      lng: lng,
+      norte: north.toFixed(3),
+      este: east.toFixed(3),
+      color: color || 'red',
+      photos: photos || [],
       createdAt: new Date().toISOString()
     };
-    markers.push(marker); this.saveAll(markers); return marker;
+    markers.push(marker);
+    this.saveAll(markers);
+    return marker;
   },
+
   createLSM(lat, lng, color, photos, lsmData) {
     const markers = this.getAll();
     const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
     const marker = {
-      id: 'm_' + Date.now(), markerType: 'lsm', name: (lsmData.nombreMuestra || '').trim(),
-      lat, lng, norte: north.toFixed(3), este: east.toFixed(3),
-      color: color || 'red', photos: photos || [], lsmData: lsmData,
-      deviceId: DeviceManager.getId(),
-      userName: DeviceManager.getName(),
+      id: 'm_' + Date.now(),
+      markerType: 'lsm',
+      name: (lsmData.nombreMuestra || '').trim(),
+      lat: lat,
+      lng: lng,
+      norte: north.toFixed(3),
+      este: east.toFixed(3),
+      color: color || 'red',
+      photos: photos || [],
+      lsmData: lsmData,
       pendingUpload: true,
-      syncedAt: null,
       createdAt: new Date().toISOString()
     };
-    markers.push(marker); this.saveAll(markers); return marker;
+    markers.push(marker);
+    this.saveAll(markers);
+    return marker;
   },
+
+  createLSMFromRemote(remoteMarker, localId) {
+    const markers = this.getAll();
+    const lsmData = {
+      tipoMuestra: remoteMarker.tipo_muestra || '',
+      nombreProyecto: remoteMarker.nombre_proyecto || '',
+      solicitante: remoteMarker.solicitante || '',
+      estructuraDeposito: remoteMarker.estructura_deposito || '',
+      subestructuras: remoteMarker.subestructuras || '',
+      categoria: remoteMarker.categoria || '',
+      tipoMaterial: remoteMarker.tipo_material || '',
+      nombreMuestra: remoteMarker.nombre_muestra || '',
+      proveniencia: remoteMarker.proveniencia || '',
+      localizacion: remoteMarker.localizacion || '',
+      fuente: remoteMarker.fuente || '',
+      ensayos: Array.isArray(remoteMarker.ensayos) ? remoteMarker.ensayos : []
+    };
+    const marker = {
+      id: localId || ('m_' + Date.now() + '_r'),
+      markerType: 'lsm',
+      name: (remoteMarker.nombre_muestra || '').trim(),
+      lat: remoteMarker.lat,
+      lng: remoteMarker.lng,
+      norte: remoteMarker.norte != null ? String(remoteMarker.norte) : '',
+      este: remoteMarker.este != null ? String(remoteMarker.este) : '',
+      color: remoteMarker.color || 'red',
+      photos: [],
+      lsmData: lsmData,
+      pendingUpload: false,
+      createdAt: remoteMarker.created_at || new Date().toISOString()
+    };
+    markers.push(marker);
+    this.saveAll(markers);
+    return marker;
+  },
+
   update(id, updates) {
     const markers = this.getAll();
     const idx = markers.findIndex(m => m.id === id);
@@ -78,47 +169,60 @@ const MarkerManager = {
     this.saveAll(markers);
     return markers[idx];
   },
-  remove(id) { this.saveAll(this.getAll().filter(m => m.id !== id)); },
-  getById(id) { return this.getAll().find(m => m.id === id) || null; },
-  getCount() { return this.getAll().length; }
-};
 
-// ============================================
-// LSM USER MANAGER
-// ============================================
-const LSM_USER_KEY = 'maps_gis_lsm_user';
-const LSM_PASS = '354';
-const LSMUserManager = {
-  get() { try { return JSON.parse(localStorage.getItem(LSM_USER_KEY)) || null; } catch { return null; } },
-  set(nickname) { localStorage.setItem(LSM_USER_KEY, JSON.stringify({ nickname, loggedInAt: Date.now() })); },
-  clear() { localStorage.removeItem(LSM_USER_KEY); },
-  isLoggedIn() { return !!this.get(); },
-  getNickname() { const u = this.get(); return u ? u.nickname : null; },
-  validate(nickname, password) { return nickname && nickname.trim().length > 0 && password === LSM_PASS; }
-};
+  remove(id) {
+    const markers = this.getAll().filter(m => m.id !== id);
+    this.saveAll(markers);
+  },
 
-// ============================================
-// DEVICE MANAGER (Registro unico del dispositivo)
-// ============================================
-const DEVICE_NAME_KEY = 'maps_gis_device_name';
-const DEVICE_ID_KEY = 'maps_gis_device_id';
-const DeviceManager = {
-  getName() { return localStorage.getItem(DEVICE_NAME_KEY) || ''; },
-  getId() { return localStorage.getItem(DEVICE_ID_KEY) || ''; },
-  isRegistered() { return !!this.getName() && !!this.getId(); },
-  register(name) {
-    const trimmed = (name || '').trim();
-    if (!trimmed) return false;
-    localStorage.setItem(DEVICE_NAME_KEY, trimmed);
-    if (!this.getId()) {
-      localStorage.setItem(DEVICE_ID_KEY, 'dev_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
-    }
-    return true;
+  getById(id) {
+    return this.getAll().find(m => m.id === id) || null;
+  },
+
+  getCount() {
+    return this.getAll().length;
   }
 };
 
 // ============================================
-// CONFIG MANAGER (LocalStorage only)
+// LSM USER MANAGER (Local Auth)
+// ============================================
+const LSM_USER_KEY = 'maps_gis_lsm_user';
+const LSM_PASS = '354';
+
+const LSMUserManager = {
+  get() {
+    try {
+      return JSON.parse(localStorage.getItem(LSM_USER_KEY)) || null;
+    } catch {
+      return null;
+    }
+  },
+
+  set(nickname) {
+    localStorage.setItem(LSM_USER_KEY, JSON.stringify({ nickname, loggedInAt: Date.now() }));
+  },
+
+  clear() {
+    localStorage.removeItem(LSM_USER_KEY);
+  },
+
+  isLoggedIn() {
+    return !!this.get();
+  },
+
+  getNickname() {
+    const u = this.get();
+    return u ? u.nickname : null;
+  },
+
+  validate(nickname, password) {
+    return nickname && nickname.trim().length > 0 && password === LSM_PASS;
+  }
+};
+
+// ============================================
+// CONFIG MANAGER (Simple: localStorage + Supabase overwrite)
 // ============================================
 const CONFIG_KEY = 'maps_gis_config_v2';
 const CONFIG_KEYS = [
@@ -128,33 +232,30 @@ const CONFIG_KEYS = [
   'fuente', 'ensayos'
 ];
 
-const DEFAULT_CONFIG = {
-  tipo_muestra: ['Suelo','Roca','Concreto','Asfalto','Agregado'],
-  nombre_proyecto: ['Proyecto A','Proyecto B','Proyecto C'],
-  solicitante: ['Ing. Lopez','Ing. Garcia','Cliente XYZ'],
-  estructura_deposito: ['Mina Principal','Pila 1','Pila 2','Tajeo 3N'],
-  subestructuras: ['Nivel 1','Nivel 2','Nivel 3','Zona A','Zona B'],
-  categoria: ['Exploracion','Control','Verificacion','Rutina'],
-  tipo_material: ['Arcilla','Arena','Grava','Roca Dura','Roca Blanda'],
-  proveniencia: ['In Situ','Planta','Laboratorio','Stock'],
-  localizacion: ['Frente Norte','Frente Sur','Frente Este','Frente Oeste','Planta'],
-  fuente: ['Muestreo Directo','Canal','Testigo','Cuchareo'],
-  ensayos: ['HUM','GEP','GTM','GFI','GHD','ELA','EDL','COM','ABF','ABG','ICP','SLF','PRA','TIS','VDC','DCP','DCA','PMF','PET','CLS','PPF','PPR','DPS','DMI','DMA','GEG','CUS','TCU','TCD','TUU','CUR','TXR','RTI','PGF','ABA','DNU','LEO','CFR','CST','GTA','CMO','COS']
-};
-
 const ConfigManager = {
   getLocal() {
     try {
-      const stored = JSON.parse(localStorage.getItem(CONFIG_KEY));
-      if (stored && Object.keys(stored).length > 0) return stored;
-    } catch {}
-    return { ...DEFAULT_CONFIG };
+      return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
+    } catch {
+      return {};
+    }
   },
-  saveLocal(config) { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); },
+
+  saveLocal(config) {
+    try {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    } catch (e) {
+      console.error('[Config] saveLocal FAILED:', e);
+      showToast('ERROR: No se pudo guardar en localStorage', 'error');
+      throw e;
+    }
+  },
+
   getValues(key) {
     const cfg = this.getLocal();
-    return Array.isArray(cfg[key]) ? cfg[key] : (DEFAULT_CONFIG[key] || []);
+    return Array.isArray(cfg[key]) ? cfg[key] : [];
   },
+
   addValue(key, value) {
     const trimmed = (value || '').trim();
     if (!trimmed) return false;
@@ -165,6 +266,7 @@ const ConfigManager = {
     this.saveLocal(cfg);
     return true;
   },
+
   removeValue(key, value) {
     const cfg = this.getLocal();
     if (!Array.isArray(cfg[key])) return false;
@@ -173,47 +275,449 @@ const ConfigManager = {
     if (before === cfg[key].length) return false;
     this.saveLocal(cfg);
     return true;
+  },
+
+  // Download from Supabase using DIRECT FETCH (bypasses any client issues)
+  async downloadFromSupabase() {
+    console.log('[Config] === DOWNLOAD START ===');
+    try {
+      const url = SUPABASE_URL + '/rest/v1/app_config?select=config_key,config_values';
+      console.log('[Config] Fetching:', url);
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log('[Config] Response status:', response.status);
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('[Config] HTTP error:', response.status, text);
+        showToast('Error ' + response.status + ': ' + text, 'error');
+        return false;
+      }
+      const data = await response.json();
+      console.log('[Config] Received rows:', data.length);
+      if (!data || data.length === 0) {
+        showToast('Error: Base de datos vacia', 'error');
+        return false;
+      }
+      const remoteCfg = {};
+      data.forEach(row => {
+        console.log('[Config] Processing:', row.config_key, '->', JSON.stringify(row.config_values));
+        remoteCfg[row.config_key] = parsePostgresArray(row.config_values);
+      });
+      CONFIG_KEYS.forEach(k => {
+        if (!remoteCfg[k]) remoteCfg[k] = [];
+      });
+      console.log('[Config] Saving to localStorage:', JSON.stringify(remoteCfg).substring(0, 200) + '...');
+      this.saveLocal(remoteCfg);
+      // VERIFY
+      const verify = this.getLocal();
+      console.log('[Config] VERIFY - localizacion has', (verify.localizacion || []).length, 'items');
+      if (typeof renderConfigSections === 'function') {
+        try { renderConfigSections(); } catch(e) { console.error('[Config] Render error:', e); }
+      }
+      showToast('Descargado: ' + (verify.localizacion || []).length + ' localizaciones', 'success');
+      return true;
+    } catch (e) {
+      console.error('[Config] Download FAILED:', e);
+      showToast('Error al descargar: ' + e.message, 'error');
+      return false;
+    }
+  },
+
+  // Upload to Supabase using DIRECT FETCH
+  async uploadToSupabase() {
+    console.log('[Config] === UPLOAD START ===');
+    try {
+      const cfg = this.getLocal();
+      const updates = CONFIG_KEYS.map(k => ({
+        config_key: k,
+        config_values: cfg[k] || [],
+        updated_at: new Date().toISOString()
+      }));
+      console.log('[Config] Uploading', updates.length, 'keys');
+      const url = SUPABASE_URL + '/rest/v1/app_config?on_conflict=config_key';
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates'
+        },
+        body: JSON.stringify(updates)
+      });
+      console.log('[Config] Upload status:', response.status);
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('[Config] Upload HTTP error:', response.status, text);
+        showToast('Error al subir: ' + response.status, 'error');
+        return false;
+      }
+      showToast('Subido correctamente', 'success');
+      return true;
+    } catch (e) {
+      console.error('[Config] Upload FAILED:', e);
+      showToast('Error al subir: ' + e.message, 'error');
+      return false;
+    }
   }
 };
 
 // ============================================
-// AUTO-LEARN LSM CONFIG
-// Automatically adds used LSM field values to config lists
-// so they appear in dropdowns for future entries.
+// LSM SYNC MANAGER (Upload to Supabase)
 // ============================================
-function autoLearnLSMConfig(lsmData) {
-  const fieldMap = {
-    tipoMuestra: 'tipo_muestra',
-    nombreProyecto: 'nombre_proyecto',
-    solicitante: 'solicitante',
-    estructuraDeposito: 'estructura_deposito',
-    subestructuras: 'subestructuras',
-    categoria: 'categoria',
-    tipoMaterial: 'tipo_material',
-    proveniencia: 'proveniencia',
-    localizacion: 'localizacion',
-    fuente: 'fuente'
-  };
+const LSMSyncManager = {
+  async shouldUpload() {
+    if (!navigator.onLine) return false;
+    if (!supabaseClient) return false;
+    try {
+      const { error } = await supabaseClient.from('app_config').select('id').limit(1);
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
 
-  // Learn text fields
-  Object.entries(fieldMap).forEach(([dataKey, configKey]) => {
-    const val = (lsmData[dataKey] || '').trim();
-    if (val) ConfigManager.addValue(configKey, val);
-  });
+  async uploadMarker(marker) {
+    if (!supabaseClient || marker.markerType !== 'lsm') return false;
+    try {
+      const data = {
+        nickname: LSMUserManager.getNickname() || 'anon',
+        device_id: getDeviceId(),
+        local_marker_id: marker.id,
+        lat: marker.lat,
+        lng: marker.lng,
+        norte: marker.norte,
+        este: marker.este,
+        color: marker.color,
+        photos_count: (marker.photos || []).length,
+        nombre_muestra: marker.name,
+        tipo_muestra: marker.lsmData?.tipoMuestra || null,
+        nombre_proyecto: marker.lsmData?.nombreProyecto || null,
+        solicitante: marker.lsmData?.solicitante || null,
+        estructura_deposito: marker.lsmData?.estructuraDeposito || null,
+        subestructuras: marker.lsmData?.subestructuras || null,
+        categoria: marker.lsmData?.categoria || null,
+        tipo_material: marker.lsmData?.tipoMaterial || null,
+        proveniencia: marker.lsmData?.proveniencia || null,
+        localizacion: marker.lsmData?.localizacion || null,
+        fuente: marker.lsmData?.fuente || null,
+        ensayos: marker.lsmData?.ensayos || []
+      };
+      const { error } = await supabaseClient.from('lsm_markers').insert(data);
+      if (error) {
+        console.error('[Sync] Insert error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('[Sync] Upload exception:', e);
+      return false;
+    }
+  },
 
-  // Learn ensayos (test codes)
-  const ensayos = lsmData.ensayos || [];
-  if (Array.isArray(ensayos)) {
-    ensayos.forEach(code => {
-      const val = (code || '').trim();
-      if (val) ConfigManager.addValue('ensayos', val);
-    });
+  async syncPending() {
+    const markers = MarkerManager.getAll().filter(m => m.markerType === 'lsm' && m.pendingUpload);
+    if (markers.length === 0) return;
+    if (!await this.shouldUpload()) return;
+    showToast('Sincronizando ' + markers.length + ' muestra(s)...', 'info');
+    let success = 0;
+    for (const marker of markers) {
+      const ok = await this.uploadMarker(marker);
+      if (ok) {
+        MarkerManager.update(marker.id, { pendingUpload: false });
+        success++;
+      }
+    }
+    if (success > 0) {
+      showToast(success + ' muestra(s) subidas', 'success');
+    }
+  },
+
+  async syncMarkersFromSupabase() {
+    if (!supabaseClient) return false;
+    const nickname = LSMUserManager.getNickname();
+    if (!nickname) return false;
+    try {
+      const { data, error } = await supabaseClient
+        .from('lsm_markers')
+        .select('*')
+        .eq('nickname', nickname)
+        .order('created_at', { ascending: true });
+      if (error) {
+        console.error('[Sync] Download markers error:', error.message);
+        return false;
+      }
+      if (!data || data.length === 0) return true;
+
+      const markers = MarkerManager.getAll();
+      const localById = {};
+      markers.forEach(m => { localById[m.id] = m; });
+
+      let updated = 0, created = 0;
+      data.forEach(remote => {
+        const localId = remote.local_marker_id;
+        const local = localId ? localById[localId] : null;
+        const lsmData = {
+          tipoMuestra: remote.tipo_muestra || '',
+          nombreProyecto: remote.nombre_proyecto || '',
+          solicitante: remote.solicitante || '',
+          estructuraDeposito: remote.estructura_deposito || '',
+          subestructuras: remote.subestructuras || '',
+          categoria: remote.categoria || '',
+          tipoMaterial: remote.tipo_material || '',
+          nombreMuestra: remote.nombre_muestra || '',
+          proveniencia: remote.proveniencia || '',
+          localizacion: remote.localizacion || '',
+          fuente: remote.fuente || '',
+          ensayos: Array.isArray(remote.ensayos) ? remote.ensayos : []
+        };
+        if (local) {
+          MarkerManager.update(local.id, {
+            name: (remote.nombre_muestra || '').trim(),
+            lat: remote.lat,
+            lng: remote.lng,
+            norte: remote.norte != null ? String(remote.norte) : '',
+            este: remote.este != null ? String(remote.este) : '',
+            color: remote.color || 'red',
+            lsmData: lsmData,
+            pendingUpload: false
+          });
+          updated++;
+        } else {
+          MarkerManager.createLSMFromRemote(remote, localId);
+          created++;
+        }
+      });
+      console.log('[Sync] Markers synced:', updated, 'updated,', created, 'new');
+      return true;
+    } catch (e) {
+      console.error('[Sync] Download markers exception:', e);
+      return false;
+    }
   }
+};
+
+function getDeviceId() {
+  let id = localStorage.getItem('maps_gis_device_id');
+  if (!id) {
+    id = 'dev_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('maps_gis_device_id', id);
+  }
+  return id;
+}
+
+// ============================================
+// ADMIN MANAGER (Review all LSM markers)
+// ============================================
+const ADMIN_PASS = 'LSM$';
+const ADMIN_KEY = 'maps_gis_admin';
+let adminMarkersCache = [];
+
+const AdminManager = {
+  isLoggedIn() {
+    try {
+      return JSON.parse(localStorage.getItem(ADMIN_KEY)) || false;
+    } catch {
+      return false;
+    }
+  },
+
+  login(password) {
+    if (password === ADMIN_PASS) {
+      localStorage.setItem(ADMIN_KEY, 'true');
+      AppState.isAdmin = true;
+      return true;
+    }
+    return false;
+  },
+
+  logout() {
+    localStorage.removeItem(ADMIN_KEY);
+    AppState.isAdmin = false;
+    adminMarkersCache = [];
+  },
+
+  async fetchAllMarkers() {
+    if (!supabaseClient) {
+      showToast('No hay conexion con la base de datos', 'error');
+      return [];
+    }
+    try {
+      const { data, error } = await supabaseClient
+        .from('lsm_markers')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.error('[Admin] Error:', error.message);
+        showToast('Error de base de datos: ' + error.message, 'error');
+        return [];
+      }
+      adminMarkersCache = data || [];
+      return data || [];
+    } catch (e) {
+      console.error('[Admin] Fetch exception:', e);
+      return [];
+    }
+  },
+
+  getUniqueNicknames() {
+    const nicks = [...new Set(adminMarkersCache.map(m => m.nickname))];
+    nicks.sort();
+    return nicks;
+  },
+
+  filterByNickname(nickname) {
+    if (!nickname) return adminMarkersCache;
+    return adminMarkersCache.filter(m => m.nickname === nickname);
+  },
+
+  startAutoRefresh() {
+    this.stopAutoRefresh();
+    AdminManager._refreshInterval = setInterval(async () => {
+      if (!AppState.isAdmin || !supabaseClient) return;
+      await AdminManager.fetchAllMarkers();
+      if (AppState.isAdmin) {
+        addAdminMarkersToMap();
+        renderAdminPanel();
+      }
+    }, 60000);
+  },
+
+  stopAutoRefresh() {
+    if (AdminManager._refreshInterval) {
+      clearInterval(AdminManager._refreshInterval);
+      AdminManager._refreshInterval = null;
+    }
+  }
+};
+
+async function activateAdmin(password) {
+  if (!AdminManager.login(password)) {
+    showToast('Contrasena incorrecta', 'error');
+    return;
+  }
+  showToast('Modo Admin activado', 'info');
+  await AdminManager.fetchAllMarkers();
+  renderAdminPanel();
+  updateConfigAccountTab();
+  addAdminMarkersToMap();
+  AdminManager.startAutoRefresh();
+}
+
+function deactivateAdmin() {
+  AdminManager.stopAutoRefresh();
+  AdminManager.logout();
+  removeAdminMarkersFromMap();
+  renderAdminPanel();
+  updateConfigAccountTab();
+  updateModeToggleButton();
+  showToast('Modo Admin desactivado', 'info');
+}
+
+function addAdminMarkersToMap(filterNickname) {
+  if (!AppState.map) return;
+  removeAdminMarkersFromMap();
+  if (!AppState.adminMarkersLayer) {
+    AppState.adminMarkersLayer = L.layerGroup();
+  }
+  AppState.adminMarkersLayer.clearLayers();
+  const markers = filterNickname ? AdminManager.filterByNickname(filterNickname) : adminMarkersCache;
+  markers.forEach(m => {
+    const color = MARKER_COLORS[m.color]?.hex || '#58a6ff';
+    const initial = (m.nombre_muestra || 'X').charAt(0).toUpperCase();
+    const icon = L.divIcon({
+      className: '',
+      html: '<div class="custom-marker-pin admin-marker-pin"><svg viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg"><path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 24 16 24s16-12 16-24C32 7.16 24.84 0 16 0z" fill="' + color + '"/></svg></div>',
+      iconSize: [32, 40],
+      iconAnchor: [16, 40]
+    });
+    L.marker([m.lat, m.lng], { icon: icon }).addTo(AppState.adminMarkersLayer);
+  });
+  AppState.adminMarkersLayer.addTo(AppState.map);
+}
+
+function removeAdminMarkersFromMap() {
+  if (AppState.adminMarkersLayer) {
+    AppState.map.removeLayer(AppState.adminMarkersLayer);
+    AppState.adminMarkersLayer.clearLayers();
+  }
+}
+
+function renderAdminPanel() {
+  const tab = document.getElementById('config-tab-admin');
+  if (!tab) return;
+  const isAdmin = AppState.isAdmin;
+  const markers = adminMarkersCache;
+  const nicknames = AdminManager.getUniqueNicknames();
+
+  if (!isAdmin) {
+    tab.innerHTML = '<div class="form-group"><label>Acceso Admin</label><p class="config-hint">Ingresa la contrasena de admin.</p><div class="admin-login-row"><input type="password" id="admin-password" placeholder="Contrasena" maxlength="20" autocomplete="off"><button id="btn-admin-login" class="btn-primary btn-sm">Ingresar</button></div></div>';
+  } else {
+    const nickOptions = nicknames.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>').join('');
+    tab.innerHTML = '<div class="admin-status"><div class="admin-status-icon">&#9989;</div><div class="admin-status-info"><span class="admin-status-label">Admin activo</span><span class="admin-status-count">' + markers.length + ' muestras</span></div></div><div class="form-group"><label>Filtrar por Nickname</label><select id="admin-nickname-filter" class="crs-select"><option value="">Todos</option>' + nickOptions + '</select></div><div class="admin-actions-row"><button id="btn-admin-refresh" class="btn-secondary btn-sm">Actualizar</button><button id="btn-admin-export" class="btn-primary btn-sm">Exportar Excel</button><button id="btn-admin-logout" class="btn-danger btn-sm">Salir</button></div><div id="admin-markers-list" class="admin-markers-list"></div>';
+    setTimeout(() => {
+      const filterEl = document.getElementById('admin-nickname-filter');
+      if (filterEl) filterEl.addEventListener('change', () => { addAdminMarkersToMap(filterEl.value); renderAdminMarkersList(filterEl.value); });
+      document.getElementById('btn-admin-refresh')?.addEventListener('click', async () => { await AdminManager.fetchAllMarkers(); renderAdminPanel(); addAdminMarkersToMap(); });
+      document.getElementById('btn-admin-export')?.addEventListener('click', adminExportExcel);
+      document.getElementById('btn-admin-logout')?.addEventListener('click', deactivateAdmin);
+      renderAdminMarkersList();
+    }, 50);
+  }
+  setTimeout(() => {
+    document.getElementById('btn-admin-login')?.addEventListener('click', () => activateAdmin(document.getElementById('admin-password').value));
+    document.getElementById('admin-password')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') activateAdmin(document.getElementById('admin-password').value); });
+  }, 50);
+}
+
+function renderAdminMarkersList(filterNickname) {
+  const listEl = document.getElementById('admin-markers-list');
+  if (!listEl) return;
+  const filtered = filterNickname ? AdminManager.filterByNickname(filterNickname) : adminMarkersCache;
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<p class="empty-msg">No hay muestras</p>';
+    return;
+  }
+  listEl.innerHTML = filtered.slice(0, 50).map(m => {
+    const color = MARKER_COLORS[m.color]?.hex || '#58a6ff';
+    return '<div class="admin-marker-item" data-lat="' + m.lat + '" data-lng="' + m.lng + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.nombre_muestra || '') + '</div><div class="marker-item-coords">' + escapeHtml(m.nickname || '') + '</div></div></div>';
+  }).join('');
+  if (filtered.length > 50) listEl.innerHTML += '<p class="empty-msg">Mostrando 50 de ' + filtered.length + '</p>';
+  listEl.querySelectorAll('.admin-marker-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const lat = parseFloat(item.dataset.lat);
+      const lng = parseFloat(item.dataset.lng);
+      if (AppState.map && !isNaN(lat) && !isNaN(lng)) AppState.map.setView([lat, lng], 17);
+    });
+  });
+}
+
+async function adminExportExcel() {
+  const markers = adminMarkersCache;
+  if (markers.length === 0) { showToast('No hay datos', 'error'); return; }
+  const data = [['Nickname', 'Nombre_Muestra', 'Tipo_Muestra', 'Nombre_Proyecto', 'Solicitante', 'Estructura_Deposito', 'Subestructuras', 'Categoria', 'Tipo_Material', 'Proveniencia', 'Localizacion', 'Fuente', 'Ensayos', 'Norte', 'Este', 'Latitud', 'Longitud', 'Fecha_Hora']];
+  markers.forEach(m => {
+    data.push([m.nickname || '', m.nombre_muestra || '', m.tipo_muestra || '', m.nombre_proyecto || '', m.solicitante || '', m.estructura_deposito || '', m.subestructuras || '', m.categoria || '', m.tipo_material || '', m.proveniencia || '', m.localizacion || '', m.fuente || '', (m.ensayos || []).join(', '), m.norte || '', m.este || '', m.lat, m.lng, m.created_at ? formatDateTime(m.created_at) : '']);
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  XLSX.utils.book_append_sheet(wb, ws, 'LSM');
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  saveAs(blob, 'LSM_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  showToast(markers.length + ' muestras exportadas', 'success');
 }
 
 // ============================================
 // UI HELPERS
 // ============================================
+
 function showToast(message, type = 'info') {
   const toast = document.getElementById('toast');
   toast.textContent = message;
@@ -221,6 +725,7 @@ function showToast(message, type = 'info') {
   requestAnimationFrame(() => toast.classList.remove('hidden'));
   setTimeout(() => toast.classList.add('hidden'), 3000);
 }
+
 function formatBytes(bytes) {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -228,14 +733,17 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
+
 function formatDate(isoString) {
   const d = new Date(isoString);
   return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
 function formatDateTime(isoString) {
   const d = new Date(isoString);
   return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -245,6 +753,7 @@ function escapeHtml(text) {
 // ============================================
 // IMAGE COMPRESSION & PHOTO HANDLING
 // ============================================
+
 function compressImage(file, maxWidth = 1024, quality = 0.75) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -252,9 +761,11 @@ function compressImage(file, maxWidth = 1024, quality = 0.75) {
     reader.onload = (e) => { img.src = e.target.result; };
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      let width = img.width, height = img.height;
+      let width = img.width;
+      let height = img.height;
       if (width > maxWidth) { height = Math.round((height * maxWidth) / width); width = maxWidth; }
-      canvas.width = width; canvas.height = height;
+      canvas.width = width;
+      canvas.height = height;
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
       canvas.toBlob((blob) => { if (blob) resolve(blob); else reject(new Error('Error')); }, 'image/jpeg', quality);
     };
@@ -263,6 +774,7 @@ function compressImage(file, maxWidth = 1024, quality = 0.75) {
     reader.readAsDataURL(file);
   });
 }
+
 function blobToDataURL(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -271,6 +783,7 @@ function blobToDataURL(blob) {
     reader.readAsDataURL(blob);
   });
 }
+
 async function handlePhotoCapture(file) {
   if (!file) return;
   try {
@@ -281,10 +794,19 @@ async function handlePhotoCapture(file) {
     AppState.pendingPhotos.push({ blob: compressedBlob, dataUrl: dataUrl });
     renderPhotoGrid();
     showToast('Foto agregada', 'success');
-  } catch (error) { showToast('Error al procesar foto', 'error'); }
+  } catch (error) {
+    showToast('Error al procesar foto', 'error');
+  }
 }
-function getPhotoGridId() { return AppState.pendingMarkerType === 'lsm' ? 'lsm-photo-grid' : 'photo-grid'; }
-function getAddPhotoBtnId() { return AppState.pendingMarkerType === 'lsm' ? 'btn-lsm-add-photo' : 'btn-add-photo'; }
+
+function getPhotoGridId() {
+  return AppState.pendingMarkerType === 'lsm' ? 'lsm-photo-grid' : 'photo-grid';
+}
+
+function getAddPhotoBtnId() {
+  return AppState.pendingMarkerType === 'lsm' ? 'btn-lsm-add-photo' : 'btn-add-photo';
+}
+
 function renderPhotoGrid() {
   const grid = document.getElementById(getPhotoGridId());
   if (!grid) return;
@@ -292,16 +814,25 @@ function renderPhotoGrid() {
     return '<div class="photo-thumb"><img src="' + photo.dataUrl + '" alt="Foto"><button class="photo-remove" data-index="' + index + '">&times;</button></div>';
   }).join('');
   grid.querySelectorAll('.photo-remove').forEach(btn => {
-    btn.addEventListener('click', (e) => { e.stopPropagation(); AppState.pendingPhotos.splice(parseInt(btn.dataset.index), 1); renderPhotoGrid(); });
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      AppState.pendingPhotos.splice(parseInt(btn.dataset.index), 1);
+      renderPhotoGrid();
+    });
   });
   const btnAddPhoto = document.getElementById(getAddPhotoBtnId());
   if (btnAddPhoto) btnAddPhoto.style.display = AppState.pendingPhotos.length >= 2 ? 'none' : 'flex';
 }
-function clearPendingPhotos() { AppState.pendingPhotos = []; renderPhotoGrid(); }
+
+function clearPendingPhotos() {
+  AppState.pendingPhotos = [];
+  renderPhotoGrid();
+}
 
 // ============================================
 // SCREEN NAVIGATION
 // ============================================
+
 function showScreen(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(screenId).classList.add('active');
@@ -310,6 +841,7 @@ function showScreen(screenId) {
 // ============================================
 // MAP INITIALIZATION
 // ============================================
+
 function initMap() {
   if (AppState.map) { AppState.map.invalidateSize(); return; }
   AppState.map = L.map('map', { center: [-0.1807, -78.4678], zoom: 13, zoomControl: false });
@@ -326,6 +858,7 @@ function initMap() {
   });
   AppState.map.on('mousemove', (e) => updateCoordsDisplay(e.latlng));
 }
+
 function updateCoordsDisplay(latlng) {
   if (!latlng) return;
   const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
@@ -338,6 +871,7 @@ function updateCoordsDisplay(latlng) {
 // ============================================
 // GEO TIFF / PDF LOADING
 // ============================================
+
 async function loadGeoTiff(mapId) {
   try {
     const arrayBuffer = await MapStorage.getMapData(mapId);
@@ -360,6 +894,7 @@ async function loadGeoTiff(mapId) {
     showToast('Mapa cargado', 'success');
   } catch (error) { showToast('Error al cargar mapa', 'error'); }
 }
+
 async function loadPDFMap(mapId) {
   try {
     const record = await MapStorage.getMapRecord(mapId);
@@ -377,6 +912,7 @@ async function loadPDFMap(mapId) {
 // ============================================
 // GPS / LOCATION
 // ============================================
+
 function goToMyLocation() {
   if (!navigator.geolocation) { showToast('Geolocalizacion no disponible', 'error'); return; }
   showToast('Obteniendo ubicacion...', 'info');
@@ -401,10 +937,12 @@ function goToMyLocation() {
 // ============================================
 // MARKER SVG ICON GENERATOR
 // ============================================
+
 function createMarkerSVG(color, initial) {
   const hex = MARKER_COLORS[color]?.hex || MARKER_COLORS.red.hex;
   return '<div class="custom-marker-pin"><svg viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg"><path d="M16 0C7.16 0 0 7.16 0 16c0 12 16 24 16 24s16-12 16-24C32 7.16 24.84 0 16 0z" fill="' + hex + '"/></svg></div>';
 }
+
 function createMarkerIcon(marker) {
   return L.divIcon({ className: '', html: createMarkerSVG(marker.color || 'red', marker.name.charAt(0).toUpperCase()), iconSize: [32, 40], iconAnchor: [16, 40], popupAnchor: [0, -40] });
 }
@@ -412,16 +950,19 @@ function createMarkerIcon(marker) {
 // ============================================
 // MARKER TYPE SELECTOR (QC vs LSM)
 // ============================================
+
 function openMarkerTypeModal(latlng) {
   AppState.pendingMarkerLatLng = latlng;
   document.getElementById('marker-type-modal').classList.remove('hidden');
 }
+
 function closeMarkerTypeModal() {
   document.getElementById('marker-type-modal').classList.add('hidden');
   AppState.pendingMarkerLatLng = null;
   AppState.isAddMarkerMode = false;
   document.getElementById('btn-add-marker').classList.remove('active');
 }
+
 function selectMarkerType(type) {
   closeMarkerTypeModal();
   const latlng = AppState.pendingMarkerLatLng;
@@ -433,10 +974,12 @@ function selectMarkerType(type) {
 // ============================================
 // LSM LOGIN & MARKER MODAL
 // ============================================
+
 function openLSMLoginOrMarkerModal(latlng) {
   if (LSMUserManager.isLoggedIn()) openLSMMarkerModal(latlng);
   else openLSMLoginModal(latlng);
 }
+
 function openLSMLoginModal(latlng) {
   AppState.pendingMarkerLatLng = latlng;
   const saved = LSMUserManager.get();
@@ -445,12 +988,14 @@ function openLSMLoginModal(latlng) {
   document.getElementById('lsm-login-modal').classList.remove('hidden');
   setTimeout(() => document.getElementById('lsm-nickname').focus(), 100);
 }
+
 function closeLSMLoginModal() {
   document.getElementById('lsm-login-modal').classList.add('hidden');
   AppState.pendingMarkerLatLng = null;
   AppState.isAddMarkerMode = false;
   document.getElementById('btn-add-marker').classList.remove('active');
 }
+
 function confirmLSMLogin() {
   const nickname = document.getElementById('lsm-nickname').value.trim();
   const password = document.getElementById('lsm-password').value.trim();
@@ -461,6 +1006,7 @@ function confirmLSMLogin() {
   closeLSMLoginModal();
   if (AppState.pendingMarkerLatLng) openLSMMarkerModal(AppState.pendingMarkerLatLng);
 }
+
 function populateLsmSelect(id, key, required) {
   const select = document.getElementById(id);
   if (!select) return;
@@ -471,8 +1017,13 @@ function populateLsmSelect(id, key, required) {
     opt.value = ''; opt.textContent = '-- Seleccionar --';
     select.appendChild(opt);
   }
-  values.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.textContent = v; select.appendChild(opt); });
+  values.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v; opt.textContent = v;
+    select.appendChild(opt);
+  });
 }
+
 function populateLsmEnsayos() {
   const container = document.getElementById('lsm-ensayos-group');
   if (!container) return;
@@ -485,14 +1036,26 @@ function populateLsmEnsayos() {
     container.appendChild(label);
   });
 }
+
 function updateLSMCategorySelector() {
   document.querySelectorAll('#lsm-category-selector .category-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.color === AppState.lsmSelectedCategory);
   });
 }
+
 const LAST_LSM_KEY = 'maps_gis_last_lsm_form';
-function getLastLSMForm() { try { return JSON.parse(localStorage.getItem(LAST_LSM_KEY)) || {}; } catch { return {}; } }
-function saveLastLSMForm(data) { const copy = { ...data }; delete copy.nombreMuestra; delete copy.ensayos; localStorage.setItem(LAST_LSM_KEY, JSON.stringify(copy)); }
+
+function getLastLSMForm() {
+  try { return JSON.parse(localStorage.getItem(LAST_LSM_KEY)) || {}; }
+  catch { return {}; }
+}
+
+function saveLastLSMForm(data) {
+  const copy = { ...data };
+  delete copy.nombreMuestra;
+  delete copy.ensayos;
+  localStorage.setItem(LAST_LSM_KEY, JSON.stringify(copy));
+}
 
 async function openLSMMarkerModal(latlng, editId) {
   AppState.pendingMarkerLatLng = latlng;
@@ -564,6 +1127,7 @@ async function openLSMMarkerModal(latlng, editId) {
   document.getElementById('lsm-marker-modal').classList.remove('hidden');
   setTimeout(() => document.getElementById('lsm-nombre-muestra').focus(), 100);
 }
+
 function closeLSMMarkerModal() {
   document.getElementById('lsm-marker-modal').classList.add('hidden');
   AppState.pendingMarkerLatLng = null;
@@ -572,6 +1136,7 @@ function closeLSMMarkerModal() {
   clearPendingPhotos();
   document.getElementById('btn-add-marker').classList.remove('active');
 }
+
 async function saveLSMMarker() {
   const nombreMuestra = document.getElementById('lsm-nombre-muestra').value.trim();
   if (!nombreMuestra) { showToast('Ingresa el Nombre de Muestra', 'error'); return; }
@@ -608,7 +1173,13 @@ async function saveLSMMarker() {
         try { await MapStorage.deletePhoto(photoId); } catch (e) { console.warn('Could not delete old photo:', photoId); }
       }
     }
-    MarkerManager.update(AppState.editingMarkerId, { name: nombreMuestra, color: AppState.lsmSelectedCategory, photos: photoIds, lsmData: lsmData, pendingUpload: true });
+    MarkerManager.update(AppState.editingMarkerId, {
+      name: nombreMuestra,
+      color: AppState.lsmSelectedCategory,
+      photos: photoIds,
+      lsmData: lsmData,
+      pendingUpload: true
+    });
     showToast('Muestra LSM actualizada', 'success');
   } else if (AppState.pendingMarkerLatLng) {
     const { lat, lng } = AppState.pendingMarkerLatLng;
@@ -616,15 +1187,16 @@ async function saveLSMMarker() {
     showToast('Muestra LSM "' + nombreMuestra + '" guardada', 'success');
   }
   saveLastLSMForm(lsmData);
-  autoLearnLSMConfig(lsmData);
   if (AppState.markersLayer) refreshMarkersOnMap();
   updateMarkerCountBadge();
   closeLSMMarkerModal();
+  if (await LSMSyncManager.shouldUpload()) LSMSyncManager.syncPending();
 }
 
 // ============================================
-// MARKER MODAL (QC)
+// MARKER MODAL (Create/Edit) - QC ONLY
 // ============================================
+
 async function openMarkerModal(latlng, editId) {
   AppState.pendingMarkerType = 'qc';
   AppState.pendingMarkerLatLng = latlng;
@@ -663,6 +1235,7 @@ async function openMarkerModal(latlng, editId) {
   document.getElementById('marker-modal').classList.remove('hidden');
   setTimeout(() => document.getElementById('marker-name').focus(), 100);
 }
+
 function closeMarkerModal() {
   document.getElementById('marker-modal').classList.add('hidden');
   AppState.pendingMarkerLatLng = null;
@@ -671,6 +1244,7 @@ function closeMarkerModal() {
   clearPendingPhotos();
   document.getElementById('btn-add-marker').classList.remove('active');
 }
+
 async function saveMarker() {
   const name = document.getElementById('marker-name').value.trim();
   const description = document.getElementById('marker-description').value.trim();
@@ -705,6 +1279,7 @@ async function saveMarker() {
   updateMarkerCountBadge();
   closeMarkerModal();
 }
+
 function updateCategorySelector() {
   document.querySelectorAll('.category-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.color === AppState.selectedCategory);
@@ -712,8 +1287,9 @@ function updateCategorySelector() {
 }
 
 // ============================================
-// MARKER DETAIL
+// MARKER DETAIL MODAL
 // ============================================
+
 async function openMarkerDetail(id) {
   const marker = MarkerManager.getById(id);
   if (!marker) return;
@@ -757,7 +1333,11 @@ async function openMarkerDetail(id) {
   document.getElementById('marker-detail-modal').dataset.markerId = id;
   document.getElementById('marker-detail-modal').classList.remove('hidden');
 }
-function closeMarkerDetail() { document.getElementById('marker-detail-modal').classList.add('hidden'); }
+
+function closeMarkerDetail() {
+  document.getElementById('marker-detail-modal').classList.add('hidden');
+}
+
 function editCurrentMarker() {
   const id = document.getElementById('marker-detail-modal').dataset.markerId;
   const marker = MarkerManager.getById(id);
@@ -766,6 +1346,7 @@ function editCurrentMarker() {
   if (marker.markerType === 'lsm') openLSMMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
   else openMarkerModal({ lat: marker.lat, lng: marker.lng }, id);
 }
+
 async function deleteCurrentMarker() {
   const id = document.getElementById('marker-detail-modal').dataset.markerId;
   const marker = MarkerManager.getById(id);
@@ -784,6 +1365,7 @@ async function deleteCurrentMarker() {
 // ============================================
 // MARKERS ON MAP
 // ============================================
+
 function addMarkerToMap(marker) {
   const icon = createMarkerIcon(marker);
   const popupContent = '<div style="min-width:140px;padding:4px;"><strong style="font-size:0.9rem;">' + escapeHtml(marker.name) + '</strong><br><span style="font-size:0.75rem;color:#666;">N: ' + marker.norte + ' | E: ' + marker.este + '</span></div>';
@@ -791,6 +1373,7 @@ function addMarkerToMap(marker) {
     AppState.map.setView([marker.lat, marker.lng], AppState.map.getZoom());
   }).addTo(AppState.markersLayer);
 }
+
 function refreshMarkersOnMap() {
   if (!AppState.markersLayer) return;
   AppState.markersLayer.clearLayers();
@@ -800,8 +1383,16 @@ function refreshMarkersOnMap() {
 // ============================================
 // MARKERS SIDE PANEL
 // ============================================
-function openMarkersPanel() { renderMarkersList(); document.getElementById('markers-panel').classList.remove('hidden'); }
-function closeMarkersPanel() { document.getElementById('markers-panel').classList.add('hidden'); }
+
+function openMarkersPanel() {
+  renderMarkersList();
+  document.getElementById('markers-panel').classList.remove('hidden');
+}
+
+function closeMarkersPanel() {
+  document.getElementById('markers-panel').classList.add('hidden');
+}
+
 function renderMarkersList(filter = '') {
   const container = document.getElementById('markers-list-container');
   let markers = MarkerManager.getAll();
@@ -847,6 +1438,7 @@ function renderMarkersList(filter = '') {
     });
   });
 }
+
 function updateMarkerCountBadge() {
   const count = MarkerManager.getCount();
   const badge = document.getElementById('marker-count-badge');
@@ -858,6 +1450,7 @@ function updateMarkerCountBadge() {
 // ============================================
 // ZIP + EXCEL EXPORT
 // ============================================
+
 function openExportModal() {
   const today = new Date().toISOString().slice(0, 10);
   document.getElementById('export-today-date').textContent = formatDate(today);
@@ -866,8 +1459,15 @@ function openExportModal() {
   updateExportSummary();
   document.getElementById('export-modal').classList.remove('hidden');
 }
-function closeExportModal() { document.getElementById('export-modal').classList.add('hidden'); }
-function getExportType() { return document.querySelector('input[name="export-type"]:checked').value; }
+
+function closeExportModal() {
+  document.getElementById('export-modal').classList.add('hidden');
+}
+
+function getExportType() {
+  return document.querySelector('input[name="export-type"]:checked').value;
+}
+
 function getExportMarkers() {
   const markers = MarkerManager.getAll();
   const type = getExportType();
@@ -882,7 +1482,11 @@ function getExportMarkers() {
     return markers.filter(m => { if (!m.createdAt) return false; const d = new Date(m.createdAt); return d >= fromDate && d <= toDate; });
   }
 }
-function updateExportSummary() { document.getElementById('export-count').textContent = getExportMarkers().length; }
+
+function updateExportSummary() {
+  document.getElementById('export-count').textContent = getExportMarkers().length;
+}
+
 async function exportToZIP() {
   const markers = getExportMarkers();
   if (markers.length === 0) { showToast('No hay marcadores para exportar', 'error'); return; }
@@ -956,6 +1560,7 @@ async function exportToZIP() {
 // ============================================
 // MAPS LIST (HOME)
 // ============================================
+
 async function loadMapsList() {
   const container = document.getElementById('maps-list');
   try {
@@ -981,6 +1586,7 @@ async function loadMapsList() {
 // ============================================
 // FILE UPLOAD (TIFF + PDF)
 // ============================================
+
 function handleFileUpload(file) {
   if (!file) return;
   const ext = '.' + file.name.split('.').pop().toLowerCase();
@@ -988,6 +1594,7 @@ function handleFileUpload(file) {
   else if (ext === '.pdf') handlePDFUpload(file);
   else showToast('Solo archivos .TIF, .TIFF o .PDF', 'error');
 }
+
 function handleTIFFUpload(file) {
   const progressEl = document.getElementById('upload-progress');
   const progressFill = progressEl.querySelector('.progress-fill');
@@ -1013,6 +1620,7 @@ function handleTIFFUpload(file) {
   reader.onerror = () => { showToast('Error al leer archivo', 'error'); progressEl.classList.add('hidden'); };
   reader.readAsArrayBuffer(file);
 }
+
 async function handlePDFUpload(file) {
   const progressEl = document.getElementById('upload-progress');
   const progressFill = progressEl.querySelector('.progress-fill');
@@ -1074,10 +1682,12 @@ async function handlePDFUpload(file) {
 // ============================================
 // GEOREFERENCING MODAL
 // ============================================
+
 function closeGeorefModal() {
   document.getElementById('georef-modal').classList.add('hidden');
   AppState.pendingPDF = null;
 }
+
 async function applyGeoref() {
   const crs = document.getElementById('georef-crs').value;
   const tlE = parseFloat(document.getElementById('georef-tl-e').value);
@@ -1111,13 +1721,16 @@ async function applyGeoref() {
 // ============================================
 // OPEN MAP VIEW
 // ============================================
+
 function updateModeToggleButton() {
   const btn = document.getElementById('btn-mode-toggle');
   const label = document.getElementById('mode-label');
   if (!btn || !label) return;
-  if (AppState.currentMarkerMode === 'lsm') { label.textContent = 'LSM'; btn.classList.add('mode-lsm'); }
+  if (AppState.isAdmin) { label.textContent = 'ADMIN'; btn.classList.add('mode-lsm'); }
+  else if (AppState.currentMarkerMode === 'lsm') { label.textContent = 'LSM'; btn.classList.add('mode-lsm'); }
   else { label.textContent = 'QC'; btn.classList.remove('mode-lsm'); }
 }
+
 async function openMap(mapId) {
   AppState.currentMapId = mapId;
   const maps = await MapStorage.getAllMaps();
@@ -1139,12 +1752,15 @@ async function openMap(mapId) {
 // ============================================
 // DELETE MAP MODAL
 // ============================================
+
 let pendingDeleteMapId = null;
+
 function openDeleteMapModal(id, name) {
   pendingDeleteMapId = id;
   document.getElementById('delete-map-msg').textContent = 'Eliminar "' + name + '"?';
   document.getElementById('delete-map-modal').classList.remove('hidden');
 }
+
 async function confirmDeleteMap() {
   if (!pendingDeleteMapId) return;
   try { await MapStorage.deleteMap(pendingDeleteMapId); showToast('Mapa eliminado', 'info'); await loadMapsList(); }
@@ -1156,6 +1772,7 @@ async function confirmDeleteMap() {
 // ============================================
 // THEME TOGGLE
 // ============================================
+
 function toggleTheme() {
   document.body.classList.toggle('light-mode');
   const isLight = document.body.classList.contains('light-mode');
@@ -1165,13 +1782,26 @@ function toggleTheme() {
   }
   localStorage.setItem('maps_gis_theme', isLight ? 'light' : 'dark');
 }
+
 function loadThemePreference() {
   if (localStorage.getItem('maps_gis_theme') === 'light') document.body.classList.add('light-mode');
 }
 
 // ============================================
+// ONLINE STATUS
+// ============================================
+
+function updateOnlineStatus() {
+  const badge = document.getElementById('online-status');
+  if (!navigator.onLine) { badge.textContent = 'Sin conexion'; badge.className = 'status-badge offline'; return; }
+  if (supabaseClient) { badge.textContent = 'En linea + Sync'; badge.className = 'status-badge online'; }
+  else { badge.textContent = 'En linea (sin DB)'; badge.className = 'status-badge offline'; }
+}
+
+// ============================================
 // EVENT LISTENERS
 // ============================================
+
 function initEventListeners() {
   document.getElementById('map-input').addEventListener('change', (e) => { if (e.target.files.length > 0) handleFileUpload(e.target.files[0]); });
   document.getElementById('btn-back').addEventListener('click', () => { showScreen('home-screen'); loadMapsList(); updateMarkerCountBadge(); });
@@ -1184,6 +1814,7 @@ function initEventListeners() {
     showToast(AppState.isAddMarkerMode ? 'Modo marcador activo' : 'Modo marcador desactivado', 'info');
   });
   document.getElementById('btn-mode-toggle').addEventListener('click', () => {
+    if (AppState.isAdmin) { showToast('Desactiva Admin primero', 'info'); return; }
     AppState.currentMarkerMode = AppState.currentMarkerMode === 'qc' ? 'lsm' : 'qc';
     updateModeToggleButton();
     showToast('Modo: ' + (AppState.currentMarkerMode === 'lsm' ? 'LSM' : 'QC'), 'info');
@@ -1246,29 +1877,158 @@ function initEventListeners() {
   document.getElementById('btn-lsm-add-photo').addEventListener('click', () => { document.getElementById('lsm-photo-input').click(); });
   document.getElementById('lsm-photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0]); e.target.value = ''; } });
 
-  // Config button (local only)
+  // Home buttons
+  document.getElementById('btn-home-pull').addEventListener('click', pullConfigFromHome);
+  document.getElementById('btn-home-refresh').addEventListener('click', forceFullRefresh);
+
+  // Config modal
   document.getElementById('btn-config').addEventListener('click', openConfigModal);
   document.getElementById('btn-close-config').addEventListener('click', closeConfigModal);
+  document.getElementById('btn-config-sync').addEventListener('click', syncConfigWithSupabase);
+  document.getElementById('btn-close-config-login').addEventListener('click', closeConfigLoginModal);
+  document.getElementById('btn-config-login-cancel').addEventListener('click', closeConfigLoginModal);
+  document.getElementById('btn-config-login-enter').addEventListener('click', attemptConfigLogin);
+  document.getElementById('config-login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') attemptConfigLogin(); });
+  document.querySelectorAll('.config-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.config-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.config-tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('config-tab-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+  document.getElementById('btn-lsm-logout').addEventListener('click', () => {
+    LSMUserManager.clear();
+    updateConfigAccountTab();
+    showToast('Sesion LSM cerrada', 'info');
+  });
 
-  // Device setup
-  document.getElementById('btn-save-device-name').addEventListener('click', saveDeviceName);
-  document.getElementById('device-name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveDeviceName(); });
-
-  // Sync button
-  const syncBtn = document.getElementById('btn-sync');
-  if (syncBtn) syncBtn.addEventListener('click', () => SyncManager.syncAllPending(true));
+  // Online status + sync
+  window.addEventListener('online', () => {
+    updateOnlineStatus();
+    if (!supabaseClient) { initSupabase(); updateOnlineStatus(); }
+    LSMSyncManager.syncPending();
+  });
+  window.addEventListener('offline', updateOnlineStatus);
 }
 
 // ============================================
-// CONFIG MODAL (LOCAL ONLY)
+// CONFIG MODAL
 // ============================================
+
 function openConfigModal() {
-  renderConfigSections();
-  document.getElementById('config-modal').classList.remove('hidden');
+  document.getElementById('config-login-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('config-login-password').focus(), 100);
 }
+
 function closeConfigModal() {
   document.getElementById('config-modal').classList.add('hidden');
+  AdminManager.logout();
 }
+
+async function syncConfigWithSupabase() {
+  const statusEl = document.getElementById('config-sync-status');
+  const btn = document.getElementById('btn-config-sync');
+  if (!statusEl || !btn) return;
+  btn.disabled = true;
+  statusEl.textContent = 'Subiendo...';
+  statusEl.className = 'sync-status syncing';
+  try {
+    const up = await ConfigManager.uploadToSupabase();
+    if (up) { statusEl.textContent = 'Subido!'; statusEl.className = 'sync-status success'; showToast('Config subida', 'success'); }
+    else { statusEl.textContent = 'Sin cambios'; statusEl.className = 'sync-status'; }
+  } catch (e) {
+    statusEl.textContent = 'Error'; statusEl.className = 'sync-status error'; showToast('Error al subir', 'error');
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+  }
+}
+
+async function pullConfigFromHome() {
+  const btn = document.getElementById('btn-home-pull');
+  const statusEl = document.getElementById('home-sync-status');
+  if (!btn) return;
+  if (!supabaseClient) { showToast('No hay conexion con Supabase', 'error'); return; }
+  btn.disabled = true;
+  if (statusEl) { statusEl.textContent = 'Descargando...'; statusEl.className = 'sync-status syncing'; }
+  try {
+    const configOk = await ConfigManager.downloadFromSupabase();
+    const markersOk = await LSMSyncManager.syncMarkersFromSupabase();
+    if (configOk || markersOk) {
+      if (AppState.markersLayer) refreshMarkersOnMap();
+      updateMarkerCountBadge();
+      if (statusEl) { statusEl.textContent = 'Datos actualizados!'; statusEl.className = 'sync-status success'; }
+      showToast('Datos descargados', 'success');
+    } else {
+      if (statusEl) { statusEl.textContent = 'Sin cambios'; statusEl.className = 'sync-status'; }
+    }
+  } catch (e) {
+    console.error('[Home] Pull failed:', e);
+    if (statusEl) { statusEl.textContent = 'Error'; statusEl.className = 'sync-status error'; }
+    showToast('Error al descargar', 'error');
+  } finally {
+    btn.disabled = false;
+    if (statusEl) { setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000); }
+  }
+}
+
+async function forceFullRefresh() {
+  if (!supabaseClient) { showToast('No hay conexion', 'error'); return; }
+  if (!confirm('Esto limpiara datos locales y descargara todo de la base de datos.\n\nNo se perderan mapas ni fotos.\n\nContinuar?')) return;
+  const btn = document.getElementById('btn-home-refresh');
+  const statusEl = document.getElementById('home-refresh-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) { statusEl.textContent = 'Actualizando...'; statusEl.className = 'sync-status syncing'; }
+  const savedNickname = LSMUserManager.getNickname();
+  localStorage.removeItem('maps_gis_markers_v3');
+  localStorage.removeItem('maps_gis_config_v2');
+  localStorage.removeItem('maps_gis_last_lsm_form');
+  try {
+    await ConfigManager.downloadFromSupabase();
+    if (savedNickname) LSMUserManager.set(savedNickname);
+    await LSMSyncManager.syncMarkersFromSupabase();
+    await LSMSyncManager.syncPending();
+    if (AppState.markersLayer) refreshMarkersOnMap();
+    updateMarkerCountBadge();
+    if (statusEl) { statusEl.textContent = 'Listo!'; statusEl.className = 'sync-status success'; }
+    showToast('Actualizacion completa', 'success');
+  } catch (e) {
+    console.error('[FullRefresh] Error:', e);
+    if (statusEl) { statusEl.textContent = 'Error'; statusEl.className = 'sync-status error'; }
+    showToast('Error: ' + (e.message || 'Desconocido'), 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (statusEl) { setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000); }
+  }
+}
+
+function closeConfigLoginModal() {
+  document.getElementById('config-login-modal').classList.add('hidden');
+  document.getElementById('config-login-password').value = '';
+}
+
+function attemptConfigLogin() {
+  const pwd = document.getElementById('config-login-password').value;
+  if (!pwd) { showToast('Ingresa la contrasena', 'error'); return; }
+  if (pwd === ADMIN_PASS) {
+    AdminManager.login(pwd);
+    closeConfigLoginModal();
+    AppState.isAdmin = true;
+    renderConfigSections();
+    updateConfigAccountTab();
+    renderAdminPanel();
+    document.getElementById('config-modal').classList.remove('hidden');
+    if (!supabaseClient) showToast('Admin activado sin conexion', 'warning');
+    else showToast('Admin activado', 'success');
+  } else { showToast('Contrasena incorrecta', 'error'); }
+}
+
+function updateConfigAccountTab() {
+  const nick = LSMUserManager.getNickname();
+  document.getElementById('config-lsm-nickname').textContent = nick || 'No ingresado';
+}
+
 function renderConfigSections() {
   const container = document.getElementById('config-sections');
   const labels = {
@@ -1278,6 +2038,7 @@ function renderConfigSections() {
     fuente: 'Fuente', ensayos: 'Ensayos'
   };
 
+  // First render: create sections
   const existingSections = container.querySelectorAll('.config-section');
   const isFirstRender = existingSections.length === 0;
 
@@ -1302,7 +2063,9 @@ function renderConfigSections() {
           const tagList = section.querySelector('.config-tag-list');
           const tag = createConfigTag(key, val);
           tagList.appendChild(tag);
-          showToast('Agregado: ' + val, 'success');
+          if (supabaseClient && navigator.onLine) {
+            try { await ConfigManager.uploadToSupabase(); } catch (err) { console.error('[Config] Auto-upload failed:', err); }
+          }
         } else { showToast('Opcion duplicada o vacia', 'error'); }
       };
       addBtn.addEventListener('click', doAdd);
@@ -1310,7 +2073,7 @@ function renderConfigSections() {
     });
   }
 
-  // Refresh tag lists
+  // Always refresh tag lists
   CONFIG_KEYS.forEach(key => {
     const section = container.querySelector('.config-section[data-key="' + key + '"]');
     if (!section) return;
@@ -1337,61 +2100,52 @@ function createConfigTag(key, val) {
     e.stopPropagation();
     if (ConfigManager.removeValue(key, val)) {
       tag.remove();
-      showToast('Eliminado: ' + val, 'info');
+      if (supabaseClient && navigator.onLine) {
+        try { await ConfigManager.uploadToSupabase(); } catch (err) { console.error('[Config] Auto-upload failed:', err); }
+      }
     } else { showToast('Error al borrar', 'error'); }
   });
   return tag;
 }
 
 // ============================================
-// DEVICE SETUP MODAL (Primera vez)
-// ============================================
-function openDeviceSetupModal() {
-  document.getElementById('device-setup-modal').classList.remove('hidden');
-  setTimeout(() => document.getElementById('device-name-input').focus(), 100);
-}
-function closeDeviceSetupModal() {
-  document.getElementById('device-setup-modal').classList.add('hidden');
-}
-function saveDeviceName() {
-  const input = document.getElementById('device-name-input');
-  const name = input.value.trim();
-  if (!name) { showToast('Ingresa un nombre', 'error'); return; }
-  if (DeviceManager.register(name)) {
-    // Migrar marcadores existentes que no tengan deviceId
-    const all = MarkerManager.getAll();
-    let migrated = 0;
-    all.forEach(m => {
-      if (!m.deviceId) {
-        m.deviceId = DeviceManager.getId();
-        m.userName = DeviceManager.getName();
-        m.pendingUpload = m.pendingUpload !== false; // Si ya estaba sync, no lo marques
-        migrated++;
-      }
-    });
-    if (migrated > 0) MarkerManager.saveAll(all);
-
-    closeDeviceSetupModal();
-    showToast('Dispositivo registrado: ' + name + (migrated > 0 ? ` (${migrated} marcadores migrados)` : ''), 'success');
-    SyncManager.updateBadge();
-  }
-}
-
-// ============================================
 // APP INITIALIZATION
 // ============================================
+
 async function initApp() {
+  // Version check: reload if code changed (bypass service worker cache)
+  const storedVersion = localStorage.getItem('maps_gis_app_version');
+  if (storedVersion && storedVersion !== APP_VERSION) {
+    console.log('[App] NEW VERSION:', APP_VERSION, '(was', storedVersion + '). Reloading...');
+    localStorage.setItem('maps_gis_app_version', APP_VERSION);
+    if (!sessionStorage.getItem('maps_gis_reloaded')) {
+      sessionStorage.setItem('maps_gis_reloaded', 'true');
+      window.location.reload();
+      return;
+    }
+  } else if (!storedVersion) {
+    localStorage.setItem('maps_gis_app_version', APP_VERSION);
+  }
   loadThemePreference();
+  updateOnlineStatus();
+  initSupabase();
+  updateOnlineStatus();
   initEventListeners();
   await loadMapsList();
   updateMarkerCountBadge();
-
-  // Verificar registro del dispositivo (solo primera vez)
-  if (!DeviceManager.isRegistered()) {
-    openDeviceSetupModal();
+  if (supabaseClient) {
+    await ConfigManager.downloadFromSupabase();
+    LSMSyncManager.syncPending();
+    LSMSyncManager.syncMarkersFromSupabase();
   } else {
-    SyncManager.updateBadge();
+    console.warn('[App] No Supabase client - offline mode');
   }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && supabaseClient && navigator.onLine) {
+      ConfigManager.downloadFromSupabase();
+      LSMSyncManager.syncMarkersFromSupabase();
+    }
+  });
 }
 
 if (document.readyState === 'loading') {

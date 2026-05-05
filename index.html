@@ -26,13 +26,18 @@
       <div class="header-top">
         <h1>MAPS GIS</h1>
         <div class="header-actions">
-          <button id="btn-config" class="icon-btn config-btn" title="Configuracion">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+          <button id="btn-sync" class="icon-btn" title="Sincronizar" style="margin-right:4px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>
+            </svg>
+            <span id="sync-pending-badge" class="badge hidden" style="position:absolute;top:-2px;right:-2px;font-size:10px;min-width:16px;height:16px;padding:0;">0</span>
+          </button>
+          <button id="btn-admin" class="icon-btn" title="Admin" style="margin-right:8px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
             </svg>
           </button>
-          <span id="online-status" class="status-badge online">En linea</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.0.0</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -84,34 +89,19 @@
         </div>
       </section>
 
-      <!-- Descargar datos desde Base de Datos -->
+      <!-- Configuración Local -->
       <section class="sync-section">
-        <button id="btn-home-pull" class="btn-sync-home">
+        <button id="btn-config" class="btn-sync-home">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
           </svg>
-          Descargar datos desde Base de Datos
+          Configuracion
         </button>
-        <span id="home-sync-status" class="sync-status"></span>
-      </section>
-
-      <!-- Forzar Actualización Completa -->
-      <section class="sync-section">
-        <button id="btn-home-refresh" class="btn-sync-home" style="background:rgba(248,81,73,0.15);color:var(--danger);border-color:rgba(248,81,73,0.3)">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="23 4 23 10 17 10"/>
-            <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
-          </svg>
-          Forzar Actualización Completa
-        </button>
-        <span id="home-refresh-status" class="sync-status"></span>
       </section>
     </main>
 
     <footer class="app-footer">
-      <span id="app-version">v1.6.1</span>
       <span id="storage-info"></span>
     </footer>
   </div>
@@ -621,7 +611,118 @@
     </div>
   </div>
 
-  <!-- ==================== MODAL CONFIGURACION ==================== -->
+  <!-- ==================== MODAL SETUP DISPOSITIVO ==================== -->
+  <div id="device-setup-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Bienvenido a MAPS GIS</h3>
+      <p class="login-info">Ingresa un nombre para identificar este dispositivo. Solo se pedira una vez.</p>
+      <div class="form-group">
+        <label for="device-name-input">Nombre del dispositivo / Usuario</label>
+        <input type="text" id="device-name-input" placeholder="Ej: Juan Perez, Tablet-01" maxlength="30" autocomplete="off">
+      </div>
+      <div class="modal-actions">
+        <button id="btn-save-device-name" class="btn-primary">Guardar y continuar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL LOGIN ADMIN ==================== -->
+  <div id="admin-login-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Acceso Admin</h3>
+      <p class="login-info">Ingresa la contrasena de administrador</p>
+      <div class="form-group">
+        <label for="admin-password">Contrasena</label>
+        <input type="password" id="admin-password" placeholder="Contrasena" maxlength="20" autocomplete="off">
+      </div>
+      <div class="modal-actions">
+        <button id="btn-cancel-admin-login" class="btn-secondary">Cancelar</button>
+        <button id="btn-confirm-admin-login" class="btn-primary">Ingresar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL PANEL ADMIN ==================== -->
+  <div id="admin-panel-modal" class="modal hidden">
+    <div class="modal-content modal-admin">
+      <div class="admin-panel-header">
+        <h3>Panel de Administracion</h3>
+        <div class="admin-panel-actions">
+          <button id="btn-admin-refresh" class="icon-btn" title="Recargar datos">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+            </svg>
+          </button>
+          <button id="btn-admin-export" class="icon-btn" title="Exportar Excel">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+          </button>
+          <button id="btn-admin-reset" class="icon-btn" title="Vaciar base de datos" style="color:#f85149;">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+            </svg>
+          </button>
+          <button id="btn-admin-logout" class="icon-btn" title="Cerrar sesion">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+            </svg>
+          </button>
+          <button id="btn-close-admin-panel" class="icon-btn" title="Cerrar">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="admin-tabs">
+        <button class="admin-tab-btn active" data-tab="mapa">Mapa</button>
+        <button class="admin-tab-btn" data-tab="tabla">Tabla</button>
+      </div>
+
+      <!-- Tab Mapa -->
+      <div class="admin-tab-content" data-tab="mapa">
+        <div id="admin-map-container" style="height:50vh;border-radius:12px;margin-bottom:12px;"></div>
+        <div class="admin-status"><span id="admin-map-count">0 puntos</span></div>
+      </div>
+
+      <!-- Tab Tabla -->
+      <div class="admin-tab-content hidden" data-tab="tabla">
+        <div class="admin-filters">
+          <select id="admin-filter-type" class="crs-select" style="width:auto;">
+            <option value="all">Todos</option>
+            <option value="qc">QC</option>
+            <option value="lsm">LSM</option>
+          </select>
+          <input type="text" id="admin-filter-user" placeholder="Filtrar por usuario..." style="flex:1;">
+          <label style="display:flex;align-items:center;gap:6px;white-space:nowrap;">
+            <input type="checkbox" id="admin-filter-deleted"> Ver eliminados
+          </label>
+        </div>
+        <div class="admin-table-wrapper">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Nombre</th>
+                <th>Usuario</th>
+                <th>Fecha</th>
+                <th>Estado</th>
+                <th>Coords</th>
+              </tr>
+            </thead>
+            <tbody id="admin-table-body"></tbody>
+          </table>
+        </div>
+        <div id="admin-detail-panel" class="admin-detail-panel">
+          <p class="empty-msg">Selecciona un registro para ver detalles</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL CONFIGURACION (LOCAL) ==================== -->
   <div id="config-modal" class="modal hidden">
     <div class="modal-content modal-config">
       <div class="config-header">
@@ -632,71 +733,12 @@
           </svg>
         </button>
       </div>
-
-      <div class="config-tabs">
-        <button class="config-tab active" data-tab="lists">Listas Desplegables</button>
-        <button class="config-tab" data-tab="account">Cuenta LSM</button>
-        <button class="config-tab" data-tab="admin">Admin</button>
-      </div>
-
-      <div id="config-tab-lists" class="config-tab-content active">
-        <div class="config-sync-bar">
-          <button id="btn-config-sync" class="btn-primary btn-sm">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px">
-              <path d="M23 4v6h-6M1 20v-6h6"/>
-              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-            </svg>
-            Subir a Supabase
-          </button>
-          <span id="config-sync-status" class="sync-status"></span>
-        </div>
-        <div class="config-sections" id="config-sections"></div>
-      </div>
-
-      <div id="config-tab-account" class="config-tab-content">
-        <div class="form-group">
-          <label>Nickname LSM</label>
-          <div class="account-info">
-            <span id="config-lsm-nickname">No ingresado</span>
-            <button id="btn-lsm-logout" class="btn-secondary btn-sm">Cerrar sesion</button>
-          </div>
-        </div>
-        <p class="config-hint">Los marcadores LSM se asocian a este nickname. Puedes cambiarlo en cualquier momento desde el mapa.</p>
-      </div>
-
-      <div id="config-tab-admin" class="config-tab-content">
-        <div id="admin-panel-content"></div>
-      </div>
+      <div class="config-sections" id="config-sections"></div>
     </div>
   </div>
 
   <!-- Toast de notificaciones -->
   <div id="toast" class="toast hidden"></div>
-
-  <!-- Admin login gate para Config -->
-  <div id="config-login-modal" class="modal hidden">
-    <div class="modal-content modal-small">
-      <div class="modal-header">
-        <h3>Acceso Configuracion</h3>
-        <button id="btn-close-config-login" class="icon-btn">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 6L6 18M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-      <div class="modal-body">
-        <p class="config-hint">Ingresa la contrasena de administrador para acceder a la configuracion.</p>
-        <div class="form-group">
-          <label for="config-login-password">Contrasena</label>
-          <input type="password" id="config-login-password" placeholder="Contrasena" maxlength="20" autocomplete="off">
-        </div>
-        <div class="modal-actions">
-          <button id="btn-config-login-cancel" class="btn-secondary">Cancelar</button>
-          <button id="btn-config-login-enter" class="btn-primary">Ingresar</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- ==================== SCRIPTS ==================== -->
 
@@ -727,19 +769,6 @@
   <!-- FileSaver (Downloads) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
-  <!-- Supabase Client (with jsDelivr fallback) -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script>
-    if (typeof window.supabase === 'undefined') {
-      console.warn('[Supabase] unpkg load failed, trying jsDelivr...');
-      var s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js';
-      s.onload = function() { console.log('[Supabase] jsDelivr fallback loaded'); };
-      s.onerror = function() { console.error('[Supabase] All CDN sources failed - offline mode'); };
-      document.head.appendChild(s);
-    }
-  </script>
-
   <!-- Storage Module (IndexedDB) -->
   <script src="js/storage.js"></script>
 
@@ -748,6 +777,12 @@
 
   <!-- App Main Logic -->
   <script src="js/app.js"></script>
+
+  <!-- Sync Manager (Offline-first Supabase sync) -->
+  <script src="js/sync-manager.js"></script>
+
+  <!-- Admin Manager (Remote admin panel) -->
+  <script src="js/admin-manager.js"></script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>
