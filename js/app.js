@@ -120,7 +120,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.5.3';
+const APP_VERSION = '1.5.4';
 
 // ============================================
 // APP STATE
@@ -463,13 +463,27 @@ const ConfigManager = {
         remoteVals.forEach(v => {
           if (!merged.includes(v)) merged.push(v);
         });
-        // Remove values that were deleted locally (but only if upload succeeded for them)
+        // Remove values that were deleted locally
         if (deleted[k] && deleted[k].length > 0) {
           mergedCfg[k] = merged.filter(v => !deleted[k].includes(v));
         } else {
           mergedCfg[k] = merged;
         }
       });
+
+      // Clean up deleted tracking: remove values that server no longer has
+      CONFIG_KEYS.forEach(k => {
+        const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
+        if (deleted[k] && deleted[k].length > 0) {
+          const before = deleted[k].length;
+          deleted[k] = deleted[k].filter(v => remoteVals.includes(v));
+          if (deleted[k].length !== before) {
+            console.log('[Config] Cleaned deleted tracking for', k, ': removed', before - deleted[k].length, 'values');
+          }
+        }
+      });
+      this.saveDeletedValues(deleted);
+
       console.log('[Config] Merge result localizacion:', JSON.stringify(mergedCfg.localizacion));
       this.saveLocal(mergedCfg);
       console.log('[Config] Downloaded and saved', Object.keys(remoteCfg).length, 'keys');
@@ -497,7 +511,7 @@ const ConfigManager = {
     }
     ConfigManager._syncing = true;
     try {
-      // First, download remote config to merge with local
+      // First, download remote config
       const { data: remoteData, error: fetchError } = await supabaseClient
         .from('app_config')
         .select('config_key, config_values');
@@ -507,17 +521,25 @@ const ConfigManager = {
           remoteCfg[row.config_key] = parsePostgresArray(row.config_values);
         });
       }
+
       const localCfg = this.getLocal();
+      const deleted = this.getDeletedValues();
       const mergedCfg = {};
+
       CONFIG_KEYS.forEach(k => {
         const localVals = Array.isArray(localCfg[k]) ? localCfg[k] : [];
         const remoteVals = Array.isArray(remoteCfg[k]) ? remoteCfg[k] : [];
-        const merged = [...remoteVals];
-        localVals.forEach(v => {
-          if (!merged.includes(v)) merged.push(v);
+        // Start with LOCAL values (source of truth for this device)
+        const merged = [...localVals];
+        // Add remote values that are not in local AND not deleted
+        remoteVals.forEach(v => {
+          if (!merged.includes(v) && !(deleted[k] && deleted[k].includes(v))) {
+            merged.push(v);
+          }
         });
         mergedCfg[k] = merged;
       });
+
       // Save merged locally too
       this.saveLocal(mergedCfg);
 
@@ -537,8 +559,6 @@ const ConfigManager = {
       }
       console.log('[Config] Upload OK');
       showToast('Config subida correctamente', 'success');
-      // Clear deleted tracking since server now matches local
-      this.clearDeletedValues();
       return true;
     } catch (e) {
       console.error('[Config] Upload exception:', e);
