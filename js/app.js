@@ -120,7 +120,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.5.3';
 
 // ============================================
 // APP STATE
@@ -363,26 +363,48 @@ const ConfigManager = {
   },
 
   addValue(key, value) {
-    if (!value || !value.trim()) return false;
+    const trimmed = (value || '').trim();
+    if (!trimmed) {
+      console.log('[Config] addValue: empty value');
+      return false;
+    }
     const cfg = this.getLocal();
     if (!Array.isArray(cfg[key])) cfg[key] = [];
-    if (cfg[key].includes(value.trim())) return false;
-    cfg[key].push(value.trim());
+    if (cfg[key].includes(trimmed)) {
+      console.log('[Config] addValue: duplicate', key, '=', trimmed);
+      return false;
+    }
+    cfg[key].push(trimmed);
     this.saveLocal(cfg);
+    console.log('[Config] addValue: added', key, '=', trimmed, 'total:', cfg[key].length);
     // Remove from deleted tracking if it was previously deleted
     const deleted = this.getDeletedValues();
     if (deleted[key]) {
-      deleted[key] = deleted[key].filter(v => v !== value.trim());
-      this.saveDeletedValues(deleted);
+      const before = deleted[key].length;
+      deleted[key] = deleted[key].filter(v => v !== trimmed);
+      if (deleted[key].length !== before) {
+        this.saveDeletedValues(deleted);
+        console.log('[Config] addValue: removed from deleted tracking', key, '=', trimmed);
+      }
     }
     return true;
   },
 
   removeValue(key, value) {
     const cfg = this.getLocal();
-    if (!Array.isArray(cfg[key])) return false;
+    if (!Array.isArray(cfg[key])) {
+      console.log('[Config] removeValue: key not array', key);
+      return false;
+    }
+    const before = cfg[key].length;
     cfg[key] = cfg[key].filter(v => v !== value);
+    const after = cfg[key].length;
+    if (before === after) {
+      console.log('[Config] removeValue: value not found', key, '=', value);
+      return false;
+    }
     this.saveLocal(cfg);
+    console.log('[Config] removeValue: removed', key, '=', value, 'before:', before, 'after:', after);
     // Track deletion so it doesn't come back on download
     const deleted = this.getDeletedValues();
     if (!deleted[key]) deleted[key] = [];
@@ -3333,82 +3355,144 @@ function renderConfigSections() {
     ensayos: 'Ensayos'
   };
 
-  container.innerHTML = '';
-  CONFIG_KEYS.forEach(key => {
-    const values = ConfigManager.getValues(key);
-    const section = document.createElement('div');
-    section.className = 'config-section open';
-    section.dataset.key = key;
-    section.innerHTML =
-      '<div class="config-section-header">' +
-        '<h4>' + labels[key] + '</h4>' +
-        '<span class="config-section-toggle">&#9650;</span>' +
-      '</div>' +
-      '<div class="config-section-body">' +
-        '<div class="config-tag-list">' + values.map(v =>
-          '<span class="config-tag">' + escapeHtml(v) + '<button data-val="' + v.replace(/"/g, '&quot;') + '">&times;</button></span>'
-        ).join('') + '</div>' +
-        '<div class="config-input-row">' +
-          '<input type="text" placeholder="Nueva opcion..." maxlength="50">' +
-          '<button class="btn-primary btn-sm btn-add-config">Agregar</button>' +
+  // Check if container already has sections (re-render vs first render)
+  const existingSections = container.querySelectorAll('.config-section');
+  const isFirstRender = existingSections.length === 0;
+
+  if (isFirstRender) {
+    container.innerHTML = '';
+    CONFIG_KEYS.forEach(key => {
+      const section = document.createElement('div');
+      section.className = 'config-section open';
+      section.dataset.key = key;
+      section.innerHTML =
+        '<div class="config-section-header">' +
+          '<h4>' + labels[key] + '</h4>' +
+          '<span class="config-section-toggle">&#9650;</span>' +
         '</div>' +
-      '</div>';
+        '<div class="config-section-body">' +
+          '<div class="config-tag-list"></div>' +
+          '<div class="config-input-row">' +
+            '<input type="text" placeholder="Nueva opcion..." maxlength="50">' +
+            '<button class="btn-primary btn-sm btn-add-config">Agregar</button>' +
+          '</div>' +
+        '</div>';
 
-    container.appendChild(section);
+      container.appendChild(section);
 
-    // Toggle section
-    section.querySelector('.config-section-header').addEventListener('click', () => {
-      section.classList.toggle('open');
-    });
+      // Toggle section
+      section.querySelector('.config-section-header').addEventListener('click', () => {
+        section.classList.toggle('open');
+      });
 
-    // Remove value
-    section.querySelectorAll('.config-tag button').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const val = btn.dataset.val;
-        console.log('[Config] Removing value:', key, '=', val);
-        ConfigManager.removeValue(key, val);
-        renderConfigSections();
-        // Auto-upload to Supabase
-        if (supabaseClient && navigator.onLine) {
-          try {
-            await ConfigManager.uploadToSupabase();
-          } catch (err) {
-            console.error('[Config] Auto-upload failed after remove:', err);
-          }
+      // Add value handler
+      const addBtn = section.querySelector('.btn-add-config');
+      const input = section.querySelector('input');
+      const doAdd = async () => {
+        const val = input.value.trim();
+        if (!val) {
+          showToast('Ingresa un valor', 'error');
+          return;
         }
+        if (ConfigManager.addValue(key, val)) {
+          input.value = '';
+          // Add to DOM directly without full re-render
+          const tagList = section.querySelector('.config-tag-list');
+          const tag = createConfigTag(key, val);
+          tagList.appendChild(tag);
+          console.log('[Config] Added value:', key, '=', val, 'Total:', ConfigManager.getValues(key).length);
+          // Auto-upload to Supabase
+          if (supabaseClient && navigator.onLine) {
+            try {
+              showToast('Subiendo cambios...', 'info');
+              await ConfigManager.uploadToSupabase();
+              showToast('Cambios subidos', 'success');
+            } catch (err) {
+              console.error('[Config] Auto-upload failed after add:', err);
+              showToast('Error al subir: ' + (err.message || 'Desconocido'), 'error');
+            }
+          }
+        } else {
+          showToast('Opcion duplicada o vacia', 'error');
+        }
+      };
+      addBtn.addEventListener('click', doAdd);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') doAdd();
       });
     });
+  }
 
-    // Add value
-    const addBtn = section.querySelector('.btn-add-config');
-    const input = section.querySelector('input');
-    const doAdd = async () => {
-      const val = input.value.trim();
-      if (!val) {
-        showToast('Ingresa un valor', 'error');
-        return;
+  // Always refresh tag lists (for first render and external updates)
+  CONFIG_KEYS.forEach(key => {
+    const section = container.querySelector('.config-section[data-key="' + key + '"]');
+    if (!section) return;
+    const values = ConfigManager.getValues(key);
+    const tagList = section.querySelector('.config-tag-list');
+    
+    // Get current values in DOM
+    const currentTags = Array.from(tagList.querySelectorAll('.config-tag'));
+    const currentValues = currentTags.map(tag => tag.dataset.val);
+    
+    // Remove tags that no longer exist
+    currentTags.forEach(tag => {
+      if (!values.includes(tag.dataset.val)) {
+        console.log('[Config] Removing tag from DOM:', key, '=', tag.dataset.val);
+        tag.remove();
       }
-      if (ConfigManager.addValue(key, val)) {
-        input.value = '';
-        renderConfigSections();
-        // Auto-upload to Supabase
-        if (supabaseClient && navigator.onLine) {
-          try {
-            await ConfigManager.uploadToSupabase();
-          } catch (err) {
-            console.error('[Config] Auto-upload failed after add:', err);
-          }
-        }
-      } else {
-        showToast('Opcion duplicada o vacia', 'error');
+    });
+    
+    // Add new tags
+    values.forEach(val => {
+      if (!currentValues.includes(val)) {
+        console.log('[Config] Adding tag to DOM:', key, '=', val);
+        const tag = createConfigTag(key, val);
+        tagList.appendChild(tag);
       }
-    };
-    addBtn.addEventListener('click', doAdd);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') doAdd();
     });
   });
+}
+
+function createConfigTag(key, val) {
+  const tag = document.createElement('span');
+  tag.className = 'config-tag';
+  tag.dataset.val = val;
+  tag.innerHTML = escapeHtml(val) + '<button>&times;</button>';
+  
+  tag.querySelector('button').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    console.log('[Config] Clicked delete:', key, '=', val);
+    console.log('[Config] Before delete:', key, '=', JSON.stringify(ConfigManager.getValues(key)));
+    
+    const removed = ConfigManager.removeValue(key, val);
+    console.log('[Config] removeValue returned:', removed);
+    console.log('[Config] After delete:', key, '=', JSON.stringify(ConfigManager.getValues(key)));
+    
+    if (removed) {
+      tag.remove();
+      console.log('[Config] Tag removed from DOM');
+      
+      if (supabaseClient && navigator.onLine) {
+        try {
+          showToast('Subiendo cambios...', 'info');
+          const ok = await ConfigManager.uploadToSupabase();
+          if (ok) {
+            showToast('Cambios subidos', 'success');
+          }
+        } catch (err) {
+          console.error('[Config] Auto-upload failed after remove:', err);
+          showToast('Error al subir: ' + (err.message || 'Desconocido'), 'error');
+        }
+      } else {
+        showToast('Guardado localmente (sin conexion)', 'info');
+      }
+    } else {
+      console.error('[Config] removeValue failed for:', key, '=', val);
+      showToast('Error al borrar', 'error');
+    }
+  });
+  
+  return tag;
 }
 
 // ============================================
