@@ -1661,6 +1661,27 @@ body {
   display: block;
 }
 
+/* --- Config Sync Bar --- */
+.config-sync-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.sync-status {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.sync-status.success { color: var(--success); }
+.sync-status.error { color: var(--danger); }
+.sync-status.syncing { color: var(--accent); }
+
 /* --- Config Sections --- */
 .config-section {
   margin-bottom: 16px;

@@ -62,7 +62,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.2.8';
+const APP_VERSION = '1.2.9';
 
 // ============================================
 // APP STATE
@@ -413,8 +413,8 @@ const ConfigManager = {
         console.log('[Config] Polling for changes...');
         await ConfigManager.downloadFromSupabase();
       }
-    }, 5 * 60 * 1000);
-    console.log('[Config] Started polling every 5 minutes');
+    }, 30 * 1000);
+    console.log('[Config] Started polling every 30 seconds');
   },
 
   stopPolling() {
@@ -2788,6 +2788,7 @@ function initEventListeners() {
   // Config modal
   document.getElementById('btn-config').addEventListener('click', openConfigModal);
   document.getElementById('btn-close-config').addEventListener('click', closeConfigModal);
+  document.getElementById('btn-config-sync').addEventListener('click', syncConfigWithSupabase);
   document.getElementById('btn-close-config-login').addEventListener('click', closeConfigLoginModal);
   document.getElementById('btn-config-login-cancel').addEventListener('click', closeConfigLoginModal);
   document.getElementById('btn-config-login-enter').addEventListener('click', attemptConfigLogin);
@@ -2827,9 +2828,54 @@ function openConfigModal() {
     updateConfigAccountTab();
     renderAdminPanel();
     document.getElementById('config-modal').classList.remove('hidden');
+    // Auto-download on open
+    if (supabaseClient && navigator.onLine) {
+      ConfigManager.downloadFromSupabase().then(ok => {
+        if (ok) console.log('[Config] Auto-downloaded on open');
+      });
+    }
   } else {
     document.getElementById('config-login-modal').classList.remove('hidden');
     setTimeout(() => document.getElementById('config-login-password').focus(), 100);
+  }
+}
+
+function closeConfigModal() {
+  document.getElementById('config-modal').classList.add('hidden');
+  // Auto-upload on close
+  if (supabaseClient && navigator.onLine) {
+    ConfigManager.uploadToSupabase().then(ok => {
+      if (ok) console.log('[Config] Auto-uploaded on close');
+    });
+  }
+}
+
+async function syncConfigWithSupabase() {
+  const statusEl = document.getElementById('config-sync-status');
+  const btn = document.getElementById('btn-config-sync');
+  if (!statusEl || !btn) return;
+  btn.disabled = true;
+  statusEl.textContent = 'Sincronizando...';
+  statusEl.className = 'sync-status syncing';
+  try {
+    const up = await ConfigManager.uploadToSupabase();
+    const down = await ConfigManager.downloadFromSupabase();
+    if (up || down) {
+      statusEl.textContent = 'Sincronizado!';
+      statusEl.className = 'sync-status success';
+      showToast('Config sincronizada con Supabase', 'success');
+    } else {
+      statusEl.textContent = 'Sin cambios';
+      statusEl.className = 'sync-status';
+    }
+  } catch (e) {
+    console.error('[Config] Sync failed:', e);
+    statusEl.textContent = 'Error de sincronizacion';
+    statusEl.className = 'sync-status error';
+    showToast('Error al sincronizar', 'error');
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
   }
 }
 

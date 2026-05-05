@@ -86,7 +86,7 @@
     </main>
 
     <footer class="app-footer">
-      <span id="app-version">v1.2.8</span>
+      <span id="app-version">v1.2.9</span>
       <span id="storage-info"></span>
     </footer>
   </div>
@@ -615,6 +615,16 @@
       </div>
 
       <div id="config-tab-lists" class="config-tab-content active">
+        <div class="config-sync-bar">
+          <button id="btn-config-sync" class="btn-primary btn-sm">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px">
+              <path d="M23 4v6h-6M1 20v-6h6"/>
+              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+            </svg>
+            Sincronizar con Supabase
+          </button>
+          <span id="config-sync-status" class="sync-status"></span>
+        </div>
         <div class="config-sections" id="config-sections"></div>
       </div>
 
