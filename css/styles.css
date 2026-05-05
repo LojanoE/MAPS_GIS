@@ -1664,6 +1664,7 @@ body {
 /* --- Config Sync Bar --- */
 .config-sync-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-bottom: 16px;

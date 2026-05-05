@@ -62,7 +62,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.2.9';
+const APP_VERSION = '1.3.0';
 
 // ============================================
 // APP STATE
@@ -2789,6 +2789,7 @@ function initEventListeners() {
   document.getElementById('btn-config').addEventListener('click', openConfigModal);
   document.getElementById('btn-close-config').addEventListener('click', closeConfigModal);
   document.getElementById('btn-config-sync').addEventListener('click', syncConfigWithSupabase);
+  document.getElementById('btn-config-pull').addEventListener('click', pullConfigFromSupabase);
   document.getElementById('btn-close-config-login').addEventListener('click', closeConfigLoginModal);
   document.getElementById('btn-config-login-cancel').addEventListener('click', closeConfigLoginModal);
   document.getElementById('btn-config-login-enter').addEventListener('click', attemptConfigLogin);
@@ -2873,6 +2874,34 @@ async function syncConfigWithSupabase() {
     statusEl.textContent = 'Error de sincronizacion';
     statusEl.className = 'sync-status error';
     showToast('Error al sincronizar', 'error');
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+  }
+}
+
+async function pullConfigFromSupabase() {
+  const statusEl = document.getElementById('config-sync-status');
+  const btn = document.getElementById('btn-config-pull');
+  if (!statusEl || !btn) return;
+  btn.disabled = true;
+  statusEl.textContent = 'Descargando...';
+  statusEl.className = 'sync-status syncing';
+  try {
+    const ok = await ConfigManager.downloadFromSupabase();
+    if (ok) {
+      statusEl.textContent = 'Descargado!';
+      statusEl.className = 'sync-status success';
+      showToast('Config descargada de Supabase', 'success');
+    } else {
+      statusEl.textContent = 'Sin cambios';
+      statusEl.className = 'sync-status';
+    }
+  } catch (e) {
+    console.error('[Config] Pull failed:', e);
+    statusEl.textContent = 'Error al descargar';
+    statusEl.className = 'sync-status error';
+    showToast('Error al descargar', 'error');
   } finally {
     btn.disabled = false;
     setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
