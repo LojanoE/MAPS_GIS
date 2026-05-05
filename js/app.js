@@ -417,7 +417,9 @@ const ConfigManager = {
     ConfigManager._syncing = true;
     try {
       const localCfg = this.getLocal();
+      console.log('[Config] UPLOAD - Local localizacion:', JSON.stringify(localCfg.localizacion));
       const remoteCfg = await this._fetchRemoteConfig();
+      console.log('[Config] UPLOAD - Remote localizacion:', JSON.stringify(remoteCfg?.localizacion));
       const merged = {};
       CONFIG_KEYS.forEach(k => {
         const localVals = localCfg[k] || [];
@@ -430,6 +432,7 @@ const ConfigManager = {
           merged[k] = [];
         }
       });
+      console.log('[Config] UPLOAD - Merged localizacion:', JSON.stringify(merged.localizacion));
       const updates = [];
       CONFIG_KEYS.forEach(k => {
         updates.push({
@@ -439,15 +442,22 @@ const ConfigManager = {
         });
       });
       console.log('[Config] Uploading (merged)', updates.length, 'config rows to Supabase...');
+      console.log('[Config] UPLOAD - Full payload:', JSON.stringify(updates));
       const { data, error } = await supabaseClient
         .from('app_config')
         .upsert(updates, { onConflict: 'config_key' });
+      if (error) {
+        console.error('[Config] Upload error:', error.message, error.code, error.details);
+        showToast('Error al subir: ' + error.message, 'error');
+        return false;
+      }
       if (error) {
         console.error('[Config] Upload error:', error.message, error.code, error.details);
         return false;
       }
       this.saveLocal(merged);
       console.log('[Config] Upload successful (with merge)');
+      showToast('Config subida a Supabase', 'success');
       return true;
     } catch (e) {
       console.error('[Config] Upload exception:', e);
