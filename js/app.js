@@ -3149,7 +3149,7 @@ async function pullConfigFromHome() {
     const configOk = await ConfigManager.downloadFromSupabase(true);
     const markersOk = await LSMSyncManager.syncMarkersFromSupabase();
     if (configOk || markersOk) {
-      refreshMarkersOnMap();
+      if (AppState.markersLayer) refreshMarkersOnMap();
       updateMarkerCountBadge();
       if (statusEl) {
         statusEl.textContent = 'Datos actualizados!';
@@ -3202,7 +3202,7 @@ async function forceFullRefresh() {
     await LSMSyncManager.syncMarkersFromSupabase();
     await LSMSyncManager.syncPending();
 
-    refreshMarkersOnMap();
+    if (AppState.markersLayer) refreshMarkersOnMap();
     updateMarkerCountBadge();
     renderConfigSections();
     updateConfigAccountTab();
