@@ -296,6 +296,40 @@ const ConfigManager = {
     return true;
   },
 
+  async _fetchRemoteConfig() {
+    if (!supabaseClient) return null;
+    const { data, error } = await supabaseClient
+      .from('app_config')
+      .select('config_key, config_values');
+    if (error || !data || data.length === 0) {
+      console.warn('[Config] _fetchRemoteConfig: no data or error', error?.message);
+      return null;
+    }
+    console.log('[Config] Raw Supabase response:', JSON.stringify(data));
+    const remoteCfg = {};
+    data.forEach(row => {
+      let vals = row.config_values;
+      if (typeof vals === 'string') {
+        try {
+          if (vals.startsWith('{') && vals.endsWith('}')) {
+            vals = vals.slice(1, -1).split(',').map(v => v.replace(/^"|"$/g, '')).filter(v => v.length > 0);
+          } else {
+            vals = JSON.parse(vals);
+          }
+        } catch (e) {
+          console.warn('[Config] Could not parse config_values for', row.config_key, ':', vals);
+          vals = [];
+        }
+      }
+      if (!Array.isArray(vals)) vals = [];
+      remoteCfg[row.config_key] = vals;
+    });
+    CONFIG_KEYS.forEach(k => {
+      if (!remoteCfg[k]) remoteCfg[k] = [];
+    });
+    return remoteCfg;
+  },
+
   async downloadFromSupabase() {
     if (!supabaseClient) {
       console.warn('[Config] No Supabase client, skipping download');
@@ -305,7 +339,6 @@ const ConfigManager = {
       console.log('[Config] Sync in progress, skipping download');
       return false;
     }
-    // Never download while config modal is open (user is editing)
     const configModal = document.getElementById('config-modal');
     if (configModal && !configModal.classList.contains('hidden')) {
       return false;
@@ -314,42 +347,12 @@ const ConfigManager = {
     const versionAtStart = this._localVersion;
     try {
       console.log('[Config] Downloading from Supabase...');
-      const { data, error } = await supabaseClient
-        .from('app_config')
-        .select('config_key, config_values');
-      if (error) {
-        console.error('[Config] Supabase query error:', error.message, error.code, error.details);
-        return false;
-      }
-      if (!data || data.length === 0) {
-        console.warn('[Config] No data returned from Supabase');
-        return false;
-      }
+      const remoteCfg = await this._fetchRemoteConfig();
+      if (!remoteCfg) return false;
       if (this._localVersion !== versionAtStart) {
         console.log('[Config] Local changed during download, skipping save');
         return false;
       }
-      console.log('[Config] Raw Supabase response:', JSON.stringify(data));
-      const remoteCfg = {};
-      data.forEach(row => {
-        let vals = row.config_values;
-        // PostgreSQL text[] can come as a string like "{val1,val2}" or as JS array
-        if (typeof vals === 'string') {
-          try {
-            // Try parsing PostgreSQL array format: {val1,val2}
-            if (vals.startsWith('{') && vals.endsWith('}')) {
-              vals = vals.slice(1, -1).split(',').map(v => v.replace(/^"|"$/g, '')).filter(v => v.length > 0);
-            } else {
-              vals = JSON.parse(vals);
-            }
-          } catch (e) {
-            console.warn('[Config] Could not parse config_values for', row.config_key, ':', vals);
-            vals = [];
-          }
-        }
-        if (!Array.isArray(vals)) vals = [];
-        remoteCfg[row.config_key] = vals;
-      });
       const localCfg = this.getLocal();
       console.log('[Config] Remote config:', JSON.stringify(remoteCfg));
       console.log('[Config] Local config:', JSON.stringify(localCfg));
@@ -361,11 +364,6 @@ const ConfigManager = {
         if (JSON.stringify(remoteVals.slice().sort()) !== JSON.stringify(localVals.slice().sort())) {
           changed = true;
           changeDetails.push(k + ': remote=' + JSON.stringify(remoteVals) + ' local=' + JSON.stringify(localVals));
-        }
-      });
-      CONFIG_KEYS.forEach(k => {
-        if (!remoteCfg[k] || remoteCfg[k].length === 0) {
-          remoteCfg[k] = [];
         }
       });
       this.saveLocal(remoteCfg);
@@ -399,16 +397,29 @@ const ConfigManager = {
     }
     ConfigManager._syncing = true;
     try {
-      const cfg = this.getLocal();
+      const localCfg = this.getLocal();
+      const remoteCfg = await this._fetchRemoteConfig();
+      const merged = {};
+      CONFIG_KEYS.forEach(k => {
+        const localVals = localCfg[k] || [];
+        const remoteVals = remoteCfg ? (remoteCfg[k] || []) : [];
+        if (localVals.length > 0) {
+          merged[k] = localVals;
+        } else if (remoteVals.length > 0) {
+          merged[k] = remoteVals;
+        } else {
+          merged[k] = [];
+        }
+      });
       const updates = [];
       CONFIG_KEYS.forEach(k => {
         updates.push({
           config_key: k,
-          config_values: cfg[k] || [],
+          config_values: merged[k],
           updated_at: new Date().toISOString()
         });
       });
-      console.log('[Config] Uploading', updates.length, 'config rows to Supabase...');
+      console.log('[Config] Uploading (merged)', updates.length, 'config rows to Supabase...');
       const { data, error } = await supabaseClient
         .from('app_config')
         .upsert(updates, { onConflict: 'config_key' });
@@ -416,7 +427,8 @@ const ConfigManager = {
         console.error('[Config] Upload error:', error.message, error.code, error.details);
         return false;
       }
-      console.log('[Config] Upload successful');
+      this.saveLocal(merged);
+      console.log('[Config] Upload successful (with merge)');
       return true;
     } catch (e) {
       console.error('[Config] Upload exception:', e);
