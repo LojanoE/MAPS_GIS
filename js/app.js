@@ -358,31 +358,42 @@ const ConfigManager = {
         return false;
       }
       const localCfg = this.getLocal();
-      console.log('[Config] Remote config:', JSON.stringify(remoteCfg));
-      console.log('[Config] Local config:', JSON.stringify(localCfg));
-      let changed = false;
-      let changeDetails = [];
+      console.log('[Config] Remote nombre_proyecto:', JSON.stringify(remoteCfg.nombre_proyecto));
+      console.log('[Config] Local nombre_proyecto:', JSON.stringify(localCfg.nombre_proyecto));
+      
+      // Always save remote data (force download to fix sync issue)
+      let updatedCount = 0;
+      let updatedKeys = [];
       CONFIG_KEYS.forEach(k => {
         const remoteVals = remoteCfg[k] || [];
         const localVals = localCfg[k] || [];
-        const remoteSorted = JSON.stringify(remoteVals.slice().sort());
-        const localSorted = JSON.stringify(localVals.slice().sort());
-        if (remoteSorted !== localSorted) {
-          changed = true;
-          changeDetails.push(k + ': remote=' + remoteSorted + ' local=' + localSorted);
+        const remoteSet = new Set(remoteVals);
+        const localSet = new Set(localVals);
+        let different = false;
+        if (remoteVals.length !== localVals.length) {
+          different = true;
+        } else {
+          for (const v of remoteVals) {
+            if (!localSet.has(v)) { different = true; break; }
+          }
+        }
+        if (different) {
+          updatedCount += remoteVals.length;
+          updatedKeys.push(k);
         }
       });
-      console.log('[Config] nombre_proyecto - remote:', JSON.stringify(remoteCfg.nombre_proyecto));
-      console.log('[Config] nombre_proyecto - local:', JSON.stringify(localCfg.nombre_proyecto));
+      
       this.saveLocal(remoteCfg);
-      if (changed) {
-        console.log('[Config] Remote changes detected:', changeDetails.join('; '));
-        showToast('Datos actualizados desde la base de datos', 'success');
+      
+      if (updatedKeys.length > 0) {
+        console.log('[Config] UPDATED keys:', updatedKeys.join(', '), '- Total values:', updatedCount);
+        showToast('Datos actualizados: ' + updatedKeys.length + ' secciones', 'success');
         if (typeof renderConfigSections === 'function') {
           try { renderConfigSections(); } catch(e) { console.warn('[Config] Error refreshing config UI:', e); }
         }
       } else {
         console.log('[Config] No remote changes, local data is up to date');
+        showToast('La config ya está actualizada', 'info');
       }
       return true;
     } catch (e) {
