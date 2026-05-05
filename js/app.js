@@ -297,40 +297,105 @@ const ConfigManager = {
   },
 
 
-  async _fetchRemoteConfig() {
-    if (!supabaseClient) return null;
-    const { data, error } = await supabaseClient
-      .from('app_config')
-      .select('config_key, config_values');
-    if (error || !data || data.length === 0) {
-      console.warn('[Config] _fetchRemoteConfig: no data or error', error?.message);
-      return null;
+  async downloadFromSupabase() {
+    if (!supabaseClient) {
+      console.warn('[Config] No Supabase client');
+      return false;
     }
-    console.log('[Config] Raw Supabase response:', JSON.stringify(data));
-    const remoteCfg = {};
-    data.forEach(row => {
-      console.log('[Config] Fetch row:', row.config_key, '=', JSON.stringify(row.config_values));
-      let vals = row.config_values;
-      if (typeof vals === 'string') {
-        try {
-          if (vals.startsWith('{') && vals.endsWith('}')) {
-            vals = vals.slice(1, -1).split(',').map(v => v.replace(/^"|"$/g, '')).filter(v => v.length > 0);
-          } else {
-            vals = JSON.parse(vals);
-          }
-        } catch (e) {
-          console.warn('[Config] Could not parse config_values for', row.config_key, ':', vals);
-          vals = [];
-        }
+    if (ConfigManager._syncing) {
+      console.log('[Config] Sync in progress');
+      return false;
+    }
+    const configModal = document.getElementById('config-modal');
+    if (configModal && !configModal.classList.contains('hidden')) {
+      console.log('[Config] Config modal open, frozen');
+      return false;
+    }
+    ConfigManager._syncing = true;
+    try {
+      console.log('[Config] Downloading from Supabase...');
+      const { data, error } = await supabaseClient
+        .from('app_config')
+        .select('config_key, config_values');
+      if (error) {
+        console.error('[Config] Download error:', error.message);
+        return false;
       }
-      if (!Array.isArray(vals)) vals = [];
-      remoteCfg[row.config_key] = vals;
-    });
-    console.log('[Config] Parsed nombre_proyecto:', JSON.stringify(remoteCfg.nombre_proyecto));
-    CONFIG_KEYS.forEach(k => {
-      if (!remoteCfg[k]) remoteCfg[k] = [];
-    });
-    return remoteCfg;
+      if (!data || data.length === 0) {
+        console.warn('[Config] No data from Supabase');
+        return false;
+      }
+      const remoteCfg = {};
+      data.forEach(row => {
+        let vals = row.config_values;
+        if (typeof vals === 'string') {
+          try {
+            if (vals.startsWith('{') && vals.endsWith('}')) {
+              vals = vals.slice(1, -1).split(',').map(v => v.replace(/^"|"$/g, '')).filter(v => v.length > 0);
+            } else {
+              vals = JSON.parse(vals);
+            }
+          } catch (e) {
+            vals = [];
+          }
+        }
+        if (!Array.isArray(vals)) vals = [];
+        remoteCfg[row.config_key] = vals;
+      });
+      // Ensure all keys exist
+      CONFIG_KEYS.forEach(k => {
+        if (!remoteCfg[k]) remoteCfg[k] = [];
+      });
+      this.saveLocal(remoteCfg);
+      console.log('[Config] Downloaded and saved', Object.keys(remoteCfg).length, 'keys');
+      showToast('Datos descargados correctamente', 'success');
+      if (typeof renderConfigSections === 'function') {
+        try { renderConfigSections(); } catch(e) {}
+      }
+      return true;
+    } catch (e) {
+      console.error('[Config] Download exception:', e);
+      return false;
+    } finally {
+      ConfigManager._syncing = false;
+    }
+  },
+
+  async uploadToSupabase() {
+    if (!supabaseClient) {
+      console.warn('[Config] No Supabase client');
+      return false;
+    }
+    if (ConfigManager._syncing) {
+      setTimeout(() => ConfigManager.uploadToSupabase(), 500);
+      return false;
+    }
+    ConfigManager._syncing = true;
+    try {
+      const cfg = this.getLocal();
+      const updates = CONFIG_KEYS.map(k => ({
+        config_key: k,
+        config_values: cfg[k] || [],
+        updated_at: new Date().toISOString()
+      }));
+      console.log('[Config] Uploading', updates.length, 'keys...');
+      const { data, error } = await supabaseClient
+        .from('app_config')
+        .upsert(updates, { onConflict: 'config_key' });
+      if (error) {
+        console.error('[Config] Upload error:', error.message);
+        showToast('Error al subir: ' + error.message, 'error');
+        return false;
+      }
+      console.log('[Config] Upload OK');
+      showToast('Config subida correctamente', 'success');
+      return true;
+    } catch (e) {
+      console.error('[Config] Upload exception:', e);
+      return false;
+    } finally {
+      ConfigManager._syncing = false;
+    }
   },
 
   async downloadFromSupabase() {
