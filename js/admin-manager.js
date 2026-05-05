@@ -14,6 +14,8 @@ const AdminManager = {
   selectedMarker: null,
   adminMap: null,
   adminMapLayer: null,
+  adminMapOverlay: null,
+  adminSelectedMapId: null,
   currentTab: 'mapa',
 
   // ============================================
@@ -120,25 +122,99 @@ const AdminManager = {
   },
 
   // ============================================
-  // TAB: MAPA
+  // MAPA SELECTOR (Mapas locales del dispositivo)
   // ============================================
-  renderMapTab() {
-    const container = document.getElementById('admin-map-container');
-    if (!container) return;
+  async renderMapSelector() {
+    const select = document.getElementById('admin-map-select');
+    if (!select) return;
+    select.innerHTML = '<option value="">-- Seleccionar mapa --</option>';
 
-    if (!this.adminMap) {
-      this.adminMap = L.map(container).setView([-1.8, -78.5], 7);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 19
-      }).addTo(this.adminMap);
+    try {
+      const maps = await MapStorage.getAllMaps();
+      maps.forEach(map => {
+        const opt = document.createElement('option');
+        opt.value = map.id;
+        opt.textContent = map.name + ' (' + (map.type || 'tiff').toUpperCase() + ')';
+        select.appendChild(opt);
+      });
+    } catch (e) {
+      console.error('[Admin] Error loading map list:', e);
     }
+  },
 
+  async loadAdminMap(mapId) {
+    if (!mapId) return;
+    this.adminSelectedMapId = mapId;
+
+    // Limpiar mapa anterior
+    this.clearAdminMapOverlay();
+
+    try {
+      const record = await MapStorage.getMapRecord(mapId);
+      if (!record) { showToast('Mapa no encontrado', 'error'); return; }
+
+      if (record.type === 'pdf') {
+        await this.loadAdminPDF(record);
+      } else {
+        await this.loadAdminTiff(record.data || await MapStorage.getMapData(mapId));
+      }
+
+      // Redibujar puntos sobre el mapa cargado
+      this.renderAdminMarkers();
+      showToast('Mapa cargado: ' + record.name, 'success');
+    } catch (e) {
+      console.error('[Admin] Error loading map:', e);
+      showToast('Error al cargar mapa', 'error');
+    }
+  },
+
+  async loadAdminTiff(arrayBuffer) {
+    const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
+    const image = await tiff.getImage();
+    const raster = await image.readRasters();
+    const bbox = image.getBoundingBox();
+    const geoRaster = new GeoRaster({
+      values: raster.length >= 3 ? [raster[0], raster[1], raster[2]] : [raster[0]],
+      width: image.getWidth(), height: image.getHeight(),
+      numberOfBands: raster.length >= 3 ? 3 : 1,
+      pixelWidth: (bbox[2] - bbox[0]) / image.getWidth(),
+      pixelHeight: (bbox[3] - bbox[1]) / image.getHeight(),
+      xmin: bbox[0], ymin: bbox[1], xmax: bbox[2], ymax: bbox[3]
+    });
+    this.adminMapOverlay = new GeoRasterLayer({ georaster: geoRaster, opacity: 0.85, resolution: 256 });
+    this.adminMapOverlay.addTo(this.adminMap);
+    this.adminMap.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
+  },
+
+  async loadAdminPDF(record) {
+    if (!record.georef || !record.georef.corners) {
+      showToast('PDF sin georreferenciacion', 'error'); return;
+    }
+    const pdf = await PDFProcessor.loadPDF(record.data);
+    const { canvas } = await PDFProcessor.renderPage(pdf, 2);
+    this.adminMapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs);
+    this.adminMapOverlay.addTo(this.adminMap);
+    this.adminMap.fitBounds(this.adminMapOverlay.getBounds());
+  },
+
+  clearAdminMapOverlay() {
+    if (this.adminMapOverlay) {
+      this.adminMap.removeLayer(this.adminMapOverlay);
+      this.adminMapOverlay = null;
+    }
+    if (this.adminMapLayer) {
+      this.adminMap.removeLayer(this.adminMapLayer);
+      this.adminMapLayer = null;
+    }
+  },
+
+  renderAdminMarkers() {
+    if (!this.adminMap) return;
+
+    // Limpiar capa de marcadores anterior
     if (this.adminMapLayer) {
       this.adminMap.removeLayer(this.adminMapLayer);
     }
-
     this.adminMapLayer = L.layerGroup().addTo(this.adminMap);
 
     const activeMarkers = this.allMarkers.filter(m => !m.is_deleted);
@@ -172,11 +248,40 @@ const AdminManager = {
       circle.bindPopup(popupContent);
     });
 
-    if (bounds.length > 0) {
+    // Solo hacer fitBounds si NO hay un mapa cargado (el mapa ya hizo su propio fit)
+    if (bounds.length > 0 && !this.adminMapOverlay) {
       this.adminMap.fitBounds(bounds, { padding: [30, 30] });
     }
 
-    document.getElementById('admin-map-count').textContent = `${activeMarkers.length} puntos activos`;
+    document.getElementById('admin-map-count').textContent = `${activeMarkers.length} puntos activos${this.adminMapOverlay ? ' | Mapa cargado' : ''}`;
+  },
+
+  // ============================================
+  // TAB: MAPA
+  // ============================================
+  renderMapTab() {
+    const container = document.getElementById('admin-map-container');
+    if (!container) return;
+
+    if (!this.adminMap) {
+      this.adminMap = L.map(container).setView([-1.8, -78.5], 7);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 19
+      }).addTo(this.adminMap);
+    }
+
+    // Renderizar selector de mapas
+    this.renderMapSelector();
+
+    // Si hay un mapa seleccionado previamente, recargarlo
+    if (this.adminSelectedMapId) {
+      this.loadAdminMap(this.adminSelectedMapId);
+    } else {
+      // Sin mapa: mostrar puntos sobre mapa base
+      this.renderAdminMarkers();
+    }
   },
 
   // ============================================
@@ -592,4 +697,14 @@ function initAdminListeners() {
 
   const filterDeleted = document.getElementById('admin-filter-deleted');
   if (filterDeleted) filterDeleted.addEventListener('change', () => AdminManager.renderTableTab());
+
+  const loadMapBtn = document.getElementById('btn-admin-load-map');
+  const mapSelect = document.getElementById('admin-map-select');
+  if (loadMapBtn && mapSelect) {
+    loadMapBtn.addEventListener('click', () => {
+      const mapId = mapSelect.value;
+      if (mapId) AdminManager.loadAdminMap(mapId);
+      else showToast('Selecciona un mapa', 'error');
+    });
+  }
 }
