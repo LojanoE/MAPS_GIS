@@ -62,7 +62,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.2.4';
+const APP_VERSION = '1.2.5';
 
 // ============================================
 // APP STATE
@@ -2755,6 +2755,12 @@ function initEventListeners() {
   // Config modal
   document.getElementById('btn-config').addEventListener('click', openConfigModal);
   document.getElementById('btn-close-config').addEventListener('click', closeConfigModal);
+  document.getElementById('btn-close-config-login').addEventListener('click', closeConfigLoginModal);
+  document.getElementById('btn-config-login-cancel').addEventListener('click', closeConfigLoginModal);
+  document.getElementById('btn-config-login-enter').addEventListener('click', attemptConfigLogin);
+  document.getElementById('config-login-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') attemptConfigLogin();
+  });
   document.querySelectorAll('.config-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.config-tab').forEach(t => t.classList.remove('active'));
@@ -2782,12 +2788,36 @@ function initEventListeners() {
 // ============================================
 
 function openConfigModal() {
-  renderConfigSections();
-  updateConfigAccountTab();
-  // Check if admin is already logged in and render admin panel
-  AppState.isAdmin = AdminManager.isLoggedIn();
-  renderAdminPanel();
-  document.getElementById('config-modal').classList.remove('hidden');
+  if (AdminManager.isLoggedIn()) {
+    AppState.isAdmin = true;
+    renderConfigSections();
+    updateConfigAccountTab();
+    renderAdminPanel();
+    document.getElementById('config-modal').classList.remove('hidden');
+  } else {
+    document.getElementById('config-login-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('config-login-password').focus(), 100);
+  }
+}
+
+function closeConfigLoginModal() {
+  document.getElementById('config-login-modal').classList.add('hidden');
+  document.getElementById('config-login-password').value = '';
+}
+
+function attemptConfigLogin() {
+  const pwd = document.getElementById('config-login-password').value;
+  if (pwd === ADMIN_PASS) {
+    AdminManager.login(pwd);
+    closeConfigLoginModal();
+    AppState.isAdmin = true;
+    renderConfigSections();
+    updateConfigAccountTab();
+    renderAdminPanel();
+    document.getElementById('config-modal').classList.remove('hidden');
+  } else {
+    showToast('Contrasena incorrecta', 'error');
+  }
 }
 
 function closeConfigModal() {

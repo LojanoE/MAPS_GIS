@@ -86,7 +86,7 @@
     </main>
 
     <footer class="app-footer">
-      <span id="app-version">v1.2.4</span>
+      <span id="app-version">v1.2.5</span>
       <span id="storage-info"></span>
     </footer>
   </div>
@@ -637,6 +637,31 @@
 
   <!-- Toast de notificaciones -->
   <div id="toast" class="toast hidden"></div>
+
+  <!-- Admin login gate para Config -->
+  <div id="config-login-modal" class="modal hidden">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h3>Acceso Configuracion</h3>
+        <button id="btn-close-config-login" class="icon-btn">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="config-hint">Ingresa la contrasena de administrador para acceder a la configuracion.</p>
+        <div class="form-group">
+          <label for="config-login-password">Contrasena</label>
+          <input type="password" id="config-login-password" placeholder="Contrasena" maxlength="20" autocomplete="off">
+        </div>
+        <div class="modal-actions">
+          <button id="btn-config-login-cancel" class="btn-secondary">Cancelar</button>
+          <button id="btn-config-login-enter" class="btn-primary">Ingresar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ==================== SCRIPTS ==================== -->
 
