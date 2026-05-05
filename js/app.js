@@ -7,7 +7,7 @@ const PSAD56_UTM_17S = '+proj=utm +zone=17 +south +ellps=intl +towgs84=289,164,-
 const WGS84 = 'EPSG:4326';
 proj4.defs('EPSG:24877', PSAD56_UTM_17S);
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.0.1';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -129,16 +129,30 @@ const CONFIG_KEYS = [
 ];
 
 const DEFAULT_CONFIG = {
-  tipo_muestra: ['Suelo','Roca','Concreto','Asfalto','Agregado'],
-  nombre_proyecto: ['Proyecto A','Proyecto B','Proyecto C'],
-  solicitante: ['Ing. Lopez','Ing. Garcia','Cliente XYZ'],
-  estructura_deposito: ['Mina Principal','Pila 1','Pila 2','Tajeo 3N'],
-  subestructuras: ['Nivel 1','Nivel 2','Nivel 3','Zona A','Zona B'],
-  categoria: ['Exploracion','Control','Verificacion','Rutina'],
-  tipo_material: ['Arcilla','Arena','Grava','Roca Dura','Roca Blanda'],
-  proveniencia: ['In Situ','Planta','Laboratorio','Stock'],
-  localizacion: ['Frente Norte','Frente Sur','Frente Este','Frente Oeste','Planta'],
-  fuente: ['Muestreo Directo','Canal','Testigo','Cuchareo'],
+  tipo_muestra: ['Costal','Bolsa','Roca','Fotografia','Cubo Inalterado','Bolsa - Roca','Shelby','Cubo de Mortero','Cilindrica','Balde','Costal - Roca'],
+  nombre_proyecto: [
+    'Ingenieria Detallada para los Crecimientos El.945 m, El.970 m del DRT',
+    'Servicio de Diseno Detallado para la Ampliacion de la Escombrera Sur de la Mina Mirador',
+    'Caracterizacion de Relaves del DRT',
+    'Ingenieria Detallada de Cierre para la Estabilidad Fisica e Hidrologica del Deposito de Relaves Quimi',
+    'Departamento de Gestion de Relaves (GDR)',
+    'Coronamiento C980',
+    'Coronamiento C990'
+  ],
+  solicitante: [
+    'Control de Calidad de la Construccion (CQC)',
+    'Klon Crippen Berger (KCB)',
+    'Departamento de Produccion y Tecnologia (PyT)',
+    'Unidad de Monitoreo y Vigilancia (U_MV)',
+    'Jefaturas del Departamento de Depositos de Relaves'
+  ],
+  estructura_deposito: ['DRT','DRQ','TMS','ESS','TMN'],
+  subestructuras: ['C990','C980','Fase I-II','Fase III'],
+  categoria: ['EETT','GDR','PPT4','ESAN','PPP1','IMPC970','PPT6','EETQ'],
+  tipo_material: ['Zona 1 - Relleno','Zona 2 - Filtro Fino','Zona 3 - Filtro Grueso','Zona 6 - Drenante','Fundacion','Zona 1 Seleccionado - Relleno','Relaves','Arcilla','Zona 1 - Zona 6'],
+  proveniencia: ['Banda 4','Mina Maricela','Visconticorp','Mina Samaniego','Mina Castillo','Mina Guzman','Mina Blanca Cajamarca','Mina Pablo','El Ideal Amazonico','Banda 6'],
+  localizacion: ['P 980-S3','P 965-S2','P 950-S2','P 925-S2','P 920-S2','P 905-S2','P 895-S1','P 890-S1','P 865-S3','P 835-S3','P 833-S3','P 805-S3','P 795-S3','Dren Basal','Dren D-8B','Dren D-11','Dren D-08','Dren Inclinado','Banco de Tajo de Mina','Dren-D-8B'],
+  fuente: ['Tajo de Mina','Proveedores','Fundacion','Escombrera','Relavera'],
   ensayos: ['HUM','GEP','GTM','GFI','GHD','ELA','EDL','COM','ABF','ABG','ICP','SLF','PRA','TIS','VDC','DCP','DCA','PMF','PET','CLS','PPF','PPR','DPS','DMI','DMA','GEG','CUS','TCU','TCD','TUU','CUR','TXR','RTI','PGF','ABA','DNU','LEO','CFR','CST','GTA','CMO','COS']
 };
 
