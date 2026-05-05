@@ -62,7 +62,7 @@ const MARKER_COLORS = {
 // ============================================
 // APP VERSION - Must match sw.js APP_VERSION
 // ============================================
-const APP_VERSION = '1.2.5';
+const APP_VERSION = '1.2.6';
 
 // ============================================
 // APP STATE
@@ -230,6 +230,8 @@ const CONFIG_KEYS = [
 ];
 
 const ConfigManager = {
+  _syncing: false,
+
   getLocal() {
     try {
       return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
@@ -268,6 +270,10 @@ const ConfigManager = {
   async downloadFromSupabase() {
     if (!supabaseClient) {
       console.warn('[Config] No Supabase client, skipping download');
+      return false;
+    }
+    if (ConfigManager._syncing) {
+      console.log('[Config] Upload in progress, skipping download');
       return false;
     }
     try {
@@ -322,6 +328,7 @@ const ConfigManager = {
       console.warn('[Config] No Supabase client, skipping upload');
       return false;
     }
+    ConfigManager._syncing = true;
     try {
       const cfg = this.getLocal();
       const updates = [];
@@ -345,6 +352,8 @@ const ConfigManager = {
     } catch (e) {
       console.error('[Config] Upload exception:', e);
       return false;
+    } finally {
+      ConfigManager._syncing = false;
     }
   },
 
@@ -358,9 +367,12 @@ const ConfigManager = {
         .channel('app_config_changes')
         .on('postgres_changes',
           { event: '*', schema: 'public', table: 'app_config' },
-          (payload) => {
-            console.log('[Config] Realtime change detected:', payload.event, payload.new?.config_key);
-            ConfigManager.downloadFromSupabase();
+          () => {
+            console.log('[Config] Realtime change detected, scheduling download...');
+            clearTimeout(ConfigManager._realtimeDebounce);
+            ConfigManager._realtimeDebounce = setTimeout(() => {
+              ConfigManager.downloadFromSupabase();
+            }, 1000);
           }
         )
         .subscribe((status) => {
@@ -2875,21 +2887,21 @@ function renderConfigSections() {
 
     // Remove value
     section.querySelectorAll('.config-tag button').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         ConfigManager.removeValue(key, btn.dataset.val);
-        ConfigManager.uploadToSupabase();
         renderConfigSections();
+        await ConfigManager.uploadToSupabase();
       });
     });
 
     // Add value
     const addBtn = section.querySelector('.btn-add-config');
     const input = section.querySelector('input');
-    const doAdd = () => {
+    const doAdd = async () => {
       if (ConfigManager.addValue(key, input.value)) {
         input.value = '';
-        ConfigManager.uploadToSupabase();
         renderConfigSections();
+        await ConfigManager.uploadToSupabase();
       } else {
         showToast('Opcion duplicada o vacia', 'error');
       }
