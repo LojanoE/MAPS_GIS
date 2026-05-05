@@ -2729,20 +2729,14 @@ function initEventListeners() {
 // ============================================
 
 function openConfigModal() {
-  if (AdminManager.isLoggedIn()) {
-    AppState.isAdmin = true;
-    renderConfigSections();
-    updateConfigAccountTab();
-    renderAdminPanel();
-    document.getElementById('config-modal').classList.remove('hidden');
-  } else {
-    document.getElementById('config-login-modal').classList.remove('hidden');
-    setTimeout(() => document.getElementById('config-login-password').focus(), 100);
-  }
+  // Always show login first - require password every time
+  document.getElementById('config-login-modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('config-login-password').focus(), 100);
 }
 
 function closeConfigModal() {
   document.getElementById('config-modal').classList.add('hidden');
+  AdminManager.logout(); // Log out when closing so next time requires password again
 }
 
 async function syncConfigWithSupabase() {
