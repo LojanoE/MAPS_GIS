@@ -7,7 +7,7 @@ const PSAD56_UTM_17S = '+proj=utm +zone=17 +south +ellps=intl +towgs84=289,164,-
 const WGS84 = 'EPSG:4326';
 proj4.defs('EPSG:24877', PSAD56_UTM_17S);
 
-const APP_VERSION = '2.0.2';
+const APP_VERSION = '2.0.3';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -1403,13 +1403,14 @@ async function initApp() {
   // Migrar config si cambio la version de la app
   migrateConfigIfNeeded();
 
+  // Inicializar SyncManager (se carga despues de app.js)
+  if (typeof SyncManager !== 'undefined' && SyncManager.init) {
+    SyncManager.init();
+  }
+
   // Verificar registro del dispositivo (solo primera vez)
   if (!DeviceManager.isRegistered()) {
     openDeviceSetupModal();
-  } else {
-    if (typeof SyncManager !== 'undefined' && SyncManager.updateBadge) {
-      SyncManager.updateBadge();
-    }
   }
 }
 
