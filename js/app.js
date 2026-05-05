@@ -297,22 +297,189 @@ const ConfigManager = {
   },
 
 
+  async _fetchRemoteConfig() {
+    if (!supabaseClient) return null;
+    const { data, error } = await supabaseClient
+      .from('app_config')
+      .select('config_key, config_values');
+    if (error || !data || data.length === 0) {
+      console.warn('[Config] _fetchRemoteConfig: no data or error', error?.message);
+      return null;
+    }
+    console.log('[Config] Raw Supabase response:', JSON.stringify(data));
+    const remoteCfg = {};
+    data.forEach(row => {
+      let vals = row.config_values;
+      if (typeof vals === 'string') {
+        try {
+          if (vals.startsWith('{') && vals.endsWith('}')) {
+            vals = vals.slice(1, -1).split(',').map(v => v.replace(/^"|"$/g, '')).filter(v => v.length > 0);
+          } else {
+            vals = JSON.parse(vals);
+          }
+        } catch (e) {
+          console.warn('[Config] Could not parse config_values for', row.config_key, ':', vals);
+          vals = [];
+        }
+      }
+      if (!Array.isArray(vals)) vals = [];
+      remoteCfg[row.config_key] = vals;
+    });
+    CONFIG_KEYS.forEach(k => {
+      if (!remoteCfg[k]) remoteCfg[k] = [];
+    });
+    return remoteCfg;
+  },
+
   async downloadFromSupabase() {
-    console.log('[Config] Sync disabled - running local only');
-    return false;
+    if (!supabaseClient) {
+      console.warn('[Config] No Supabase client, skipping download');
+      return false;
+    }
+    if (ConfigManager._syncing) {
+      console.log('[Config] Sync in progress, skipping download');
+      return false;
+    }
+    const configModal = document.getElementById('config-modal');
+    if (configModal && !configModal.classList.contains('hidden')) {
+      console.log('[Config] Config modal open, skipping download (frozen)');
+      return false;
+    }
+    ConfigManager._syncing = true;
+    const versionAtStart = this._localVersion;
+    try {
+      console.log('[Config] Downloading from Supabase...');
+      const remoteCfg = await this._fetchRemoteConfig();
+      if (!remoteCfg) return false;
+      if (this._localVersion !== versionAtStart) {
+        console.log('[Config] Local changed during download, skipping save');
+        return false;
+      }
+      const localCfg = this.getLocal();
+      console.log('[Config] Remote config:', JSON.stringify(remoteCfg));
+      console.log('[Config] Local config:', JSON.stringify(localCfg));
+      let changed = false;
+      let changeDetails = [];
+      CONFIG_KEYS.forEach(k => {
+        const remoteVals = remoteCfg[k] || [];
+        const localVals = localCfg[k] || [];
+        if (JSON.stringify(remoteVals.slice().sort()) !== JSON.stringify(localVals.slice().sort())) {
+          changed = true;
+          changeDetails.push(k + ': remote=' + JSON.stringify(remoteVals) + ' local=' + JSON.stringify(localVals));
+        }
+      });
+      this.saveLocal(remoteCfg);
+      if (changed) {
+        console.log('[Config] Remote changes detected:', changeDetails.join('; '));
+        showToast('Datos actualizados desde la base de datos', 'success');
+        if (typeof renderConfigSections === 'function') {
+          try { renderConfigSections(); } catch(e) { console.warn('[Config] Error refreshing config UI:', e); }
+        }
+      } else {
+        console.log('[Config] No remote changes, local data is up to date');
+      }
+      return true;
+    } catch (e) {
+      console.error('[Config] Download exception:', e);
+      return false;
+    } finally {
+      ConfigManager._syncing = false;
+    }
   },
 
   async uploadToSupabase() {
-    console.log('[Config] Sync disabled - running local only');
-    return false;
+    if (!supabaseClient) {
+      console.warn('[Config] No Supabase client, skipping upload');
+      return false;
+    }
+    if (ConfigManager._syncing) {
+      console.log('[Config] Sync in progress, queuing upload');
+      setTimeout(() => ConfigManager.uploadToSupabase(), 500);
+      return false;
+    }
+    ConfigManager._syncing = true;
+    try {
+      const localCfg = this.getLocal();
+      const remoteCfg = await this._fetchRemoteConfig();
+      const merged = {};
+      CONFIG_KEYS.forEach(k => {
+        const localVals = localCfg[k] || [];
+        const remoteVals = remoteCfg ? (remoteCfg[k] || []) : [];
+        if (localVals.length > 0) {
+          merged[k] = localVals;
+        } else if (remoteVals.length > 0) {
+          merged[k] = remoteVals;
+        } else {
+          merged[k] = [];
+        }
+      });
+      const updates = [];
+      CONFIG_KEYS.forEach(k => {
+        updates.push({
+          config_key: k,
+          config_values: merged[k],
+          updated_at: new Date().toISOString()
+        });
+      });
+      console.log('[Config] Uploading (merged)', updates.length, 'config rows to Supabase...');
+      const { data, error } = await supabaseClient
+        .from('app_config')
+        .upsert(updates, { onConflict: 'config_key' });
+      if (error) {
+        console.error('[Config] Upload error:', error.message, error.code, error.details);
+        return false;
+      }
+      this.saveLocal(merged);
+      console.log('[Config] Upload successful (with merge)');
+      return true;
+    } catch (e) {
+      console.error('[Config] Upload exception:', e);
+      return false;
+    } finally {
+      ConfigManager._syncing = false;
+    }
   },
 
   subscribeToRealtime() {
-    console.log('[Config] Sync disabled - running local only');
+    if (!supabaseClient) {
+      console.warn('[Config] No Supabase client, skipping Realtime subscription');
+      return;
+    }
+    try {
+      if (ConfigManager._realtimeChannel) {
+        try { supabaseClient.removeChannel(ConfigManager._realtimeChannel); } catch(e) {}
+      }
+      const channel = supabaseClient
+        .channel('app_config_changes')
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'app_config' },
+          () => {
+            console.log('[Config] Realtime change detected, scheduling download...');
+            clearTimeout(ConfigManager._realtimeDebounce);
+            ConfigManager._realtimeDebounce = setTimeout(() => {
+              ConfigManager.downloadFromSupabase();
+            }, 1000);
+          }
+        )
+        .subscribe((status) => {
+          console.log('[Config] Realtime subscription status:', status);
+        });
+      ConfigManager._realtimeChannel = channel;
+      console.log('[Config] Subscribed to Realtime for app_config');
+    } catch (e) {
+      console.error('[Config] Realtime subscription failed:', e);
+    }
   },
 
   startPolling() {
-    console.log('[Config] Sync disabled - running local only');
+    this.stopPolling();
+    ConfigManager._pollInterval = setInterval(async () => {
+      if (navigator.onLine && supabaseClient) {
+        console.log('[Config] Polling for changes...');
+        await ConfigManager.downloadFromSupabase();
+      }
+    }, 30 * 1000);
+    console.log('[Config] Started polling every 30 seconds');
   },
 
   stopPolling() {
@@ -320,6 +487,7 @@ const ConfigManager = {
       clearInterval(ConfigManager._pollInterval);
       ConfigManager._pollInterval = null;
     }
+    console.log('[Config] Stopped polling');
   }
 };
 
@@ -2736,19 +2904,121 @@ function openConfigModal() {
 
 function closeConfigModal() {
   document.getElementById('config-modal').classList.add('hidden');
-  AdminManager.logout(); // Log out when closing so next time requires password again
+  // Upload local changes to Supabase, then resume sync
+  if (supabaseClient && navigator.onLine) {
+    ConfigManager.uploadToSupabase().then(ok => {
+      if (ok) console.log('[Config] Uploaded on close');
+    });
+  }
+  // Resume sync
+  ConfigManager.subscribeToRealtime();
+  ConfigManager.startPolling();
+  // Log out so next time requires password again
+  AdminManager.logout();
 }
 
 async function syncConfigWithSupabase() {
-  showToast('Sync deshabilitado - config es 100% local', 'info');
+  const statusEl = document.getElementById('config-sync-status');
+  const btn = document.getElementById('btn-config-sync');
+  if (!statusEl || !btn) return;
+  btn.disabled = true;
+  statusEl.textContent = 'Subiendo...';
+  statusEl.className = 'sync-status syncing';
+  try {
+    const up = await ConfigManager.uploadToSupabase();
+    if (up) {
+      statusEl.textContent = 'Subido!';
+      statusEl.className = 'sync-status success';
+      showToast('Config subida a Supabase', 'success');
+    } else {
+      statusEl.textContent = 'Sin cambios';
+      statusEl.className = 'sync-status';
+    }
+  } catch (e) {
+    console.error('[Config] Sync failed:', e);
+    statusEl.textContent = 'Error al subir';
+    statusEl.className = 'sync-status error';
+    showToast('Error al subir', 'error');
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+  }
 }
 
 async function pullConfigFromSupabase() {
-  showToast('Sync deshabilitado - config es 100% local', 'info');
+  const statusEl = document.getElementById('config-sync-status');
+  const btn = document.getElementById('btn-config-pull');
+  if (!statusEl || !btn) return;
+  if (!supabaseClient) {
+    showToast('No hay conexion con Supabase', 'error');
+    return;
+  }
+  btn.disabled = true;
+  statusEl.textContent = 'Descargando...';
+  statusEl.className = 'sync-status syncing';
+  try {
+    const ok = await ConfigManager.downloadFromSupabase();
+    if (ok) {
+      statusEl.textContent = 'Descargado!';
+      statusEl.className = 'sync-status success';
+      showToast('Config descargada de Supabase', 'success');
+    } else {
+      statusEl.textContent = 'Sin cambios';
+      statusEl.className = 'sync-status';
+    }
+  } catch (e) {
+    console.error('[Config] Pull failed:', e);
+    statusEl.textContent = 'Error al descargar';
+    statusEl.className = 'sync-status error';
+    showToast('Error al descargar', 'error');
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+  }
 }
 
 async function pullConfigFromHome() {
-  showToast('Sync deshabilitado - config es 100% local', 'info');
+  const btn = document.getElementById('btn-home-pull');
+  const statusEl = document.getElementById('home-sync-status');
+  if (!btn) return;
+
+  if (!supabaseClient) {
+    showToast('No hay conexion con Supabase', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  if (statusEl) {
+    statusEl.textContent = 'Descargando...';
+    statusEl.className = 'sync-status syncing';
+  }
+  try {
+    const ok = await ConfigManager.downloadFromSupabase();
+    if (ok) {
+      if (statusEl) {
+        statusEl.textContent = 'Datos actualizados!';
+        statusEl.className = 'sync-status success';
+      }
+      showToast('Datos descargados de la base de datos', 'success');
+    } else {
+      if (statusEl) {
+        statusEl.textContent = 'Sin cambios nuevos';
+        statusEl.className = 'sync-status';
+      }
+    }
+  } catch (e) {
+    console.error('[Home] Pull failed:', e);
+    if (statusEl) {
+      statusEl.textContent = 'Error al descargar';
+      statusEl.className = 'sync-status error';
+    }
+    showToast('Error al descargar datos', 'error');
+  } finally {
+    btn.disabled = false;
+    if (statusEl) {
+      setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+    }
+  }
 }
 
 function closeConfigLoginModal() {
@@ -2771,6 +3041,12 @@ function attemptConfigLogin() {
     updateConfigAccountTab();
     renderAdminPanel();
     document.getElementById('config-modal').classList.remove('hidden');
+    // Freeze sync while editing config
+    ConfigManager.stopPolling();
+    if (ConfigManager._realtimeChannel) {
+      try { supabaseClient.removeChannel(ConfigManager._realtimeChannel); } catch(e) {}
+      ConfigManager._realtimeChannel = null;
+    }
     // Show connection status
     if (!supabaseClient) {
       showToast('Admin activado pero sin conexion a Supabase', 'warning');
@@ -2872,10 +3148,22 @@ async function initApp() {
   updateMarkerCountBadge();
 
   if (supabaseClient) {
+    // Sync config from Supabase on startup
+    await ConfigManager.downloadFromSupabase();
+    ConfigManager.subscribeToRealtime();
+    ConfigManager.startPolling();
     LSMSyncManager.syncPending();
   } else {
     console.warn('[App] No Supabase client - running in offline mode');
   }
+
+  // Re-sync config when user returns to the tab
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && supabaseClient && navigator.onLine) {
+      console.log('[App] Tab regained focus, syncing config...');
+      ConfigManager.downloadFromSupabase();
+    }
+  });
 }
 
 if (document.readyState === 'loading') {
