@@ -344,12 +344,6 @@ const ConfigManager = {
       console.log('[Config] Sync in progress, skipping download');
       return false;
     }
-    // Skip download if user is actively editing config to avoid overwriting their changes
-    const configModal = document.getElementById('config-modal');
-    if (configModal && !configModal.classList.contains('hidden')) {
-      console.log('[Config] Config modal is open, skipping download');
-      return false;
-    }
     ConfigManager._syncing = true;
     const versionAtStart = this._localVersion;
     try {
@@ -2851,6 +2845,9 @@ function initEventListeners() {
     }
   });
 
+  // Home: pull from Supabase
+  document.getElementById('btn-home-pull').addEventListener('click', pullConfigFromHome);
+
   // Config modal
   document.getElementById('btn-config').addEventListener('click', openConfigModal);
   document.getElementById('btn-close-config').addEventListener('click', closeConfigModal);
@@ -2904,12 +2901,6 @@ function openConfigModal() {
     if (!supabaseClient) {
       showToast('Sin conexion a Supabase. Los cambios solo se guardaran localmente.', 'warning');
     }
-    // Auto-download on open
-    if (supabaseClient && navigator.onLine) {
-      ConfigManager.downloadFromSupabase().then(ok => {
-        if (ok) console.log('[Config] Auto-downloaded on open');
-      });
-    }
   } else {
     document.getElementById('config-login-modal').classList.remove('hidden');
     setTimeout(() => document.getElementById('config-login-password').focus(), 100);
@@ -2918,12 +2909,6 @@ function openConfigModal() {
 
 function closeConfigModal() {
   document.getElementById('config-modal').classList.add('hidden');
-  // Auto-upload on close
-  if (supabaseClient && navigator.onLine) {
-    ConfigManager.uploadToSupabase().then(ok => {
-      if (ok) console.log('[Config] Auto-uploaded on close');
-    });
-  }
 }
 
 async function syncConfigWithSupabase() {
@@ -2980,6 +2965,50 @@ async function pullConfigFromSupabase() {
   } finally {
     btn.disabled = false;
     setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+  }
+}
+
+async function pullConfigFromHome() {
+  const btn = document.getElementById('btn-home-pull');
+  const statusEl = document.getElementById('home-sync-status');
+  if (!btn) return;
+
+  if (!supabaseClient) {
+    showToast('No hay conexion con Supabase', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  if (statusEl) {
+    statusEl.textContent = 'Descargando...';
+    statusEl.className = 'sync-status syncing';
+  }
+  try {
+    const ok = await ConfigManager.downloadFromSupabase();
+    if (ok) {
+      if (statusEl) {
+        statusEl.textContent = 'Datos actualizados!';
+        statusEl.className = 'sync-status success';
+      }
+      showToast('Datos descargados de la base de datos', 'success');
+    } else {
+      if (statusEl) {
+        statusEl.textContent = 'Sin cambios nuevos';
+        statusEl.className = 'sync-status';
+      }
+    }
+  } catch (e) {
+    console.error('[Home] Pull failed:', e);
+    if (statusEl) {
+      statusEl.textContent = 'Error al descargar';
+      statusEl.className = 'sync-status error';
+    }
+    showToast('Error al descargar datos', 'error');
+  } finally {
+    btn.disabled = false;
+    if (statusEl) {
+      setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'sync-status'; }, 3000);
+    }
   }
 }
 
