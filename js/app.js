@@ -4,8 +4,10 @@
  */
 
 const PSAD56_UTM_17S = '+proj=utm +zone=17 +south +ellps=intl +towgs84=289,164,-377,0,0,0,0 +units=m +no_defs';
+const PSAD56_GEOGRAPHIC = '+proj=longlat +ellps=intl +towgs84=289,164,-377,0,0,0,0 +no_defs';
 const WGS84 = 'EPSG:4326';
 proj4.defs('EPSG:24877', PSAD56_UTM_17S);
+proj4.defs('PSAD56GEO', PSAD56_GEOGRAPHIC);
 
 const APP_VERSION = '2.0.4';
 

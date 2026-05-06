@@ -101,7 +101,8 @@ const PDFProcessor = (() => {
       bl = { lat: gpts[6], lon: gpts[7] };
     }
 
-    // GPTS is always lat/lon (EPSG:4326) per ISO 32000-2 spec
+    // Detectar CRS real del PDF (puede ser PSAD56 aunque GPTS sea lat/lon)
+    const detectedCrs = detectCRS(text) || 'EPSG:4326';
     return {
       corners: {
         tl: [tl.lon, tl.lat],
@@ -109,7 +110,7 @@ const PDFProcessor = (() => {
         bl: [bl.lon, bl.lat],
         br: [br.lon, br.lat]
       },
-      crs: 'EPSG:4326',
+      crs: detectedCrs,
       source: 'ISO-32000-2 (GeoPDF)'
     };
   }
@@ -436,9 +437,25 @@ const PDFProcessor = (() => {
       if (crs === 'EPSG:4326') {
         return [n, e]; // lat, lng (input is [lon, lat])
       }
+      // Si el PDF declara EPSG:24877 (PSAD56) pero las coordenadas son geográficas (<180),
+      // el GPTS está en lat/lon PSAD56 (datum International 1924).
+      // Debemos transformar a WGS84 para que coincida con el GPS del teléfono.
+      if (crs === 'EPSG:24877' && typeof proj4 !== 'undefined') {
+        if (Math.abs(e) < 180 && Math.abs(n) < 90) {
+          const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [e, n]);
+          return [lat, lng];
+        }
+        // Si son coordenadas UTM proyectadas (este, norte)
+        const [lng, lat] = proj4('EPSG:24877', 'EPSG:4326', [e, n]);
+        return [lat, lng];
+      }
       // Convert from input CRS to WGS84
-      const [lng, lat] = proj4(crs, 'EPSG:4326', [e, n]);
-      return [lat, lng];
+      if (typeof proj4 !== 'undefined') {
+        const [lng, lat] = proj4(crs, 'EPSG:4326', [e, n]);
+        return [lat, lng];
+      }
+      // Fallback: assume coordinates are already lat/lon
+      return [n, e];
     };
 
     const tl = toWGS84(corners.tl[0], corners.tl[1]);
