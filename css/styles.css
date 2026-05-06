@@ -2111,3 +2111,110 @@ body {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+/* ============================================
+   CALIBRACION DE MAPA (Offset fine-tuning)
+   ============================================ */
+.calibration-panel {
+  position: fixed;
+  bottom: 100px;
+  right: 16px;
+  z-index: 1000;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  width: 180px;
+  box-shadow: 0 4px 16px var(--shadow);
+}
+
+.calibration-panel.hidden {
+  display: none;
+}
+
+.calib-header {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.calib-display {
+  font-size: 0.8rem;
+  color: var(--accent);
+  text-align: center;
+  margin-bottom: 8px;
+  font-family: monospace;
+  background: var(--bg-primary);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.calib-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.calib-grid .calib-btn {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  padding: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calib-grid .calib-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.calib-grid .calib-btn[data-dir="n"] {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.calib-grid .calib-btn[data-dir="w"] {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.calib-grid .calib-btn[data-dir="e"] {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.calib-grid .calib-btn[data-dir="s"] {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.calib-step {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.calib-step input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 2px 4px;
+  text-align: center;
+}
+
+.calib-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}

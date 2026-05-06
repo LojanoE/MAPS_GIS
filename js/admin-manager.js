@@ -197,17 +197,82 @@ const AdminManager = {
     const image = await tiff.getImage();
     const raster = await image.readRasters();
     const bbox = image.getBoundingBox();
-    const geoRaster = new GeoRaster({
-      values: raster.length >= 3 ? [raster[0], raster[1], raster[2]] : [raster[0]],
-      width: image.getWidth(), height: image.getHeight(),
-      numberOfBands: raster.length >= 3 ? 3 : 1,
-      pixelWidth: (bbox[2] - bbox[0]) / image.getWidth(),
-      pixelHeight: (bbox[3] - bbox[1]) / image.getHeight(),
-      xmin: bbox[0], ymin: bbox[1], xmax: bbox[2], ymax: bbox[3]
-    });
-    this.adminMapOverlay = new GeoRasterLayer({ georaster: geoRaster, opacity: 0.85, resolution: 256 });
-    this.adminMapOverlay.addTo(this.adminMap);
-    this.adminMap.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
+    const width = image.getWidth();
+    const height = image.getHeight();
+    const values = raster.length >= 3 ? [raster[0], raster[1], raster[2]] : [raster[0]];
+    const crs = this.getGeoTiffCRS(image);
+    const isGeographic = crs === 'EPSG:4326';
+    const needsProjTransform = crs && crs !== 'EPSG:4326' && crs !== 'EPSG:3857';
+
+    if (needsProjTransform || !crs) {
+      const srcCRS = crs || 'EPSG:24877';
+      const transformToWGS84 = (e, n) => {
+        try { const [lng, lat] = proj4(srcCRS, 'EPSG:4326', [e, n]); return [lat, lng]; }
+        catch (err) { return [n, e]; }
+      };
+      const tl = transformToWGS84(bbox[0], bbox[3]);
+      const tr = transformToWGS84(bbox[2], bbox[3]);
+      const bl = transformToWGS84(bbox[0], bbox[1]);
+      const br = transformToWGS84(bbox[2], bbox[1]);
+      const bounds = [
+        [Math.min(tl[0], tr[0], bl[0], br[0]), Math.min(tl[1], tr[1], bl[1], br[1])],
+        [Math.max(tl[0], tr[0], bl[0], br[0]), Math.max(tl[1], tr[1], bl[1], br[1])]
+      ];
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.createImageData(width, height);
+      if (values.length >= 3) {
+        for (let i = 0; i < width * height; i++) {
+          imageData.data[i*4] = Math.min(255, Math.max(0, values[0][i]));
+          imageData.data[i*4+1] = Math.min(255, Math.max(0, values[1][i]));
+          imageData.data[i*4+2] = Math.min(255, Math.max(0, values[2][i]));
+          imageData.data[i*4+3] = (values[0][i]===0&&values[1][i]===0&&values[2][i]===0)?0:255;
+        }
+      } else {
+        for (let i = 0; i < width * height; i++) {
+          const v = Math.min(255, Math.max(0, values[0][i]));
+          imageData.data[i*4]=v; imageData.data[i*4+1]=v; imageData.data[i*4+2]=v; imageData.data[i*4+3]=v===0?0:255;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      this.adminMapOverlay = L.imageOverlay(canvas.toDataURL('image/png'), bounds, { opacity: 0.85, interactive: true });
+      this.adminMapOverlay.addTo(this.adminMap);
+      this.adminMap.fitBounds(bounds);
+    } else {
+      const geoRaster = new GeoRaster({
+        values: values, width: width, height: height, numberOfBands: values.length,
+        pixelWidth: (bbox[2] - bbox[0]) / width, pixelHeight: (bbox[3] - bbox[1]) / height,
+        xmin: bbox[0], ymin: bbox[1], xmax: bbox[2], ymax: bbox[3]
+      });
+      this.adminMapOverlay = new GeoRasterLayer({ georaster: geoRaster, opacity: 0.85, resolution: 256 });
+      this.adminMapOverlay.addTo(this.adminMap);
+      this.adminMap.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
+    }
+  },
+
+  getGeoTiffCRS(image) {
+    try {
+      if (typeof image.geoKeys !== 'undefined') {
+        const geoKeys = image.geoKeys;
+        if (geoKeys.ProjectedCSTypeGeoKey) return 'EPSG:' + geoKeys.ProjectedCSTypeGeoKey;
+        if (geoKeys.GeographicTypeGeoKey) return 'EPSG:' + geoKeys.GeographicTypeGeoKey;
+      }
+    } catch (e) {}
+    try {
+      const fileDirectory = image.getFileDirectory();
+      if (fileDirectory && fileDirectory.GeoKeyDirectory) {
+        const geoKeyDir = fileDirectory.GeoKeyDirectory;
+        if (geoKeyDir && geoKeyDir.length >= 4) {
+          for (let i = 0; i < geoKeyDir.length; i += 4) {
+            const keyId = geoKeyDir[i];
+            if (keyId === 3072 && geoKeyDir[i + 3] > 0) return 'EPSG:' + geoKeyDir[i + 3];
+            if (keyId === 2048 && geoKeyDir[i + 3] > 0) return 'EPSG:' + geoKeyDir[i + 3];
+          }
+        }
+      }
+    } catch (e) {}
+    return null;
   },
 
   async loadAdminPDF(record) {
@@ -216,9 +281,16 @@ const AdminManager = {
     }
     const pdf = await PDFProcessor.loadPDF(record.data);
     const { canvas } = await PDFProcessor.renderPage(pdf, 2);
-    this.adminMapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs);
+    const offset = this.getMapOffset(record.id);
+    this.adminMapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, offset);
     this.adminMapOverlay.addTo(this.adminMap);
     this.adminMap.fitBounds(this.adminMapOverlay.getBounds());
+  },
+
+  getMapOffsetKey(mapId) { return 'maps_gis_offset_' + mapId; },
+  getMapOffset(mapId) {
+    try { return JSON.parse(localStorage.getItem(this.getMapOffsetKey(mapId))) || { east: 0, north: 0 }; }
+    catch { return { east: 0, north: 0 }; }
   },
 
   clearAdminMapOverlay() {

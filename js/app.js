@@ -3,11 +3,22 @@
  * Visor de mapas y marcadores. Todo local, sin base de datos.
  */
 
-const PSAD56_UTM_17S = '+proj=utm +zone=17 +south +ellps=intl +towgs84=289,164,-377,0,0,0,0 +units=m +no_defs';
-const PSAD56_GEOGRAPHIC = '+proj=longlat +ellps=intl +towgs84=289,164,-377,0,0,0,0 +no_defs';
+const PSAD56_UTM_17S = '+proj=utm +zone=17 +south +ellps=intl +towgs84=-288,175,-376,0,0,0,0 +units=m +no_defs';
+const PSAD56_GEOGRAPHIC = '+proj=longlat +ellps=intl +towgs84=-288,175,-376,0,0,0,0 +no_defs';
 const WGS84 = 'EPSG:4326';
 proj4.defs('EPSG:24877', PSAD56_UTM_17S);
 proj4.defs('PSAD56GEO', PSAD56_GEOGRAPHIC);
+
+const KNOWN_CRS_MAP = {
+  24877: 'EPSG:24877',
+  32717: 'EPSG:32717',
+  32617: 'EPSG:32617',
+  4326: 'EPSG:4326',
+  3857: 'EPSG:3857',
+  4248: 'EPSG:4248',
+  32718: 'EPSG:32718',
+  32618: 'EPSG:32618'
+};
 
 const APP_VERSION = '2.0.4';
 
@@ -354,6 +365,54 @@ function updateCoordsDisplay(latlng) {
 // ============================================
 // GEO TIFF / PDF LOADING
 // ============================================
+
+function getGeoTiffCRS(image) {
+  try {
+    const metadata = image.getGDALMetadata();
+    if (metadata) {
+      const crsMatch = (metadata.PROJCS || metadata.GEOGCS || '').match(/EPSG[:\s]*(\d+)/i);
+      if (crsMatch) return 'EPSG:' + crsMatch[1];
+    }
+  } catch (e) {}
+  try {
+    if (typeof image.geoKeys !== 'undefined') {
+      const geoKeys = image.geoKeys;
+      if (geoKeys.ProjectedCSTypeGeoKey) {
+        const pcs = geoKeys.ProjectedCSTypeGeoKey;
+        if (KNOWN_CRS_MAP[pcs]) return KNOWN_CRS_MAP[pcs];
+        return 'EPSG:' + pcs;
+      }
+      if (geoKeys.GeographicTypeGeoKey) {
+        const gcs = geoKeys.GeographicTypeGeoKey;
+        if (KNOWN_CRS_MAP[gcs]) return KNOWN_CRS_MAP[gcs];
+        return 'EPSG:' + gcs;
+      }
+    }
+  } catch (e) {}
+  try {
+    const fileDirectory = image.getFileDirectory();
+    if (fileDirectory && fileDirectory.GeoKeyDirectory) {
+      const geoKeyDir = fileDirectory.GeoKeyDirectory;
+      if (geoKeyDir && geoKeyDir.length >= 4) {
+        for (let i = 0; i < geoKeyDir.length; i += 4) {
+          const keyId = geoKeyDir[i];
+          if (keyId === 3072 && geoKeyDir[i + 3] > 0) {
+            const pcs = geoKeyDir[i + 3];
+            if (KNOWN_CRS_MAP[pcs]) return KNOWN_CRS_MAP[pcs];
+            return 'EPSG:' + pcs;
+          }
+          if (keyId === 2048 && geoKeyDir[i + 3] > 0) {
+            const gcs = geoKeyDir[i + 3];
+            if (KNOWN_CRS_MAP[gcs]) return KNOWN_CRS_MAP[gcs];
+            return 'EPSG:' + gcs;
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
 async function loadGeoTiff(mapId) {
   try {
     const arrayBuffer = await MapStorage.getMapData(mapId);
@@ -361,20 +420,103 @@ async function loadGeoTiff(mapId) {
     const image = await tiff.getImage();
     const raster = await image.readRasters();
     const bbox = image.getBoundingBox();
-    const geoRaster = new GeoRaster({
-      values: raster.length >= 3 ? [raster[0], raster[1], raster[2]] : [raster[0]],
-      width: image.getWidth(), height: image.getHeight(),
-      numberOfBands: raster.length >= 3 ? 3 : 1,
-      pixelWidth: (bbox[2] - bbox[0]) / image.getWidth(),
-      pixelHeight: (bbox[3] - bbox[1]) / image.getHeight(),
-      xmin: bbox[0], ymin: bbox[1], xmax: bbox[2], ymax: bbox[3]
-    });
+    const width = image.getWidth();
+    const height = image.getHeight();
+    const values = raster.length >= 3 ? [raster[0], raster[1], raster[2]] : [raster[0]];
+
+    // Detectar CRS del GeoTIFF
+    const crs = getGeoTiffCRS(image);
+    const isGeographic = crs === 'EPSG:4326';
+    const needsProjTransform = crs && crs !== 'EPSG:4326' && crs !== 'EPSG:3857';
+
     if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
-    AppState.mapOverlay = new GeoRasterLayer({ georaster: geoRaster, opacity: 0.85, resolution: 256 });
-    AppState.mapOverlay.addTo(AppState.map);
-    AppState.map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
-    showToast('Mapa cargado', 'success');
-  } catch (error) { showToast('Error al cargar mapa', 'error'); }
+
+    // Para CRS proyectados (EPSG:24877 etc), usar overlay manual con proj4
+    // GeoRasterLayer no soporta CRS proyectados y causa errores en cascada
+    if (needsProjTransform || !crs) {
+      const srcCRS = crs || 'EPSG:24877';
+      const transformToWGS84 = (e, n) => {
+        try {
+          const [lng, lat] = proj4(srcCRS, WGS84, [e, n]);
+          return [lat, lng];
+        } catch (err) {
+          console.warn('[loadGeoTiff] proj4 failed:', err);
+          return [n, e];
+        }
+      };
+
+      const tl = transformToWGS84(bbox[0], bbox[3]);
+      const tr = transformToWGS84(bbox[2], bbox[3]);
+      const bl = transformToWGS84(bbox[0], bbox[1]);
+      const br = transformToWGS84(bbox[2], bbox[1]);
+
+      const mapOffset = getMapOffset(mapId);
+      if (mapOffset && (mapOffset.east || mapOffset.north)) {
+        const refLat = (tl[0] + tr[0] + bl[0] + br[0]) / 4;
+        const dLat = (mapOffset.north || 0) / 111000;
+        const dLng = (mapOffset.east || 0) / (111000 * Math.cos(refLat * Math.PI / 180));
+        tl[0] += dLat; tl[1] += dLng;
+        tr[0] += dLat; tr[1] += dLng;
+        bl[0] += dLat; bl[1] += dLng;
+        br[0] += dLat; br[1] += dLng;
+      }
+
+      const bounds = [
+        [Math.min(tl[0], tr[0], bl[0], br[0]), Math.min(tl[1], tr[1], bl[1], br[1])],
+        [Math.max(tl[0], tr[0], bl[0], br[0]), Math.max(tl[1], tr[1], bl[1], br[1])]
+      ];
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      const imageData = ctx.createImageData(width, height);
+
+      if (values.length >= 3) {
+        for (let i = 0; i < width * height; i++) {
+          const r = values[0][i], g = values[1][i], b = values[2][i];
+          imageData.data[i * 4] = Math.min(255, Math.max(0, r));
+          imageData.data[i * 4 + 1] = Math.min(255, Math.max(0, g));
+          imageData.data[i * 4 + 2] = Math.min(255, Math.max(0, b));
+          imageData.data[i * 4 + 3] = (r === 0 && g === 0 && b === 0) ? 0 : 255;
+        }
+      } else {
+        for (let i = 0; i < width * height; i++) {
+          const v = Math.min(255, Math.max(0, values[0][i]));
+          imageData.data[i * 4] = v;
+          imageData.data[i * 4 + 1] = v;
+          imageData.data[i * 4 + 2] = v;
+          imageData.data[i * 4 + 3] = v === 0 ? 0 : 255;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+
+      const dataUrl = canvas.toDataURL('image/png');
+      AppState.mapOverlay = L.imageOverlay(dataUrl, bounds, { opacity: 0.85, interactive: true });
+      AppState.mapOverlay.addTo(AppState.map);
+      AppState.map.fitBounds(bounds);
+      showToast('Mapa cargado (' + (crs || 'CRS desconocido') + ')', 'success');
+    } else {
+      // CRS geografico (EPSG:4326): usar GeoRasterLayer directamente
+      const geoRaster = new GeoRaster({
+        values: values,
+        width: width, height: height,
+        numberOfBands: values.length,
+        pixelWidth: (bbox[2] - bbox[0]) / width,
+        pixelHeight: (bbox[3] - bbox[1]) / height,
+        xmin: bbox[0], ymin: bbox[1], xmax: bbox[2], ymax: bbox[3]
+      });
+      AppState.mapOverlay = new GeoRasterLayer({ georaster: geoRaster, opacity: 0.85, resolution: 256 });
+      AppState.mapOverlay.addTo(AppState.map);
+      AppState.map.fitBounds([[bbox[1], bbox[0]], [bbox[3], bbox[2]]]);
+      showToast('Mapa cargado (EPSG:4326)', 'success');
+    }
+
+    updateCalibButtonVisibility(true);
+  } catch (error) {
+    console.error('[loadGeoTiff] Error:', error);
+    showToast('Error al cargar mapa: ' + (error.message || 'desconocido'), 'error');
+  }
 }
 async function loadPDFMap(mapId) {
   try {
@@ -383,11 +525,107 @@ async function loadPDFMap(mapId) {
     const pdf = await PDFProcessor.loadPDF(record.data);
     const { canvas } = await PDFProcessor.renderPage(pdf, 2);
     if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
-    AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs);
+    const offset = getMapOffset(mapId);
+    AppState.currentMapOffset = offset;
+    AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, offset);
     AppState.mapOverlay.addTo(AppState.map);
     AppState.map.fitBounds(AppState.mapOverlay.getBounds());
     showToast('PDF cargado', 'success');
+    updateCalibButtonVisibility(true);
   } catch (error) { showToast('Error al cargar PDF', 'error'); }
+}
+
+// ============================================
+// MAP CALIBRATION (Offset fine-tuning)
+// ============================================
+function getMapOffsetKey(mapId) { return 'maps_gis_offset_' + mapId; }
+function getMapOffset(mapId) {
+  try { return JSON.parse(localStorage.getItem(getMapOffsetKey(mapId))) || { east: 0, north: 0 }; }
+  catch { return { east: 0, north: 0 }; }
+}
+function saveMapOffset(mapId, offset) {
+  localStorage.setItem(getMapOffsetKey(mapId), JSON.stringify(offset || { east: 0, north: 0 }));
+}
+
+function updateCalibButtonVisibility(visible) {
+  const btn = document.getElementById('btn-calibrate');
+  if (btn) btn.style.display = visible ? 'flex' : 'none';
+}
+
+function showCalibrationPanel() {
+  let panel = document.getElementById('calibration-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'calibration-panel';
+    panel.className = 'calibration-panel';
+    panel.innerHTML = `
+      <div class="calib-header">Calibrar Mapa</div>
+      <div class="calib-display" id="calib-display">E: 0m | N: 0m</div>
+      <div class="calib-grid">
+        <button class="calib-btn" data-dir="n">▲</button>
+        <button class="calib-btn" data-dir="w">◀</button>
+        <button class="calib-btn" data-dir="e">▶</button>
+        <button class="calib-btn" data-dir="s">▼</button>
+      </div>
+      <div class="calib-step">
+        <label>Paso: <input type="number" id="calib-step" value="5" min="1" max="100" style="width:50px;"> m</label>
+      </div>
+      <div class="calib-actions">
+        <button id="calib-save" class="btn-primary btn-sm">Guardar</button>
+        <button id="calib-reset" class="btn-secondary btn-sm">Reset</button>
+        <button id="calib-close" class="btn-secondary btn-sm">Cerrar</button>
+      </div>
+    `;
+    document.body.appendChild(panel);
+    panel.querySelectorAll('.calib-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyCalibrationDelta(btn.dataset.dir));
+    });
+    document.getElementById('calib-save').addEventListener('click', () => {
+      saveMapOffset(AppState.currentMapId, AppState.currentMapOffset);
+      showToast('Calibracion guardada', 'success');
+    });
+    document.getElementById('calib-reset').addEventListener('click', () => {
+      AppState.currentMapOffset = { east: 0, north: 0 };
+      reloadMapWithOffset();
+      updateCalibrationDisplay();
+    });
+    document.getElementById('calib-close').addEventListener('click', () => panel.classList.add('hidden'));
+  }
+  updateCalibrationDisplay();
+  panel.classList.remove('hidden');
+}
+
+function applyCalibrationDelta(dir) {
+  if (!AppState.currentMapId) return;
+  const step = parseInt(document.getElementById('calib-step').value) || 5;
+  const offset = AppState.currentMapOffset || { east: 0, north: 0 };
+  if (dir === 'n') offset.north += step;
+  if (dir === 's') offset.north -= step;
+  if (dir === 'e') offset.east += step;
+  if (dir === 'w') offset.east -= step;
+  AppState.currentMapOffset = offset;
+  reloadMapWithOffset();
+  updateCalibrationDisplay();
+}
+
+function updateCalibrationDisplay() {
+  const disp = document.getElementById('calib-display');
+  if (!disp) return;
+  const o = AppState.currentMapOffset || { east: 0, north: 0 };
+  const e = (o.east > 0 ? '+' : '') + o.east;
+  const n = (o.north > 0 ? '+' : '') + o.north;
+  disp.textContent = 'E: ' + e + 'm | N: ' + n + 'm';
+}
+
+async function reloadMapWithOffset() {
+  if (!AppState.currentMapId) return;
+  const record = await MapStorage.getMapRecord(AppState.currentMapId);
+  if (!record || !record.georef) return;
+  const pdf = await PDFProcessor.loadPDF(record.data);
+  const { canvas } = await PDFProcessor.renderPage(pdf, 2);
+  if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
+  AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, AppState.currentMapOffset);
+  AppState.mapOverlay.addTo(AppState.map);
 }
 
 // ============================================
@@ -1216,6 +1454,7 @@ function initEventListeners() {
   document.getElementById('btn-add-photo').addEventListener('click', () => { document.getElementById('photo-input').click(); });
   document.getElementById('photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0]); e.target.value = ''; } });
   document.getElementById('btn-export').addEventListener('click', openExportModal);
+  document.getElementById('btn-calibrate').addEventListener('click', showCalibrationPanel);
   document.getElementById('btn-markers-panel').addEventListener('click', openMarkersPanel);
   document.getElementById('btn-close-panel').addEventListener('click', closeMarkersPanel);
   document.getElementById('btn-export-panel').addEventListener('click', openExportModal);

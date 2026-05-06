@@ -431,7 +431,7 @@ const PDFProcessor = (() => {
    * @param {object} corners - { tl: [e,n], tr: [e,n], bl: [e,n], br: [e,n] }
    * @param {string} crs - Input CRS
    */
-  function createGeoOverlay(canvas, corners, crs) {
+  function createGeoOverlay(canvas, corners, crs, offset) {
     // Convert corners to WGS84 (Leaflet's native CRS)
     const toWGS84 = (e, n) => {
       if (crs === 'EPSG:4326') {
@@ -439,29 +439,38 @@ const PDFProcessor = (() => {
       }
       // Si el PDF declara EPSG:24877 (PSAD56) pero las coordenadas son geográficas (<180),
       // el GPTS está en lat/lon PSAD56 (datum International 1924).
-      // Debemos transformar a WGS84 para que coincida con el GPS del teléfono.
       if (crs === 'EPSG:24877' && typeof proj4 !== 'undefined') {
         if (Math.abs(e) < 180 && Math.abs(n) < 90) {
           const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [e, n]);
           return [lat, lng];
         }
-        // Si son coordenadas UTM proyectadas (este, norte)
         const [lng, lat] = proj4('EPSG:24877', 'EPSG:4326', [e, n]);
         return [lat, lng];
       }
-      // Convert from input CRS to WGS84
       if (typeof proj4 !== 'undefined') {
         const [lng, lat] = proj4(crs, 'EPSG:4326', [e, n]);
         return [lat, lng];
       }
-      // Fallback: assume coordinates are already lat/lon
       return [n, e];
     };
 
-    const tl = toWGS84(corners.tl[0], corners.tl[1]);
-    const tr = toWGS84(corners.tr[0], corners.tr[1]);
-    const bl = toWGS84(corners.bl[0], corners.bl[1]);
-    const br = toWGS84(corners.br[0], corners.br[1]);
+    let tl = toWGS84(corners.tl[0], corners.tl[1]);
+    let tr = toWGS84(corners.tr[0], corners.tr[1]);
+    let bl = toWGS84(corners.bl[0], corners.bl[1]);
+    let br = toWGS84(corners.br[0], corners.br[1]);
+
+    // Aplicar offset de calibracion manual (en metros)
+    if (offset && (offset.north || offset.east)) {
+      const refLat = (tl[0] + tr[0] + bl[0] + br[0]) / 4;
+      const mPerDegLat = 111000;
+      const mPerDegLng = 111000 * Math.cos(refLat * Math.PI / 180);
+      const dLat = (offset.north || 0) / mPerDegLat;
+      const dLng = (offset.east || 0) / mPerDegLng;
+      tl = [tl[0] + dLat, tl[1] + dLng];
+      tr = [tr[0] + dLat, tr[1] + dLng];
+      bl = [bl[0] + dLat, bl[1] + dLng];
+      br = [br[0] + dLat, br[1] + dLng];
+    }
 
     const minLat = Math.min(tl[0], tr[0], bl[0], br[0]);
     const maxLat = Math.max(tl[0], tr[0], bl[0], br[0]);
