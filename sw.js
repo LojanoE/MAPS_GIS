@@ -8,7 +8,7 @@
 // ============================================
 // VERSION CONTROL - BUMP THIS TO FORCE UPDATE
 // ============================================
-const APP_VERSION = '2.0.4'; // Bump to force cache refresh on all devices
+const APP_VERSION = '2.0.5'; // Bump to force cache refresh on all devices
 
 const CACHE_NAME = 'maps-gis-v' + APP_VERSION;
 const STATIC_CACHE = 'maps-gis-static-v' + APP_VERSION;
@@ -46,6 +46,11 @@ const CDN_ASSETS = [
 const TILE_PATTERNS = [
   'basemaps.cartocdn.com',
   'tile.openstreetmap.org'
+];
+
+// Never cache these domains (APIs must always be fresh)
+const NETWORK_ONLY_DOMAINS = [
+  'supabase.co'
 ];
 
 // ============================================
@@ -116,6 +121,12 @@ self.addEventListener('fetch', (event) => {
 
   // Skip chrome-extension and other non-http(s) requests
   if (!url.protocol.startsWith('http')) return;
+
+  // Network-only for APIs (never cache Supabase or other APIs)
+  if (NETWORK_ONLY_DOMAINS.some(pattern => url.hostname.includes(pattern))) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   // For tile servers: network-first with cache fallback
   if (TILE_PATTERNS.some(pattern => url.hostname.includes(pattern))) {

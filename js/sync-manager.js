@@ -232,6 +232,7 @@ const SyncManager = {
       const res = await fetch(
         `${SYNC_SUPABASE_URL}/${table}?select=id&local_marker_id=eq.${encodeURIComponent(localMarkerId)}&device_id=eq.${encodeURIComponent(deviceId)}&limit=1`,
         {
+          cache: 'no-store',
           headers: {
             'apikey': SYNC_SUPABASE_KEY,
             'Authorization': `Bearer ${SYNC_SUPABASE_KEY}`

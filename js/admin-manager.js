@@ -93,17 +93,37 @@ const AdminManager = {
   async loadMarkers() {
     showToast('Cargando datos del admin...', 'info');
     try {
-      const [qc, lsm] = await Promise.all([
+      const results = await Promise.allSettled([
         this.fetchTable('qc_markers'),
         this.fetchTable('lsm_markers')
       ]);
+
+      const qc = results[0].status === 'fulfilled' ? results[0].value : [];
+      const lsm = results[1].status === 'fulfilled' ? results[1].value : [];
+
+      if (results[0].status === 'rejected') {
+        console.error('[Admin] Error loading qc_markers:', results[0].reason);
+        showToast('Error cargando QC: ' + results[0].reason.message, 'error');
+      }
+      if (results[1].status === 'rejected') {
+        console.error('[Admin] Error loading lsm_markers:', results[1].reason);
+        showToast('Error cargando LSM: ' + results[1].reason.message, 'error');
+      }
 
       this.allMarkers = [
         ...(Array.isArray(qc) ? qc.map(m => ({ ...m, _type: 'qc' })) : []),
         ...(Array.isArray(lsm) ? lsm.map(m => ({ ...m, _type: 'lsm' })) : [])
       ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-      showToast(`${this.allMarkers.length} registros cargados`, 'success');
+      const activeCount = this.allMarkers.filter(m => !m.is_deleted).length;
+      const deletedCount = this.allMarkers.filter(m => m.is_deleted).length;
+      const qcCount = Array.isArray(qc) ? qc.length : 0;
+      const lsmCount = Array.isArray(lsm) ? lsm.length : 0;
+
+      showToast(
+        `${this.allMarkers.length} registros cargados (${qcCount} QC + ${lsmCount} LSM, ${activeCount} activos${deletedCount > 0 ? ', ' + deletedCount + ' eliminados' : ''})`,
+        'success'
+      );
     } catch (e) {
       console.error('[Admin] Error loading markers:', e);
       showToast('Error al cargar datos del admin', 'error');
@@ -112,12 +132,16 @@ const AdminManager = {
 
   async fetchTable(table) {
     const res = await fetch(`${SUPABASE_ADMIN_URL}/${table}?select=*&order=created_at.desc`, {
+      cache: 'no-store',
       headers: {
         'apikey': SUPABASE_ADMIN_KEY,
         'Authorization': `Bearer ${SUPABASE_ADMIN_KEY}`
       }
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      console.error(`[Admin] fetchTable ${table} failed: HTTP ${res.status}`);
+      throw new Error(`HTTP ${res.status} en ${table}`);
+    }
     return res.json();
   },
 
@@ -474,6 +498,7 @@ const AdminManager = {
         `${SUPABASE_ADMIN_URL}/${table}?id=eq.${marker.id}`,
         {
           method: 'PATCH',
+          cache: 'no-store',
           headers: {
             'apikey': SUPABASE_ADMIN_KEY,
             'Authorization': `Bearer ${SUPABASE_ADMIN_KEY}`,
@@ -514,6 +539,7 @@ const AdminManager = {
         `${SUPABASE_ADMIN_URL}/${table}?id=eq.${marker.id}`,
         {
           method: 'PATCH',
+          cache: 'no-store',
           headers: {
             'apikey': SUPABASE_ADMIN_KEY,
             'Authorization': `Bearer ${SUPABASE_ADMIN_KEY}`,
@@ -622,6 +648,7 @@ const AdminManager = {
       const [resQC, resLSM] = await Promise.all([
         fetch(`${SUPABASE_ADMIN_URL}/qc_markers?is_deleted=eq.false`, {
           method: 'DELETE',
+          cache: 'no-store',
           headers: {
             'apikey': SUPABASE_ADMIN_KEY,
             'Authorization': `Bearer ${SUPABASE_ADMIN_KEY}`
@@ -629,6 +656,7 @@ const AdminManager = {
         }),
         fetch(`${SUPABASE_ADMIN_URL}/lsm_markers?is_deleted=eq.false`, {
           method: 'DELETE',
+          cache: 'no-store',
           headers: {
             'apikey': SUPABASE_ADMIN_KEY,
             'Authorization': `Bearer ${SUPABASE_ADMIN_KEY}`
