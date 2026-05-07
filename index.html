@@ -37,7 +37,7 @@
               <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.1.1</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.1.2</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -167,6 +167,13 @@
         <button id="btn-center" class="map-btn" title="Centrar en mapa">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+          </svg>
+        </button>
+
+        <!-- Buscar por coordenadas -->
+        <button id="btn-go-to-coords" class="map-btn" title="Buscar por coordenadas">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/><circle cx="12" cy="12" r="2"/>
           </svg>
         </button>
 
@@ -483,6 +490,33 @@
       </div>
       <div class="modal-actions">
         <button id="btn-cancel-type" class="btn-secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL BUSCAR POR COORDENADAS ==================== -->
+  <div id="go-to-coords-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Buscar Punto</h3>
+      <p class="type-info">Ingresa coordenadas PSAD56 (EPSG:24877) para ubicar un punto</p>
+      <div class="form-group">
+        <label for="goto-norte">Norte (m)</label>
+        <input type="number" id="goto-norte" placeholder="9605912.94" step="0.01" inputmode="decimal">
+      </div>
+      <div class="form-group">
+        <label for="goto-este">Este (m)</label>
+        <input type="number" id="goto-este" placeholder="780401.18" step="0.01" inputmode="decimal">
+      </div>
+      <div class="form-group">
+        <label>Tipo de marcador</label>
+        <div class="goto-type-selector">
+          <button id="btn-goto-qc" class="goto-type-btn active" data-type="qc">QC</button>
+          <button id="btn-goto-lsm" class="goto-type-btn" data-type="lsm">LSM</button>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-cancel-goto" class="btn-secondary">Cancelar</button>
+        <button id="btn-confirm-goto" class="btn-primary">Buscar</button>
       </div>
     </div>
   </div>

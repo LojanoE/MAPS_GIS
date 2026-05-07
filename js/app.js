@@ -37,7 +37,7 @@ const AppState = {
   currentMapType: 'tiff', mapTitle: '', editingMarkerId: null,
   selectedCategory: 'red', darkTiles: null, lightTiles: null,
   pendingPDF: null, pendingPhotos: [], currentMarkerMode: 'qc',
-  lsmSelectedCategory: 'red'
+  lsmSelectedCategory: 'red', gotoMarkerType: 'qc'
 };
 
 // ============================================
@@ -626,6 +626,53 @@ async function reloadMapWithOffset() {
   if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
   AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, AppState.currentMapOffset);
   AppState.mapOverlay.addTo(AppState.map);
+}
+
+// ============================================
+// GO TO COORDINATES (Buscar Punto)
+// ============================================
+function openGoToCoordsModal() {
+  AppState.gotoMarkerType = 'qc';
+  document.getElementById('goto-norte').value = '';
+  document.getElementById('goto-este').value = '';
+  document.getElementById('btn-goto-qc').classList.add('active');
+  document.getElementById('btn-goto-lsm').classList.remove('active');
+  document.getElementById('go-to-coords-modal').classList.remove('hidden');
+  setTimeout(function() { document.getElementById('goto-norte').focus(); }, 100);
+}
+function closeGoToCoordsModal() {
+  document.getElementById('go-to-coords-modal').classList.add('hidden');
+}
+function selectGotoType(type) {
+  AppState.gotoMarkerType = type;
+  document.getElementById('btn-goto-qc').classList.toggle('active', type === 'qc');
+  document.getElementById('btn-goto-lsm').classList.toggle('active', type === 'lsm');
+}
+function confirmGoToCoords() {
+  var norteVal = document.getElementById('goto-norte').value.trim();
+  var esteVal = document.getElementById('goto-este').value.trim();
+  if (!norteVal || !esteVal) { showToast('Ingresa Norte y Este', 'error'); return; }
+  var north = parseFloat(norteVal);
+  var east = parseFloat(esteVal);
+  if (isNaN(north) || isNaN(east)) { showToast('Coordenadas invalidas', 'error'); return; }
+  try {
+    var lnglat = proj4('EPSG:24877', 'EPSG:4326', [east, north]);
+    var lng = lnglat[0], lat = lnglat[1];
+    var latlng = { lat: lat, lng: lng };
+    closeGoToCoordsModal();
+    AppState.isAddMarkerMode = false;
+    document.getElementById('btn-add-marker').classList.remove('active');
+    AppState.map.setView([lat, lng], 17);
+    if (AppState.gotoMarkerType === 'lsm') {
+      openLSMLoginOrMarkerModal(latlng);
+    } else {
+      AppState.pendingMarkerType = 'qc';
+      openMarkerModal(latlng);
+    }
+  } catch (err) {
+    console.error('[confirmGoToCoords] proj4 error:', err);
+    showToast('Error al convertir coordenadas', 'error');
+  }
 }
 
 // ============================================
@@ -1437,6 +1484,15 @@ function initEventListeners() {
     document.getElementById('btn-add-marker').classList.toggle('active', AppState.isAddMarkerMode);
     showToast(AppState.isAddMarkerMode ? 'Modo marcador activo' : 'Modo marcador desactivado', 'info');
   });
+  document.getElementById('btn-go-to-coords').addEventListener('click', openGoToCoordsModal);
+  document.getElementById('btn-cancel-goto').addEventListener('click', closeGoToCoordsModal);
+  document.getElementById('btn-confirm-goto').addEventListener('click', confirmGoToCoords);
+  document.getElementById('btn-goto-qc').addEventListener('click', () => selectGotoType('qc'));
+  document.getElementById('btn-goto-lsm').addEventListener('click', () => selectGotoType('lsm'));
+  var gotoNorte = document.getElementById('goto-norte');
+  var gotoEste = document.getElementById('goto-este');
+  if (gotoNorte) gotoNorte.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmGoToCoords(); if (e.key === 'Escape') closeGoToCoordsModal(); });
+  if (gotoEste) gotoEste.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmGoToCoords(); if (e.key === 'Escape') closeGoToCoordsModal(); });
   document.getElementById('btn-mode-toggle').addEventListener('click', () => {
     AppState.currentMarkerMode = AppState.currentMarkerMode === 'qc' ? 'lsm' : 'qc';
     updateModeToggleButton();
@@ -1481,6 +1537,7 @@ function initEventListeners() {
         else if (modal.id === 'lsm-marker-modal') closeLSMMarkerModal();
         else if (modal.id === 'config-modal') closeConfigModal();
         else if (modal.id === 'marker-detail-modal') closeMarkerDetail();
+        else if (modal.id === 'go-to-coords-modal') closeGoToCoordsModal();
         else if (modal.id === 'delete-map-modal') { pendingDeleteMapId = null; modal.classList.add('hidden'); }
         else modal.classList.add('hidden');
       }

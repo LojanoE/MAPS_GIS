@@ -675,6 +675,34 @@ body {
   border-color: var(--accent);
 }
 
+/* --- Go To Coords Type Selector --- */
+.goto-type-selector {
+  display: flex;
+  gap: 8px;
+}
+.goto-type-btn {
+  flex: 1;
+  padding: 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  text-align: center;
+}
+.goto-type-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.goto-type-btn.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
 /* --- Side Panel (Markers List) --- */
 .side-panel {
   position: fixed;
