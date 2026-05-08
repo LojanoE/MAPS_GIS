@@ -585,7 +585,7 @@ const AdminManager = {
         dateCols.forEach(col => {
           const addr = XLSX.utils.encode_col(Object.keys(qcData[0]).indexOf(col)) + (i + 2);
           if (wsQC[addr] && wsQC[addr].v instanceof Date) {
-            wsQC[addr].z = 'yyyy-mm-dd hh:mm';
+            wsQC[addr].z = 'DD/MM/YYYY';
             wsQC[addr].t = 'd';
           }
         });
@@ -601,7 +601,7 @@ const AdminManager = {
         dateCols.forEach(col => {
           const addr = XLSX.utils.encode_col(Object.keys(lsmData[0]).indexOf(col)) + (i + 2);
           if (wsLSM[addr] && wsLSM[addr].v instanceof Date) {
-            wsLSM[addr].z = 'yyyy-mm-dd hh:mm';
+            wsLSM[addr].z = 'DD/MM/YYYY';
             wsLSM[addr].t = 'd';
           }
         });

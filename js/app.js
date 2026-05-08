@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.2.2';
+const APP_VERSION = '2.2.3';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -1259,9 +1259,17 @@ async function exportToZIP() {
             } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-        qcData.push([m.name || '', MARKER_COLORS[m.color]?.label || '', m.description || '', m.norte, m.este, m.lat, m.lng, formatDateTime(m.createdAt), foto1, foto2]);
+        qcData.push([m.name || '', MARKER_COLORS[m.color]?.label || '', m.description || '', m.norte, m.este, m.lat, m.lng, new Date(m.createdAt), foto1, foto2]);
       }
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(qcData), 'QC');
+      const wsQC = XLSX.utils.aoa_to_sheet(qcData, { cellDates: true });
+      for (let r = 1; r < qcData.length; r++) {
+        const addr = XLSX.utils.encode_col(7) + (r + 1);
+        if (wsQC[addr] && wsQC[addr].v instanceof Date) {
+          wsQC[addr].z = 'DD/MM/YYYY';
+          wsQC[addr].t = 'd';
+        }
+      }
+      XLSX.utils.book_append_sheet(wb, wsQC, 'QC');
     }
     if (lsmMarkers.length > 0) {
       const lsmData = [['Tipo_Muestra', 'Proyecto', 'Solicitante', 'Estructura', 'Subestructuras', 'Categoria', 'Semana_Laboratorio', 'Fecha_Hora', 'Tipo_Material', 'Nombre_Muestra', 'Proveniencia', 'Localizacion', 'Fuente', 'Este', 'Norte', 'Ensayos', 'Latitud', 'Longitud', 'Foto_1', 'Foto_2']];
@@ -1285,9 +1293,17 @@ async function exportToZIP() {
             } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-        lsmData.push([d.tipoMuestra || '', d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', d.semanaLaboratorio || '', formatDateTime(m.createdAt), d.tipoMaterial || '', m.name || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', m.este, m.norte, (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
+        lsmData.push([d.tipoMuestra || '', d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', d.semanaLaboratorio || '', new Date(m.createdAt), d.tipoMaterial || '', m.name || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', m.este, m.norte, (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
       }
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(lsmData), 'LSM');
+      const wsLSM = XLSX.utils.aoa_to_sheet(lsmData, { cellDates: true });
+      for (let r = 1; r < lsmData.length; r++) {
+        const addr = XLSX.utils.encode_col(7) + (r + 1);
+        if (wsLSM[addr] && wsLSM[addr].v instanceof Date) {
+          wsLSM[addr].z = 'DD/MM/YYYY';
+          wsLSM[addr].t = 'd';
+        }
+      }
+      XLSX.utils.book_append_sheet(wb, wsLSM, 'LSM');
     }
     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     zip.file('marcadores.xlsx', excelBuffer);
