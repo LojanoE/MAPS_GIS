@@ -8,7 +8,7 @@
 // ============================================
 // VERSION CONTROL - BUMP THIS TO FORCE UPDATE
 // ============================================
-const APP_VERSION = '2.2.0'; // Bump to force cache refresh on all devices
+const APP_VERSION = '2.2.2'; // Bump to force cache refresh on all devices
 
 const CACHE_NAME = 'maps-gis-v' + APP_VERSION;
 const STATIC_CACHE = 'maps-gis-static-v' + APP_VERSION;
@@ -32,9 +32,9 @@ const CDN_ASSETS = [
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/proj4@2.9.2/dist/proj4.js',
-  'https://unpkg.com/geotiff@2.1.3/dist/main/browser/geotiff.js',
-  'https://unpkg.com/georaster@1.6.0/dist/browser/georaster.js',
-  'https://unpkg.com/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js',
+  'https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.min.js',
+  'https://cdn.jsdelivr.net/npm/georaster@1.6.0/dist/georaster.browser.bundle.min.js',
+  'https://cdn.jsdelivr.net/npm/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js',
   'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
   'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
   'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js',

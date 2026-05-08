@@ -199,6 +199,7 @@ const SyncManager = {
       estructura_deposito: d.estructuraDeposito || '',
       subestructuras: d.subestructuras || '',
       categoria: d.categoria || '',
+      semana_laboratorio: d.semanaLaboratorio || '',
       tipo_material: d.tipoMaterial || '',
       proveniencia: d.proveniencia || '',
       localizacion: d.localizacion || '',

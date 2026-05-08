@@ -557,6 +557,7 @@ const AdminManager = {
       Estructura: m.estructura_deposito || '',
       Subestructuras: m.subestructuras || '',
       Categoria: m.categoria || '',
+      Semana_Laboratorio: m.semana_laboratorio || '',
       Tipo_Material: m.tipo_material || '',
       Proveniencia: m.proveniencia || '',
       Localizacion: m.localizacion || '',

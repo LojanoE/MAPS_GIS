@@ -316,67 +316,88 @@ img {
 .maps-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+  padding: 0 12px;
 }
 
-.map-item {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 12px;
+.map-card {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
   cursor: pointer;
-  transition: all var(--transition);
+  transition: color var(--transition);
 }
 
-.map-item:hover {
-  border-color: var(--accent);
-  background: var(--bg-tertiary);
+.map-card:hover .map-card-name {
+  color: var(--accent);
 }
 
-.map-item:active {
-  background: var(--accent-active);
+.map-card:active .map-card-name {
+  color: var(--accent-active);
 }
 
-.map-item-info {
+.map-card-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--text-muted);
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-card-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.map-card-info {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
-.map-item-name {
-  font-size: 0.9rem;
-  font-weight: 600;
+.map-card-name {
+  font-size: 0.85rem;
+  font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.map-item-meta {
-  font-size: 0.75rem;
+.map-card-meta {
+  font-size: 0.7rem;
   color: var(--text-secondary);
 }
 
-.map-item-actions {
+.map-card-delete {
+  width: 24px;
+  height: 24px;
   display: flex;
-  gap: 4px;
-}
-
-.map-delete-btn {
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
   color: var(--text-muted);
-  padding: 4px;
-  border-radius: var(--radius-sm);
-  transition: all var(--transition);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--transition);
+  flex-shrink: 0;
+  opacity: 0.6;
 }
 
-.map-delete-btn:hover {
+.map-card-delete:hover {
   color: var(--danger);
-  background: rgba(248, 81, 73, 0.1);
+  opacity: 1;
 }
 
 .empty-msg {
@@ -1342,6 +1363,68 @@ img {
 
 .admin-marker-pin svg {
   color: var(--danger);
+}
+
+/* --- GPS Snackbar --- */
+.gps-snackbar {
+  position: fixed;
+  bottom: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 10px 16px;
+  z-index: 1500;
+  box-shadow: 0 4px 16px var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  max-width: 90%;
+  animation: toastIn 0.3s ease;
+}
+
+.gps-snackbar.hidden {
+  display: none !important;
+}
+
+.gps-snackbar svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.gps-snackbar-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition);
+}
+
+.gps-snackbar-btn:hover {
+  background: var(--accent-hover);
+}
+
+.gps-snackbar-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color var(--transition);
+}
+
+.gps-snackbar-close:hover {
+  color: var(--text-primary);
 }
 
 /* --- Admin Panel --- */

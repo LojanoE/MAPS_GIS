@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.2.2';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -36,7 +36,7 @@ const AppState = {
   isAddMarkerMode: false, pendingMarkerLatLng: null, currentMapId: null,
   currentMapType: 'tiff', mapTitle: '', editingMarkerId: null,
   selectedCategory: 'red', darkTiles: null, lightTiles: null,
-  pendingPDF: null, pendingPhotos: [], currentMarkerMode: 'qc',
+  pendingPDF: null, pendingPhotos: [], currentMarkerMode: localStorage.getItem('maps_gis_marker_mode') || 'qc',
   lsmSelectedCategory: 'red', gotoMarkerType: 'qc'
 };
 
@@ -142,8 +142,9 @@ const CONFIG_KEYS = [
 ];
 
 const DEFAULT_CONFIG = {
-  tipo_muestra: ['Costal','Bolsa','Roca','Fotografia','Cubo Inalterado','Bolsa - Roca','Shelby','Cubo de Mortero','Cilindrica','Balde','Costal - Roca'],
+  tipo_muestra: ['-','Costal','Bolsa','Roca','Fotografia','Cubo Inalterado','Bolsa - Roca','Shelby','Cubo de Mortero','Cilindrica','Balde','Costal - Roca'],
   nombre_proyecto: [
+    '-',
     'Ingenieria Detallada para los Crecimientos El.945 m, El.970 m del DRT',
     'Servicio de Diseno Detallado para la Ampliacion de la Escombrera Sur de la Mina Mirador',
     'Caracterizacion de Relaves del DRT',
@@ -153,20 +154,21 @@ const DEFAULT_CONFIG = {
     'Coronamiento C990'
   ],
   solicitante: [
+    '-',
     'Control de Calidad de la Construccion (CQC)',
     'Klon Crippen Berger (KCB)',
     'Departamento de Produccion y Tecnologia (PyT)',
     'Unidad de Monitoreo y Vigilancia (U_MV)',
     'Jefaturas del Departamento de Depositos de Relaves'
   ],
-  estructura_deposito: ['DRT','DRQ','TMS','ESS','TMN'],
-  subestructuras: ['C990','C980','Fase I-II','Fase III'],
-  categoria: ['EETT','GDR','PPT4','ESAN','PPP1','IMPC970','PPT6','EETQ'],
-  tipo_material: ['Zona 1 - Relleno','Zona 2 - Filtro Fino','Zona 3 - Filtro Grueso','Zona 6 - Drenante','Fundacion','Zona 1 Seleccionado - Relleno','Relaves','Arcilla','Zona 1 - Zona 6'],
-  proveniencia: ['Banda 4','Mina Maricela','Visconticorp','Mina Samaniego','Mina Castillo','Mina Guzman','Mina Blanca Cajamarca','Mina Pablo','El Ideal Amazonico','Banda 6'],
-  localizacion: ['P 980-S3','P 965-S2','P 950-S2','P 925-S2','P 920-S2','P 905-S2','P 895-S1','P 890-S1','P 865-S3','P 835-S3','P 833-S3','P 805-S3','P 795-S3','Dren Basal','Dren D-8B','Dren D-11','Dren D-08','Dren Inclinado','Banco de Tajo de Mina','Dren-D-8B'],
-  fuente: ['Tajo de Mina','Proveedores','Fundacion','Escombrera','Relavera'],
-  ensayos: ['HUM','GEP','GTM','GFI','GHD','ELA','EDL','COM','ABF','ABG','ICP','SLF','PRA','TIS','VDC','DCP','DCA','PMF','PET','CLS','PPF','PPR','DPS','DMI','DMA','GEG','CUS','TCU','TCD','TUU','CUR','TXR','RTI','PGF','ABA','DNU','LEO','CFR','CST','GTA','CMO','COS']
+  estructura_deposito: ['-','DRT','DRQ','TMS','ESS','TMN'],
+  subestructuras: ['-','C990','C980','Fase I-II','Fase III'],
+  categoria: ['-','EETT','GDR','PPT4','ESAN','PPP1','IMPC970','PPT6','EETQ'],
+  tipo_material: ['-','Zona 1 - Relleno','Zona 2 - Filtro Fino','Zona 3 - Filtro Grueso','Zona 6 - Drenante','Fundacion','Zona 1 Seleccionado - Relleno','Relaves','Arcilla','Zona 1 - Zona 6'],
+  proveniencia: ['-','Banda 4','Mina Maricela','Visconticorp','Mina Samaniego','Mina Castillo','Mina Guzman','Mina Blanca Cajamarca','Mina Pablo','El Ideal Amazonico','Banda 6'],
+  localizacion: ['-','P 980-S3','P 965-S2','P 950-S2','P 925-S2','P 920-S2','P 905-S2','P 895-S1','P 890-S1','P 865-S3','P 835-S3','P 833-S3','P 805-S3','P 795-S3','Dren Basal','Dren D-8B','Dren D-11','Dren D-08','Dren Inclinado','Banco de Tajo de Mina','Dren-D-8B'],
+  fuente: ['-','Tajo de Mina','Proveedores','Fundacion','Escombrera','Relavera'],
+  ensayos: ['-','HUM','GEP','GTM','GFI','GHD','ELA','EDL','COM','ABF','ABG','ICP','SLF','PRA','TIS','VDC','DCP','DCA','PMF','PET','CLS','PPF','PPR','DPS','DMI','DMA','GEG','CUS','TCU','TCD','TUU','CUR','TXR','RTI','PGF','ABA','DNU','LEO','CFR','CST','GTA','CMO','COS']
 };
 
 const ConfigManager = {
@@ -347,6 +349,7 @@ function initMap() {
   AppState.markersLayer = L.layerGroup().addTo(AppState.map);
   AppState.map.on('click', (e) => {
     if (AppState.isAddMarkerMode) {
+      hideGpsSnackbar();
       if (AppState.currentMarkerMode === 'lsm') openLSMLoginOrMarkerModal(e.latlng);
       else openMarkerModal(e.latlng);
     }
@@ -699,6 +702,44 @@ function goToMyLocation() {
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
 }
 
+let _gpsSnackbarCoords = null;
+let _gpsSnackbarWatchId = null;
+
+function requestGpsForMarker() {
+  if (!navigator.geolocation) return;
+  const snackbar = document.getElementById('gps-snackbar');
+  const textEl = document.getElementById('gps-snackbar-text');
+  if (!snackbar) return;
+  snackbar.classList.add('hidden');
+  _gpsSnackbarCoords = null;
+  navigator.geolocation.getCurrentPosition((position) => {
+    const { latitude: lat, longitude: lng, accuracy } = position.coords;
+    _gpsSnackbarCoords = { lat, lng, accuracy };
+    textEl.textContent = 'Ubicacion detectada (' + Math.round(accuracy) + 'm)';
+    snackbar.classList.remove('hidden');
+  }, () => {
+    snackbar.classList.add('hidden');
+    _gpsSnackbarCoords = null;
+  }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 });
+}
+
+function useGpsForMarker() {
+  if (!_gpsSnackbarCoords) return;
+  const { lat, lng } = _gpsSnackbarCoords;
+  hideGpsSnackbar();
+  AppState.isAddMarkerMode = false;
+  document.getElementById('btn-add-marker').classList.remove('active');
+  const latlng = { lat, lng };
+  if (AppState.currentMarkerMode === 'lsm') openLSMLoginOrMarkerModal(latlng);
+  else openMarkerModal(latlng);
+}
+
+function hideGpsSnackbar() {
+  const snackbar = document.getElementById('gps-snackbar');
+  if (snackbar) snackbar.classList.add('hidden');
+  _gpsSnackbarCoords = null;
+}
+
 // ============================================
 // MARKER SVG ICON GENERATOR
 // ============================================
@@ -824,6 +865,7 @@ async function openLSMMarkerModal(latlng, editId) {
     document.getElementById('lsm-estructura-deposito').value = d.estructuraDeposito || '';
     document.getElementById('lsm-subestructuras').value = d.subestructuras || '';
     document.getElementById('lsm-categoria').value = d.categoria || '';
+    document.getElementById('lsm-semana-laboratorio').value = d.semanaLaboratorio || '';
     document.getElementById('lsm-tipo-material').value = d.tipoMaterial || '';
     document.getElementById('lsm-nombre-muestra').value = marker.name || '';
     document.getElementById('lsm-proveniencia').value = d.proveniencia || '';
@@ -853,6 +895,7 @@ async function openLSMMarkerModal(latlng, editId) {
     document.getElementById('lsm-estructura-deposito').value = last.estructuraDeposito || '';
     document.getElementById('lsm-subestructuras').value = last.subestructuras || '';
     document.getElementById('lsm-categoria').value = last.categoria || '';
+    document.getElementById('lsm-semana-laboratorio').value = last.semanaLaboratorio || '';
     document.getElementById('lsm-tipo-material').value = last.tipoMaterial || '';
     document.getElementById('lsm-nombre-muestra').value = '';
     document.getElementById('lsm-proveniencia').value = last.proveniencia || '';
@@ -883,6 +926,7 @@ async function saveLSMMarker() {
     estructuraDeposito: document.getElementById('lsm-estructura-deposito').value.trim(),
     subestructuras: document.getElementById('lsm-subestructuras').value.trim(),
     categoria: document.getElementById('lsm-categoria').value.trim(),
+    semanaLaboratorio: document.getElementById('lsm-semana-laboratorio').value.trim(),
     tipoMaterial: document.getElementById('lsm-tipo-material').value.trim(),
     nombreMuestra: nombreMuestra,
     proveniencia: document.getElementById('lsm-proveniencia').value.trim(),
@@ -1029,7 +1073,7 @@ async function openMarkerDetail(id) {
   if (marker.markerType === 'lsm') {
     const d = marker.lsmData || {};
     const ensayosStr = (d.ensayos || []).join(', ');
-    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">LSM</span></div><div class="detail-row"><span class="detail-label">Tipo de Muestra</span><span class="detail-value">' + escapeHtml(d.tipoMuestra || '-') + '</span></div><div class="detail-row"><span class="detail-label">Proyecto</span><span class="detail-value">' + escapeHtml(d.nombreProyecto || '-') + '</span></div><div class="detail-row"><span class="detail-label">Solicitante</span><span class="detail-value">' + escapeHtml(d.solicitante || '-') + '</span></div><div class="detail-row"><span class="detail-label">Estructura/Deposito</span><span class="detail-value">' + escapeHtml(d.estructuraDeposito || '-') + '</span></div><div class="detail-row"><span class="detail-label">Subestructuras</span><span class="detail-value">' + escapeHtml(d.subestructuras || '-') + '</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + escapeHtml(d.categoria || '-') + '</span></div><div class="detail-row"><span class="detail-label">Tipo de Material</span><span class="detail-value">' + escapeHtml(d.tipoMaterial || '-') + '</span></div><div class="detail-row"><span class="detail-label">Proveniencia</span><span class="detail-value">' + escapeHtml(d.proveniencia || '-') + '</span></div><div class="detail-row"><span class="detail-label">Localizacion</span><span class="detail-value">' + escapeHtml(d.localizacion || '-') + '</span></div><div class="detail-row"><span class="detail-label">Fuente</span><span class="detail-value">' + escapeHtml(d.fuente || '-') + '</span></div><div class="detail-row"><span class="detail-label">Ensayos</span><span class="detail-value">' + escapeHtml(ensayosStr || '-') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
+    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">LSM</span></div><div class="detail-row"><span class="detail-label">Tipo de Muestra</span><span class="detail-value">' + escapeHtml(d.tipoMuestra || '-') + '</span></div><div class="detail-row"><span class="detail-label">Proyecto</span><span class="detail-value">' + escapeHtml(d.nombreProyecto || '-') + '</span></div><div class="detail-row"><span class="detail-label">Solicitante</span><span class="detail-value">' + escapeHtml(d.solicitante || '-') + '</span></div><div class="detail-row"><span class="detail-label">Estructura/Deposito</span><span class="detail-value">' + escapeHtml(d.estructuraDeposito || '-') + '</span></div><div class="detail-row"><span class="detail-label">Subestructuras</span><span class="detail-value">' + escapeHtml(d.subestructuras || '-') + '</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + escapeHtml(d.categoria || '-') + '</span></div><div class="detail-row"><span class="detail-label">Semana Laboratorio</span><span class="detail-value">' + escapeHtml(d.semanaLaboratorio || '-') + '</span></div><div class="detail-row"><span class="detail-label">Tipo de Material</span><span class="detail-value">' + escapeHtml(d.tipoMaterial || '-') + '</span></div><div class="detail-row"><span class="detail-label">Proveniencia</span><span class="detail-value">' + escapeHtml(d.proveniencia || '-') + '</span></div><div class="detail-row"><span class="detail-label">Localizacion</span><span class="detail-value">' + escapeHtml(d.localizacion || '-') + '</span></div><div class="detail-row"><span class="detail-label">Fuente</span><span class="detail-value">' + escapeHtml(d.fuente || '-') + '</span></div><div class="detail-row"><span class="detail-label">Ensayos</span><span class="detail-value">' + escapeHtml(ensayosStr || '-') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
   } else {
     detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">QC</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + (MARKER_COLORS[marker.color]?.label || 'Rojo') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-description-row" class="detail-row detail-description"><span class="detail-label">Descripcion</span><p id="detail-marker-description"></p></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
     const descRow = document.getElementById('detail-description-row');
@@ -1220,7 +1264,7 @@ async function exportToZIP() {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(qcData), 'QC');
     }
     if (lsmMarkers.length > 0) {
-      const lsmData = [['Tipo_Muestra', 'Proyecto', 'Solicitante', 'Estructura', 'Subestructuras', 'Categoria', 'Fecha_Hora', 'Tipo_Material', 'Nombre_Muestra', 'Proveniencia', 'Localizacion', 'Fuente', 'Este', 'Norte', 'Ensayos', 'Latitud', 'Longitud', 'Foto_1', 'Foto_2']];
+      const lsmData = [['Tipo_Muestra', 'Proyecto', 'Solicitante', 'Estructura', 'Subestructuras', 'Categoria', 'Semana_Laboratorio', 'Fecha_Hora', 'Tipo_Material', 'Nombre_Muestra', 'Proveniencia', 'Localizacion', 'Fuente', 'Este', 'Norte', 'Ensayos', 'Latitud', 'Longitud', 'Foto_1', 'Foto_2']];
       for (let i = 0; i < lsmMarkers.length; i++) {
         const m = lsmMarkers[i];
         const d = m.lsmData || {};
@@ -1241,7 +1285,7 @@ async function exportToZIP() {
             } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-        lsmData.push([d.tipoMuestra || '', d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', formatDateTime(m.createdAt), d.tipoMaterial || '', m.name || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', m.este, m.norte, (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
+        lsmData.push([d.tipoMuestra || '', d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', d.semanaLaboratorio || '', formatDateTime(m.createdAt), d.tipoMaterial || '', m.name || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', m.este, m.norte, (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
       }
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(lsmData), 'LSM');
     }
@@ -1426,7 +1470,7 @@ async function openMap(mapId) {
   AppState.currentMapType = map ? (map.type || 'tiff') : 'tiff';
   AppState.mapTitle = map ? map.name : 'Mapa';
   document.getElementById('map-title').textContent = AppState.mapTitle;
-  AppState.currentMarkerMode = 'qc';
+  AppState.currentMarkerMode = localStorage.getItem('maps_gis_marker_mode') || AppState.currentMarkerMode || 'qc';
   updateModeToggleButton();
   showScreen('map-screen');
   initMap();
@@ -1482,19 +1526,28 @@ function initEventListeners() {
   document.getElementById('btn-add-marker').addEventListener('click', () => {
     AppState.isAddMarkerMode = !AppState.isAddMarkerMode;
     document.getElementById('btn-add-marker').classList.toggle('active', AppState.isAddMarkerMode);
-    showToast(AppState.isAddMarkerMode ? 'Modo marcador activo' : 'Modo marcador desactivado', 'info');
+    if (AppState.isAddMarkerMode) {
+      showToast('Modo marcador activo', 'info');
+      requestGpsForMarker();
+    } else {
+      hideGpsSnackbar();
+      showToast('Modo marcador desactivado', 'info');
+    }
   });
   document.getElementById('btn-go-to-coords').addEventListener('click', openGoToCoordsModal);
   document.getElementById('btn-cancel-goto').addEventListener('click', closeGoToCoordsModal);
   document.getElementById('btn-confirm-goto').addEventListener('click', confirmGoToCoords);
   document.getElementById('btn-goto-qc').addEventListener('click', () => selectGotoType('qc'));
   document.getElementById('btn-goto-lsm').addEventListener('click', () => selectGotoType('lsm'));
+  document.getElementById('btn-use-gps').addEventListener('click', useGpsForMarker);
+  document.getElementById('btn-dismiss-gps').addEventListener('click', hideGpsSnackbar);
   var gotoNorte = document.getElementById('goto-norte');
   var gotoEste = document.getElementById('goto-este');
   if (gotoNorte) gotoNorte.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmGoToCoords(); if (e.key === 'Escape') closeGoToCoordsModal(); });
   if (gotoEste) gotoEste.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmGoToCoords(); if (e.key === 'Escape') closeGoToCoordsModal(); });
   document.getElementById('btn-mode-toggle').addEventListener('click', () => {
     AppState.currentMarkerMode = AppState.currentMarkerMode === 'qc' ? 'lsm' : 'qc';
+    localStorage.setItem('maps_gis_marker_mode', AppState.currentMarkerMode);
     updateModeToggleButton();
     showToast('Modo: ' + (AppState.currentMarkerMode === 'lsm' ? 'LSM' : 'QC'), 'info');
   });

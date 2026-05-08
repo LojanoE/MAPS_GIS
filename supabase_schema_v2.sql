@@ -8,7 +8,6 @@
 -- ============================================
 DROP TABLE IF EXISTS public.qc_markers CASCADE;
 DROP TABLE IF EXISTS public.lsm_markers CASCADE;
-DROP TABLE IF EXISTS public.app_config CASCADE;
 
 -- ============================================
 -- TABLA: qc_markers
@@ -68,6 +67,7 @@ CREATE TABLE public.lsm_markers (
     estructura_deposito text,
     subestructuras text,
     categoria text,
+    semana_laboratorio int,
     tipo_material text,
     proveniencia text,
     localizacion text,
@@ -91,47 +91,7 @@ CREATE INDEX idx_lsm_user ON public.lsm_markers(user_name);
 CREATE INDEX idx_lsm_created ON public.lsm_markers(created_at);
 
 -- ============================================
--- TABLA: app_config
--- Configuración global (opcional, para uso futuro)
--- ============================================
-CREATE TABLE public.app_config (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    config_key text UNIQUE NOT NULL CHECK (
-        config_key IN (
-            'tipo_muestra', 'nombre_proyecto', 'solicitante',
-            'estructura_deposito', 'subestructuras', 'categoria',
-            'tipo_material', 'proveniencia', 'localizacion',
-            'fuente', 'ensayos'
-        )
-    ),
-    config_values text[] DEFAULT '{}',
-    updated_at timestamptz DEFAULT now()
-);
-
-ALTER TABLE public.app_config DISABLE ROW LEVEL SECURITY;
-
--- Realtime para config
-alter publication supabase_realtime add table public.app_config;
-
--- ============================================
 -- POLÍTICAS DE ACCESO (API Key)
 -- ============================================
 -- Como RLS está desactivado, cualquiera con la anon key puede acceder
 -- La seguridad está en la app (contraseña de admin)
-
--- ============================================
--- DATOS INICIALES (opcional)
--- ============================================
-INSERT INTO public.app_config (config_key, config_values) VALUES
-('tipo_muestra', ARRAY['Suelo','Roca','Concreto','Asfalto','Agregado']),
-('nombre_proyecto', ARRAY['Proyecto A','Proyecto B','Proyecto C']),
-('solicitante', ARRAY['Ing. Lopez','Ing. Garcia','Cliente XYZ']),
-('estructura_deposito', ARRAY['Mina Principal','Pila 1','Pila 2','Tajeo 3N']),
-('subestructuras', ARRAY['Nivel 1','Nivel 2','Nivel 3','Zona A','Zona B']),
-('categoria', ARRAY['Exploracion','Control','Verificacion','Rutina']),
-('tipo_material', ARRAY['Arcilla','Arena','Grava','Roca Dura','Roca Blanda']),
-('proveniencia', ARRAY['In Situ','Planta','Laboratorio','Stock']),
-('localizacion', ARRAY['Frente Norte','Frente Sur','Frente Este','Frente Oeste','Planta']),
-('fuente', ARRAY['Muestreo Directo','Canal','Testigo','Cuchareo']),
-('ensayos', ARRAY['HUM','GEP','GTM','GFI','GHD','ELA','EDL','COM','ABF','ABG','ICP','SLF','PRA','TIS','VDC','DCP','DCA','PMF','PET','CLS','PPF','PPR','DPS','DMI','DMA','GEG','CUS','TCU','TCD','TUU','CUR','TXR','RTI','PGF','ABA','DNU','LEO','CFR','CST','GTA','CMO','COS'])
-ON CONFLICT (config_key) DO NOTHING;
