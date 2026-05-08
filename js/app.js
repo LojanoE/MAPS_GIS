@@ -1220,7 +1220,7 @@ async function exportToZIP() {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(qcData), 'QC');
     }
     if (lsmMarkers.length > 0) {
-      const lsmData = [['Nombre_Muestra', 'Tipo_Muestra', 'Proyecto', 'Solicitante', 'Estructura', 'Subestructuras', 'Categoria', 'Tipo_Material', 'Proveniencia', 'Localizacion', 'Fuente', 'Ensayos', 'Norte', 'Este', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2']];
+      const lsmData = [['Tipo_Muestra', 'Proyecto', 'Solicitante', 'Estructura', 'Subestructuras', 'Categoria', 'Fecha_Hora', 'Tipo_Material', 'Nombre_Muestra', 'Proveniencia', 'Localizacion', 'Fuente', 'Este', 'Norte', 'Ensayos', 'Latitud', 'Longitud', 'Foto_1', 'Foto_2']];
       for (let i = 0; i < lsmMarkers.length; i++) {
         const m = lsmMarkers[i];
         const d = m.lsmData || {};
@@ -1241,7 +1241,7 @@ async function exportToZIP() {
             } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-        lsmData.push([m.name || '', d.tipoMuestra || '', d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', d.tipoMaterial || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', (d.ensayos || []).join(', '), m.norte, m.este, m.lat, m.lng, formatDateTime(m.createdAt), foto1, foto2]);
+        lsmData.push([d.tipoMuestra || '', d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', formatDateTime(m.createdAt), d.tipoMaterial || '', m.name || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', m.este, m.norte, (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
       }
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(lsmData), 'LSM');
     }

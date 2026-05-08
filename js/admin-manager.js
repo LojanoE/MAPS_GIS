@@ -667,28 +667,28 @@ const AdminManager = {
 
     const lsmData = this.allMarkers.filter(m => m._type === 'lsm').map(m => ({
       ID: m.local_marker_id,
-      Nombre_Muestra: m.nombre_muestra || '',
       Tipo_Muestra: m.tipo_muestra || '',
       Proyecto: m.nombre_proyecto || '',
       Solicitante: m.solicitante || '',
       Estructura: m.estructura_deposito || '',
       Subestructuras: m.subestructuras || '',
       Categoria: m.categoria || '',
+      Fecha_Creacion: m.created_at,
       Tipo_Material: m.tipo_material || '',
+      Nombre_Muestra: m.nombre_muestra || '',
       Proveniencia: m.proveniencia || '',
       Localizacion: m.localizacion || '',
       Fuente: m.fuente || '',
+      Este: m.este || '',
+      Norte: m.norte || '',
       Ensayos: (m.ensayos || []).join(', '),
       Usuario: m.user_name || '',
       Dispositivo: m.device_id || '',
-      Norte: m.norte || '',
-      Este: m.este || '',
       Latitud: m.lat,
       Longitud: m.lng,
       Color: m.color || '',
       Fotos: (m.photo_ids || []).join(', '),
       Estado: m.is_deleted ? 'ELIMINADO' : 'ACTIVO',
-      Fecha_Creacion: m.created_at,
       Fecha_Eliminacion: m.deleted_at || ''
     }));
 
