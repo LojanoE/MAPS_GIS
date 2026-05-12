@@ -37,7 +37,7 @@
               <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.2.3</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.2.4</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -501,11 +501,11 @@
       <p class="type-info">Ingresa coordenadas PSAD56 (EPSG:24877) para ubicar un punto</p>
       <div class="form-group">
         <label for="goto-norte">Norte (m)</label>
-        <input type="number" id="goto-norte" placeholder="9605912.94" step="0.01" inputmode="decimal">
+        <input type="number" id="goto-norte" placeholder="9605912" step="1" inputmode="decimal">
       </div>
       <div class="form-group">
         <label for="goto-este">Este (m)</label>
-        <input type="number" id="goto-este" placeholder="780401.18" step="0.01" inputmode="decimal">
+        <input type="number" id="goto-este" placeholder="780401" step="1" inputmode="decimal">
       </div>
       <div class="form-group">
         <label>Tipo de marcador</label>
@@ -546,11 +546,6 @@
     <div class="modal-content modal-lsm">
       <h3 id="lsm-modal-title">Nueva Muestra LSM</h3>
       <p id="lsm-coords-display"></p>
-
-      <div class="form-group">
-        <label for="lsm-tipo-muestra">Tipo de Muestra</label>
-        <select id="lsm-tipo-muestra" class="crs-select"></select>
-      </div>
 
       <div class="form-group">
         <label for="lsm-nombre-proyecto">Nombre del Proyecto</label>

@@ -550,7 +550,6 @@ const AdminManager = {
 
     const lsmData = markers.filter(m => m._type === 'lsm').map(m => ({
       ID: m.local_marker_id,
-      Tipo_Muestra: m.tipo_muestra || '',
       Nombre_Muestra: m.nombre_muestra || '',
       Proyecto: m.nombre_proyecto || '',
       Solicitante: m.solicitante || '',
@@ -635,7 +634,6 @@ const AdminManager = {
     fieldsHtml += this.detailField('Creado', formatDateTime(marker.created_at));
 
     if (isLSM) {
-      fieldsHtml += this.detailField('Tipo Muestra', marker.tipo_muestra);
       fieldsHtml += this.detailField('Proyecto', marker.nombre_proyecto);
       fieldsHtml += this.detailField('Solicitante', marker.solicitante);
       fieldsHtml += this.detailField('Estructura', marker.estructura_deposito);
@@ -696,7 +694,6 @@ const AdminManager = {
     let inputsHtml = '';
     inputsHtml += this.editInput('name', 'Nombre', marker.name || marker.nombre_muestra || '');
     if (isLSM) {
-      inputsHtml += this.editInput('tipo_muestra', 'Tipo Muestra', marker.tipo_muestra || '');
       inputsHtml += this.editInput('nombre_proyecto', 'Proyecto', marker.nombre_proyecto || '');
       inputsHtml += this.editInput('solicitante', 'Solicitante', marker.solicitante || '');
       inputsHtml += this.editInput('estructura_deposito', 'Estructura', marker.estructura_deposito || '');
@@ -742,7 +739,6 @@ const AdminManager = {
 
     if (isLSM) {
       updates.nombre_muestra = getVal('name');
-      updates.tipo_muestra = getVal('tipo_muestra');
       updates.nombre_proyecto = getVal('nombre_proyecto');
       updates.solicitante = getVal('solicitante');
       updates.estructura_deposito = getVal('estructura_deposito');

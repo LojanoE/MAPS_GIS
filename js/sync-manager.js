@@ -193,7 +193,6 @@ const SyncManager = {
       photos_count: (marker.photos || []).length,
       photo_ids: marker.photos || [],
       nombre_muestra: marker.name || d.nombreMuestra || '',
-      tipo_muestra: d.tipoMuestra || '',
       nombre_proyecto: d.nombreProyecto || '',
       solicitante: d.solicitante || '',
       estructura_deposito: d.estructuraDeposito || '',
