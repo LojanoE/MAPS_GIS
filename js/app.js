@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.2.4';
+const APP_VERSION = '2.2.5';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -834,6 +834,22 @@ const LAST_LSM_KEY = 'maps_gis_last_lsm_form';
 function getLastLSMForm() { try { return JSON.parse(localStorage.getItem(LAST_LSM_KEY)) || {}; } catch { return {}; } }
 function saveLastLSMForm(data) { const copy = { ...data }; delete copy.nombreMuestra; delete copy.ensayos; localStorage.setItem(LAST_LSM_KEY, JSON.stringify(copy)); }
 
+function getSemanaLaboratorio(date = new Date()) {
+  const year = date.getFullYear();
+  const yy = String(year).slice(-2);
+  const jan1 = new Date(year, 0, 1);
+  const dayOfWeek = jan1.getDay(); // 0=domingo, 1=lunes...
+  const daysUntilMonday = (8 - dayOfWeek) % 7;
+  const firstMonday = new Date(year, 0, 1 + daysUntilMonday);
+  if (date < firstMonday) {
+    return getSemanaLaboratorio(new Date(year - 1, 11, 31));
+  }
+  const diffMs = date - firstMonday;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const week = Math.floor(diffDays / 7) + 1;
+  return yy + String(week).padStart(2, '0');
+}
+
 async function openLSMMarkerModal(latlng, editId) {
   AppState.pendingMarkerLatLng = latlng;
   AppState.editingMarkerId = editId || null;
@@ -890,7 +906,7 @@ async function openLSMMarkerModal(latlng, editId) {
     document.getElementById('lsm-estructura-deposito').value = last.estructuraDeposito || '';
     document.getElementById('lsm-subestructuras').value = last.subestructuras || '';
     document.getElementById('lsm-categoria').value = last.categoria || '';
-    document.getElementById('lsm-semana-laboratorio').value = last.semanaLaboratorio || '';
+    document.getElementById('lsm-semana-laboratorio').value = getSemanaLaboratorio();
     document.getElementById('lsm-tipo-material').value = last.tipoMaterial || '';
     document.getElementById('lsm-nombre-muestra').value = '';
     document.getElementById('lsm-proveniencia').value = last.proveniencia || '';

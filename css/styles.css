@@ -46,6 +46,12 @@
   --marker-purple: #a371f7;
 }
 
+input[readonly] {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
 /* --- Light Mode Variables --- */
 body.light-mode {
   --bg-primary: #ffffff;
