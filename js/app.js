@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.2.5';
+const APP_VERSION = '2.2.6';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -45,14 +45,17 @@ const AppState = {
 // ============================================
 const MarkerManager = {
   STORAGE_KEY: 'maps_gis_markers_v3',
+  _cache: null,
   getAll() {
+    if (this._cache !== null) return this._cache;
     try {
       const data = JSON.parse(localStorage.getItem(this.STORAGE_KEY));
-      if (!Array.isArray(data)) return [];
-      return data.map(m => ({ ...m, markerType: m.markerType || 'qc' }));
-    } catch { return []; }
+      if (!Array.isArray(data)) { this._cache = []; return this._cache; }
+      this._cache = data.map(m => ({ ...m, markerType: m.markerType || 'qc' }));
+      return this._cache;
+    } catch { this._cache = []; return this._cache; }
   },
-  saveAll(markers) { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(markers)); },
+  saveAll(markers) { this._cache = markers; localStorage.setItem(this.STORAGE_KEY, JSON.stringify(markers)); },
   createQC(name, description, lat, lng, color, photos) {
     const markers = this.getAll();
     const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
@@ -1333,7 +1336,9 @@ async function loadMapsList() {
     const maps = await MapStorage.getAllMaps();
     document.getElementById('maps-count').textContent = maps.length;
     if (maps.length === 0) { container.innerHTML = '<p class="empty-msg">No hay mapas cargados</p>'; return; }
+    let totalSize = 0;
     container.innerHTML = maps.map(map => {
+      totalSize += map.size || 0;
       const typeIcon = map.type === 'pdf' ? '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4zM8 2v16M16 6v16"/></svg>';
       return '<div class="map-card" data-id="' + map.id + '"><div class="map-card-icon">' + typeIcon + '</div><div class="map-card-info"><div class="map-card-name">' + escapeHtml(map.name) + '</div><div class="map-card-meta">' + (map.type || 'tiff').toUpperCase() + ' - ' + formatBytes(map.size) + ' - ' + formatDate(map.createdAt) + '</div></div><button class="map-card-delete" data-id="' + map.id + '" data-name="' + escapeHtml(map.name) + '" title="Eliminar">X</button></div>';
     }).join('');
@@ -1343,17 +1348,29 @@ async function loadMapsList() {
     container.querySelectorAll('.map-card-delete').forEach(btn => {
       btn.addEventListener('click', (e) => { e.stopPropagation(); openDeleteMapModal(btn.dataset.id, btn.dataset.name); });
     });
+    // Alerta intuitiva si se alcanzo el limite de mapas
+    if (maps.length >= 3) {
+      const warningEl = document.createElement('div');
+      warningEl.style.cssText = 'background:rgba(217,164,30,0.15);border:1px solid var(--warning);color:var(--warning);padding:10px 12px;border-radius:var(--radius-sm);font-size:0.8rem;text-align:center;margin-bottom:8px;';
+      warningEl.textContent = 'Limite de 3 mapas alcanzado. Elimina uno para cargar otro.';
+      container.insertBefore(warningEl, container.firstChild);
+    }
+    const storageInfoEl = document.getElementById('storage-info');
+    if (storageInfoEl) storageInfoEl.textContent = formatBytes(totalSize) + ' usado';
   } catch (error) { container.innerHTML = '<p class="empty-msg">Error al cargar mapas</p>'; }
-  const total = await MapStorage.getTotalStorage();
-  const storageInfoEl = document.getElementById('storage-info');
-  if (storageInfoEl) storageInfoEl.textContent = MapStorage.formatBytes(total) + ' usado';
 }
 
 // ============================================
 // FILE UPLOAD (TIFF + PDF)
 // ============================================
-function handleFileUpload(file) {
+async function handleFileUpload(file) {
   if (!file) return;
+  const maps = await MapStorage.getAllMaps();
+  if (maps.length >= 3) {
+    showToast('Limite de 3 mapas alcanzado. Elimina un mapa existente para cargar uno nuevo.', 'error');
+    document.getElementById('map-input').value = '';
+    return;
+  }
   const ext = '.' + file.name.split('.').pop().toLowerCase();
   if (ext === '.tif' || ext === '.tiff') handleTIFFUpload(file);
   else if (ext === '.pdf') handlePDFUpload(file);
@@ -1774,7 +1791,7 @@ function saveDeviceName() {
 async function initApp() {
   loadThemePreference();
   initEventListeners();
-  await loadMapsList();
+  loadMapsList(); // no bloquear la UI
   updateMarkerCountBadge();
 
   // Migrar config si cambio la version de la app
