@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.2.6';
+const APP_VERSION = '2.2.7';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -688,10 +688,9 @@ function goToMyLocation() {
   navigator.geolocation.getCurrentPosition((position) => {
     const { latitude: lat, longitude: lng, accuracy } = position.coords;
     if (AppState.userLocationLayer) AppState.map.removeLayer(AppState.userLocationLayer);
-    const pulseIcon = L.divIcon({ className: 'user-location-pulse', html: '<div class="user-location-pulse"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
     AppState.userLocationLayer = L.layerGroup([
-      L.circle([lat, lng], { radius: accuracy, color: '#58a6ff', fillColor: '#58a6ff', fillOpacity: 0.1, weight: 1 }),
-      L.marker([lat, lng], { icon: pulseIcon })
+      L.circle([lat, lng], { radius: accuracy, color: '#58a6ff', fillColor: '#58a6ff', fillOpacity: 0.08, weight: 1 }),
+      L.circleMarker([lat, lng], { radius: 7, fillColor: '#1a73e8', fillOpacity: 1, color: '#ffffff', weight: 2.5 })
     ]);
     AppState.userLocationLayer.addTo(AppState.map);
     AppState.map.setView([lat, lng], 16);
