@@ -8,7 +8,7 @@
 // ============================================
 // VERSION CONTROL - BUMP THIS TO FORCE UPDATE
 // ============================================
-const APP_VERSION = '2.2.7'; // Bump to force cache refresh on all devices
+const APP_VERSION = '2.2.9'; // Bump to force cache refresh on all devices
 
 const CACHE_NAME = 'maps-gis-v' + APP_VERSION;
 const STATIC_CACHE = 'maps-gis-static-v' + APP_VERSION;
@@ -145,6 +145,21 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ============================================
+// HELPERS
+// ============================================
+
+function fetchWithTimeout(request, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    fetch(request, { signal: controller.signal })
+      .then(resolve)
+      .catch(reject)
+      .finally(() => clearTimeout(timer));
+  });
+}
+
+// ============================================
 // STRATEGY: Cache First
 // ============================================
 
@@ -155,7 +170,7 @@ async function cacheFirst(request, cacheName) {
   }
 
   try {
-    const networkResponse = await fetch(request);
+    const networkResponse = await fetchWithTimeout(request, 6000);
     if (networkResponse.ok) {
       const cache = await caches.open(cacheName);
       cache.put(request, networkResponse.clone());
@@ -176,7 +191,7 @@ async function cacheFirst(request, cacheName) {
 
 async function networkFirst(request) {
   try {
-    const networkResponse = await fetch(request);
+    const networkResponse = await fetchWithTimeout(request, 4000);
     if (networkResponse.ok) {
       const cache = await caches.open(DYNAMIC_CACHE);
       cache.put(request, networkResponse.clone());

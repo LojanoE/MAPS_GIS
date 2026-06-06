@@ -10,10 +10,23 @@
 const SYNC_SUPABASE_URL = 'https://dzmhhlsttqygjvfabdxx.supabase.co/rest/v1';
 const SYNC_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6bWhobHN0dHF5Z2p2ZmFiZHh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTE3MDAsImV4cCI6MjA5MDcyNzcwMH0._Gf0G2gpV_9QAYqFx1Kn6TN0lFDq3LxmBdNI82Suj-o';
 
+// Helper: fetch con timeout via AbortController
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 const SyncManager = {
   isOnline: navigator.onLine,
   isWifi: false,
   syncing: false,
+  _autoSyncTimer: null,
 
   init() {
     window.addEventListener('online', () => this.handleOnline());
@@ -37,8 +50,14 @@ const SyncManager = {
     const conn = navigator.connection;
     if (conn) {
       this.isWifi = (conn.effectiveType === '4g' || conn.effectiveType === 'wifi') && !conn.saveData;
-      if (this.isWifi && this.isOnline && !this.syncing) {
-        this.syncAllPending();
+      if (this.isWifi && this.isOnline && !this.syncing && !this._autoSyncTimer) {
+        // Debounce: esperar 3s antes de auto-sync para evitar flapping de red
+        this._autoSyncTimer = setTimeout(() => {
+          this._autoSyncTimer = null;
+          if (this.isWifi && this.isOnline && !this.syncing) {
+            this.syncAllPending();
+          }
+        }, 3000);
       }
     }
     this.updateBadge();
@@ -104,7 +123,10 @@ const SyncManager = {
     let uploaded = 0;
     let failed = 0;
 
-    for (const marker of pending) {
+    // En auto-sync (sin force) limitar a 10 marcadores para no bloquear la app
+    const toSync = force ? pending : pending.slice(0, 10);
+
+    for (const marker of toSync) {
       try {
         const success = marker.markerType === 'qc'
           ? await this.uploadQC(marker)
@@ -162,7 +184,7 @@ const SyncManager = {
       ? `${SYNC_SUPABASE_URL}/qc_markers?local_marker_id=eq.${encodeURIComponent(marker.id)}&device_id=eq.${encodeURIComponent(deviceId)}`
       : `${SYNC_SUPABASE_URL}/qc_markers`;
 
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method,
       headers: {
         'apikey': SYNC_SUPABASE_KEY,
@@ -212,7 +234,7 @@ const SyncManager = {
       ? `${SYNC_SUPABASE_URL}/lsm_markers?local_marker_id=eq.${encodeURIComponent(marker.id)}&device_id=eq.${encodeURIComponent(deviceId)}`
       : `${SYNC_SUPABASE_URL}/lsm_markers`;
 
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method,
       headers: {
         'apikey': SYNC_SUPABASE_KEY,
@@ -229,7 +251,7 @@ const SyncManager = {
   async checkExists(table, localMarkerId, deviceId) {
     if (!deviceId) return false;
     try {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${SYNC_SUPABASE_URL}/${table}?select=id&local_marker_id=eq.${encodeURIComponent(localMarkerId)}&device_id=eq.${encodeURIComponent(deviceId)}&limit=1`,
         {
           cache: 'no-store',
@@ -237,7 +259,8 @@ const SyncManager = {
             'apikey': SYNC_SUPABASE_KEY,
             'Authorization': `Bearer ${SYNC_SUPABASE_KEY}`
           }
-        }
+        },
+        5000 // timeout mas corto para checkExists
       );
       if (!res.ok) return false;
       const data = await res.json();
