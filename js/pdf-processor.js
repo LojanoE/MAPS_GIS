@@ -310,7 +310,7 @@ const PDFProcessor = (() => {
    */
   async function extractFromPDFAnnotations(arrayBuffer) {
     try {
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: freshUint8(arrayBuffer) }).promise;
       const page = await pdf.getPage(1);
 
       // Check for viewport annotations
@@ -442,13 +442,27 @@ const PDFProcessor = (() => {
   // ============================================
 
   /**
+   * Crea una copia del ArrayBuffer como Uint8Array.
+   * PDF.js con worker puede "detachear" (transferir) un ArrayBuffer que se le
+   * pase directamente, dejandolo neutered (byteLength=0) para usos posteriores.
+   * Pasarle un Uint8Array forces a PDF.js a copiarlo internamente, evitando
+   * la transferencia zero-copy. Seguridad anti-detachment ademas de la slice.
+   */
+  function freshUint8(buffer) {
+    const ab = buffer instanceof ArrayBuffer ? buffer.slice(0) : buffer.buffer.slice(0);
+    return new Uint8Array(ab);
+  }
+
+  /**
    * Load a PDF from ArrayBuffer
    */
   async function loadPDF(arrayBuffer) {
     if (typeof pdfjsLib === 'undefined') {
       throw new Error('PDF.js no esta disponible');
     }
-    return await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const data = freshUint8(arrayBuffer);
+    console.log('[loadPDF] bytes:', data.byteLength, '| header:', String.fromCharCode(...data.slice(0, 5)));
+    return await pdfjsLib.getDocument({ data: data }).promise;
   }
 
   /**
@@ -482,7 +496,7 @@ const PDFProcessor = (() => {
 
     // Then try PDF.js metadata
     try {
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pdf = await pdfjsLib.getDocument({ data: freshUint8(arrayBuffer) }).promise;
       const metadata = await pdf.getMetadata();
       if (metadata && metadata.info) {
         const str = JSON.stringify(metadata.info);
@@ -572,18 +586,38 @@ const PDFProcessor = (() => {
    * Process a PDF file - main entry point
    */
   async function processPDF(arrayBuffer) {
-    // PDF.js con web worker puede "detachear" (transferir) el ArrayBuffer,
-    // dejandolo vacio en el hilo principal. Usamos una copia para PDF.js
-    // y conservamos el original para metadata y guardado.
-    const arrayBufferForPDF = arrayBuffer.slice(0);
-    const arrayBufferForMeta = arrayBuffer.slice(0);
+    console.log('[processPDF] entrada byteLength:', arrayBuffer.byteLength);
 
-    const pdf = await loadPDF(arrayBufferForPDF);
+    // Validar que el buffer realmente empieza con "%PDF-" (cabecera PDF).
+    // Si no, no tiene sentido seguir y el mensaje de error sera mas claro
+    // que el generico "Invalid PDF structure" de PDF.js.
+    const headerBytes = new Uint8Array(arrayBuffer.slice(0, 8));
+    const headerStr = String.fromCharCode(...headerBytes);
+    console.log('[processPDF] header:', headerStr, '| byteLength:', arrayBuffer.byteLength);
+    if (!headerStr.startsWith('%PDF-')) {
+      throw new Error('El archivo no es un PDF valido (cabecera %PDF- no encontrada). byteLength=' + arrayBuffer.byteLength);
+    }
+
+    // PDF.js con web worker puede "detachear" (transferir) el ArrayBuffer que
+    // se le pasa. Creamos una copia FRESCA para CADA llamada a getDocument y
+    // usamos una cuarta copia solo para extraccion por regex (que no detach).
+    const bufForRender = arrayBuffer.slice(0);
+    const bufForGeoDetect = arrayBuffer.slice(0);
+    const bufForMeta = arrayBuffer.slice(0);
+
+    // 1. Extraccion por regex ANTES de getDocument. Strategies 1-3 son regex
+    //    y nunca llaman a PDF.js, por lo que bufForMeta queda intacto.
+    //    Strategy 4 (annotations) si llama a getDocument, pero recibe su propia
+    //    copia fresca internamente.
+    const geoData = await extractGeoData(bufForMeta);
+
+    // 2. Render con PDF.js (su propia copia fresca)
+    const pdf = await loadPDF(bufForRender);
     const { canvas, width, height } = await renderPage(pdf, 2);
-    const geoPDF = await isGeoPDF(arrayBufferForMeta);
 
-    // Try to extract geo data
-    const geoData = await extractGeoData(arrayBufferForMeta);
+    // 3. Deteccion GeoPDF. Si requiere getDocument, recibira copia fresca y
+    //    no afectara a nada mas.
+    const geoPDF = await isGeoPDF(bufForGeoDetect);
 
     return {
       pdf,
