@@ -161,7 +161,10 @@ No hay backend propio: credenciales y API keys viven en el frontend en texto pla
 ### Carga de PDF
 - Se renderiza la primera página a canvas con PDF.js (scale=2).
 - Coordenadas se intentan extraer automáticamente con 4 estrategias: ISO 32000-2 (GPTS/LPTS), OGC GeoPDF (CTM), Viewport Bounds, y anotaciones PDF.js.
-- Si no se detectan, el usuario ingresa las 4 esquinas manualmente en el modal de georreferenciación.
+- **No reutilizar el mismo `ArrayBuffer` entre llamadas a `pdfjsLib.getDocument()`**: el worker de PDF.js lo transfiere (detachea/neutered). En móviles con memoria ajustada esto causa "Invalid PDF structure". Usar una copia fresca (`Uint8Array`) para cada `getDocument` (ver `freshUint8()` en `pdf-processor.js`).
+- **Detectar CRS solo dentro del diccionario geoespacial** (`VP`/`Measure`/`LGIDict`): escanear todo el texto del PDF produce falsos positivos (p. ej. "PSAD56" en el nombre del proyecto o leyenda etiqueta un GeoPDF WGS84 como EPSG:24877, generando desfase por transformación de datum). Ver `detectCRSInContext()` en `pdf-processor.js`.
+- El modal de georreferenciación normaliza siempre a UTM PSAD56 (`EPSG:24877`), replicando la misma lógica de conversión que `createGeoOverlay`, para que lo guardado coincida con lo renderizado.
+- Si no se detectan coordenadas, el usuario ingresa las 4 esquinas manualmente en el modal de georreferenciación.
 
 ### Calibración de Mapa
 - Cada mapa puede tener un offset manual de calibración (Este/Norte en metros), almacenado en LocalStorage bajo `maps_gis_offset_<mapId>`.
