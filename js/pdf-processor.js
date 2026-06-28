@@ -68,6 +68,10 @@ const PDFProcessor = (() => {
 
     if (gpts.length < 8 || lpts.length < 8) return null;
 
+    console.log('[GeoPDF extractISO32000]');
+    console.log('  GPTS:', gpts);
+    console.log('  LPTS:', lpts);
+
     // Map GPTS to corners using LPTS position indicators
     // LPTS values are normalized page coords: (0,0)=bottom-left, (1,1)=top-right
     let tl = null, tr = null, bl = null, br = null;
@@ -101,8 +105,20 @@ const PDFProcessor = (() => {
       bl = { lat: gpts[6], lon: gpts[7] };
     }
 
-    // Detectar CRS real del PDF (puede ser PSAD56 aunque GPTS sea lat/lon)
-    const detectedCrs = detectCRS(text) || 'EPSG:4326';
+    // Detectar CRS solo dentro del contexto geoespacial (VP/Measure dict que
+    // contiene las GPTS/LPTS), NO en todo el texto del PDF. Esto evita falsos
+    // positivos cuando "PSAD56" o "EPSG" aparecen en leyendas/títulos/proyectos.
+    // Per ISO 32000-2, GPTS son coordenadas geográficas lat/lon (WGS84 por defecto).
+    const vpContext = extractVPContext(text);
+    const detectedCrs = detectCRSInContext(vpContext) || 'EPSG:4326';
+    console.log('  CRS detectado (contexto VP):', detectedCrs);
+
+    // Leer Rotate y CropBox para diagnostico
+    const rotate = matchPageInt(text, '/Rotate');
+    const cropBox = matchNumberArray(text, '/CropBox');
+    const mediaBox = matchNumberArray(text, '/MediaBox');
+    console.log('  /Rotate:', rotate, '| /CropBox:', cropBox, '| /MediaBox:', mediaBox);
+
     return {
       corners: {
         tl: [tl.lon, tl.lat],
@@ -113,6 +129,58 @@ const PDFProcessor = (() => {
       crs: detectedCrs,
       source: 'ISO-32000-2 (GeoPDF)'
     };
+  }
+
+  /**
+   * Extrae el substring del diccionario VP/Measure que contiene /GPTS.
+   * Retorna null si no encuentra contexto geoespacial.
+   */
+  function extractVPContext(text) {
+    const idx = text.indexOf('/GPTS');
+    if (idx === -1) return null;
+    // Tomar una ventana amplia alrededor de GPTS: 2 KB hacia atras y 2 KB hacia adelante.
+    // Esto captura el VP/Measure dict completo, incluyendo cualquier /GEOGCS, /EPSG, /WKT.
+    const start = Math.max(0, idx - 2048);
+    const end = Math.min(text.length, idx + 2048);
+    return text.substring(start, end);
+  }
+
+  /**
+   * Detecta EPSG/WKT CRS unicamente dentro de un contexto geoespacial (VP/Measure).
+   * Evita falsos positivos leyendo todo el texto del PDF.
+   */
+  function detectCRSInContext(ctx) {
+    if (!ctx) return null;
+    // 1. EPSG explicito dentro del contexto geoespacial
+    const epsgMatch = ctx.match(/EPSG[":\s]*["']?(\d{4,5})/i);
+    if (epsgMatch) return 'EPSG:' + epsgMatch[1];
+
+    // 2. WKT / PROJCS / GEOGCS dentro del contexto
+    if (/GEOGCS\s*\[?\s*"WGS 84"/i.test(ctx) || /DATUM\s*\[?\s*"WGS_1984"/i.test(ctx)) {
+      return 'EPSG:4326';
+    }
+    if (/GEOGCS\s*\[?\s*"PSAD56"/i.test(ctx) || /DATUM\s*\[?\s*"PSAD56/i.test(ctx)) {
+      // PSAD56 geografico (lat/lon) -> las GPTS siguen siendo lat/lon PSAD56 (datum Intl 1924)
+      return 'EPSG:24877';
+    }
+
+    // 3. Indicadores WGS84 dentro del contexto geoespacial
+    if (/\/WKT\s*[\(\[]/.test(ctx) && /WGS.?84/i.test(ctx)) return 'EPSG:4326';
+
+    // 4. Si no hay nada claro, devolver null -> el llamador usara EPSG:4326 por defecto
+    return null;
+  }
+
+  function matchPageInt(text, key) {
+    const m = text.match(new RegExp(key + '\\s+(\\d+)'));
+    return m ? parseInt(m[1]) : 0;
+  }
+
+  function matchNumberArray(text, key) {
+    const m = text.match(new RegExp(key + '\\s*\\[\\s*([^\\]]+)\\]'));
+    if (!m) return null;
+    const v = m[1].trim().split(/\s+/).map(Number);
+    return v.some(isNaN) ? null : v;
   }
 
   /**
@@ -144,27 +212,32 @@ const PDFProcessor = (() => {
       // Extract registration point pairs for verification
     }
 
-    // Get page dimensions from PDF
-    const mediaBoxMatch = text.match(/\/MediaBox\s*\[\s*([^\]]+)\]/);
+    // Get page dimensions from PDF. Prefer CropBox (lo que PDF.js renderiza),
+    // con fallback a MediaBox. Esto evita desfases cuando hay margenes blancos.
+    const cropBox = matchNumberArray(text, '/CropBox');
+    const mediaBox = matchNumberArray(text, '/MediaBox');
     let pageWidth = 612, pageHeight = 792; // Default US Letter
-    if (mediaBoxMatch) {
-      const mb = mediaBoxMatch[1].trim().split(/\s+/).map(Number);
-      if (mb.length >= 4) {
-        pageWidth = mb[2] - mb[0];
-        pageHeight = mb[3] - mb[1];
-      }
+    const box = cropBox || mediaBox;
+    if (box && box.length >= 4) {
+      pageWidth = box[2] - box[0];
+      pageHeight = box[3] - box[1];
     }
+    const pageOriginX = box ? box[0] : 0;
+    const pageOriginY = box ? box[1] : 0;
 
-    // Calculate corner world coordinates from CTM
-    // PDF coordinates: origin at bottom-left
-    // (0, 0) = bottom-left, (pageWidth, pageHeight) = top-right
-    const blWorld = { x: a * 0 + c * 0 + e, y: b * 0 + d * 0 + f };
-    const brWorld = { x: a * pageWidth + c * 0 + e, y: b * pageWidth + d * 0 + f };
-    const tlWorld = { x: a * 0 + c * pageHeight + e, y: b * 0 + d * pageHeight + f };
-    const trWorld = { x: a * pageWidth + c * pageHeight + e, y: b * pageWidth + d * pageHeight + f };
+    // Calculate corner world coordinates from CTM.
+    // PDF coords: origen bottom-left; usamos el cropbox origin como referencia
+    // para mapear correctamente las esquinas del area renderizada.
+    const blWorld = { x: a * pageOriginX + c * pageOriginY + e, y: b * pageOriginX + d * pageOriginY + f };
+    const brWorld = { x: a * (pageOriginX + pageWidth) + c * pageOriginY + e, y: b * (pageOriginX + pageWidth) + d * pageOriginY + f };
+    const tlWorld = { x: a * pageOriginX + c * (pageOriginY + pageHeight) + e, y: b * pageOriginX + d * (pageOriginY + pageHeight) + f };
+    const trWorld = { x: a * (pageOriginX + pageWidth) + c * (pageOriginY + pageHeight) + e, y: b * (pageOriginX + pageWidth) + d * (pageOriginY + pageHeight) + f };
 
-    // Determine CRS from the LGIDict
-    const crs = detectCRS(text) || 'EPSG:4326';
+    // Determine CRS unicamente dentro del contexto LGIDict (no en todo el texto)
+    const lgiIdx = text.search(/\/LGIDict\s+\d+\s+\d+\s+R/i);
+    const lgiContext = lgiIdx >= 0 ? text.substring(lgiIdx, Math.min(text.length, lgiIdx + 4096)) : text;
+    const crs = detectCRSInContext(lgiContext) || 'EPSG:4326';
+    console.log('[GeoPDF extractOGCGeoPDF] CTM:', ctmValues, '| CRS:', crs, '| CropBox:', cropBox, '| MediaBox:', mediaBox);
 
     // If CRS is EPSG:4326, x=lon, y=lat
     if (crs === 'EPSG:4326') {
@@ -214,7 +287,7 @@ const PDFProcessor = (() => {
         const xmin = bounds[0], ymin = bounds[1];
         const xmax = bounds[2], ymax = bounds[3];
 
-        const crs = detectCRS(text) || 'EPSG:4326';
+        const crs = detectCRSInContext(vp) || 'EPSG:4326';
 
         return {
           corners: {

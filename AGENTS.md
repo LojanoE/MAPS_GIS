@@ -110,7 +110,7 @@ La versión de la app está duplicada en **3 lugares** que deben mantenerse sinc
 - `app.js` línea 23: `APP_VERSION`
 - `index.html` línea 40: texto del badge `#app-version-badge`
 
-Al subir la versión, actualizar los **3 lugares** Y el prefijo `CACHE_NAME` en `sw.js` para forzar la actualización de cache en todos los dispositivos.
+Al subir la versión, actualizar los **3 lugares**. `CACHE_NAME` y los caches estático/dinámico en `sw.js` se derivan de `APP_VERSION` (string interpolation), así que bump solo `APP_VERSION`; **no** edites `CACHE_NAME` a mano. El cambio de versión fuerza la actualización de cache en todos los dispositivos.
 
 ### Dependencias CDN en Service Worker
 Las versiones en `sw.js` (`CDN_ASSETS`) deben coincidir **exactamente** con las URLs `<script src=...>` en `index.html`. Cualquier discrepancia causa fallos offline.
@@ -139,10 +139,11 @@ La aplicación impone un límite de **3 mapas** simultáneos en IndexedDB. Al al
 El esquema autoritativo está en `supabase_schema_v2.sql`. El archivo `supabase_schema.sql` es un borrador antiguo (solo LSM) y no debe usarse.
 
 ### Seguridad
-- RLS está **desactivado**; la anon key tiene acceso completo
-- La contraseña de admin está hardcodeada en `admin-manager.js`: `ADMIN_PASS = 'LSMQC$'`
-- La contraseña de acceso LSM está hardcodeada en `app.js`: `LSM_PASS = '354'`
-- La URL y anon key de Supabase están hardcodeadas en `sync-manager.js` y `admin-manager.js`
+No hay backend propio: credenciales y API keys viven en el frontend en texto plano. RLS **desactivado** → cualquiera con la anon key puede leer/escribir todas las tablas.
+- Contraseña de admin (en `admin-manager.js`): `ADMIN_PASS = 'LSMQC$'`
+- Contraseña de acceso LSM (en `app.js`): `LSM_PASS = '354'`
+- URL + anon key de Supabase hardcodeadas en `sync-manager.js` y `admin-manager.js`
+- LocalStorage e IndexedDB no están encriptados
 
 ### Sync
 - **Unidireccional únicamente:** dispositivo → Supabase. No hay pull ni downstream sync.
@@ -153,34 +154,25 @@ El esquema autoritativo está en `supabase_schema_v2.sql`. El archivo `supabase_
 ## Funcionalidades Clave para Entender el Código
 
 ### Carga de GeoTIFF
-- Para CRS proyectados (como EPSG:24877): se usa un overlay manual con `L.imageOverlay` después de transformar las esquinas con proj4 a WGS84
-- Para CRS geográficos (EPSG:4326): se usa `GeoRasterLayer` directamente
-- Se detecta el CRS automáticamente desde los geoKeys del TIFF
+- CRS proyectados (ej. EPSG:24877): overlay manual con `L.imageOverlay` después de transformar las esquinas con proj4 a WGS84.
+- CRS geográficos (EPSG:4326): se usa `GeoRasterLayer` directamente.
+- El CRS se detecta automáticamente desde los geoKeys del TIFF.
 
 ### Carga de PDF
-- Se renderiza la primera página a canvas con PDF.js (scale=2)
-- Se intenta extraer coordenadas automáticamente con 4 estrategias: ISO 32000-2 (GPTS/LPTS), OGC GeoPDF (CTM), Viewport Bounds, y anotaciones PDF.js
-- Si no se detectan, el usuario ingresa las 4 esquinas manualmente en el modal de georreferenciación
+- Se renderiza la primera página a canvas con PDF.js (scale=2).
+- Coordenadas se intentan extraer automáticamente con 4 estrategias: ISO 32000-2 (GPTS/LPTS), OGC GeoPDF (CTM), Viewport Bounds, y anotaciones PDF.js.
+- Si no se detectan, el usuario ingresa las 4 esquinas manualmente en el modal de georreferenciación.
 
 ### Calibración de Mapa
-- Cada mapa puede tener un offset manual de calibración (Este/Norte en metros)
-- Se almacena en LocalStorage bajo `maps_gis_offset_<mapId>`
-- El panel de calibración se genera dinámicamente en el DOM
+- Cada mapa puede tener un offset manual de calibración (Este/Norte en metros), almacenado en LocalStorage bajo `maps_gis_offset_<mapId>`.
+- El panel de calibración se genera dinámicamente en el DOM.
 
 ### Exportación
-- **Local (ZIP):** Exporta marcadores QC y LSM en un ZIP que contiene un Excel (`marcadores.xlsx`) y una carpeta `fotos/`. Se puede filtrar por "solo hoy" o rango de fechas.
-- **Admin (Excel):** Desde el panel de admin se exportan los datos de Supabase a Excel, con hojas separadas para QC y LSM.
+- **Local (ZIP):** marcadores QC y LSM en un ZIP con Excel (`marcadores.xlsx`) + carpeta `fotos/`. Filtrable por "solo hoy" o rango de fechas.
+- **Admin (Excel):** desde el panel de admin, datos de Supabase a Excel, con hojas separadas para QC y LSM.
 
 ### Auto-aprendizaje de Configuración LSM
-- La función `autoLearnLSMConfig()` añade automáticamente los valores usados en los campos LSM a las listas de configuración local, para que aparezcan en los dropdowns en futuras entradas.
-
-## Consideraciones de Seguridad
-
-- Credenciales y API keys están hardcodeadas en el frontend (JavaScript puro, no hay backend propio)
-- La seguridad del panel de admin depende únicamente de la contraseña hardcodeada `LSMQC$`
-- La seguridad del acceso LSM depende únicamente de la contraseña hardcodeada `354`
-- RLS desactivado en Supabase significa que cualquiera con la anon key puede leer/escribir todas las tablas
-- No hay encriptación de datos locales (LocalStorage e IndexedDB son texto plano)
+- `autoLearnLSMConfig()` añade automáticamente los valores usados en los campos LSM a las listas de configuración local, para que aparezcan en futuros dropdowns.
 
 ## Directorios y Archivos a Ignorar
 

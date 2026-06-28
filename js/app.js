@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.2.9';
+const APP_VERSION = '2.3.1';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -1423,31 +1423,39 @@ async function handlePDFUpload(file) {
     if (geoData && geoData.corners) {
       progressText.textContent = 'Coordenadas detectadas!';
       const crs = geoData.crs || 'EPSG:4326';
-      document.getElementById('georef-crs').value = crs;
       const c = geoData.corners;
-      if (crs === 'EPSG:4326') {
-        const cornersUTM = {};
-        for (const key of ['tl', 'tr', 'bl', 'br']) { const [lon, lat] = c[key]; const [e, n] = proj4('EPSG:4326', 'EPSG:24877', [lon, lat]); cornersUTM[key] = { e, n }; }
-        document.getElementById('georef-tl-e').value = cornersUTM.tl.e.toFixed(2);
-        document.getElementById('georef-tl-n').value = cornersUTM.tl.n.toFixed(2);
-        document.getElementById('georef-tr-e').value = cornersUTM.tr.e.toFixed(2);
-        document.getElementById('georef-tr-n').value = cornersUTM.tr.n.toFixed(2);
-        document.getElementById('georef-bl-e').value = cornersUTM.bl.e.toFixed(2);
-        document.getElementById('georef-bl-n').value = cornersUTM.bl.n.toFixed(2);
-        document.getElementById('georef-br-e').value = cornersUTM.br.e.toFixed(2);
-        document.getElementById('georef-br-n').value = cornersUTM.br.n.toFixed(2);
-        document.getElementById('georef-crs').value = 'EPSG:24877';
-      } else {
-        document.getElementById('georef-tl-e').value = c.tl[0].toFixed(2);
-        document.getElementById('georef-tl-n').value = c.tl[1].toFixed(2);
-        document.getElementById('georef-tr-e').value = c.tr[0].toFixed(2);
-        document.getElementById('georef-tr-n').value = c.tr[1].toFixed(2);
-        document.getElementById('georef-bl-e').value = c.bl[0].toFixed(2);
-        document.getElementById('georef-bl-n').value = c.bl[1].toFixed(2);
-        document.getElementById('georef-br-e').value = c.br[0].toFixed(2);
-        document.getElementById('georef-br-n').value = c.br[1].toFixed(2);
-        document.getElementById('georef-crs').value = crs;
-      }
+      // Normalizar SIEMPRE a UTM PSAD56 (EPSG:24877) para el modal, replicando
+      // exactamente la misma logica que createGeoOverlay usara al renderizar.
+      // Esto garantiza que lo que ve el usuario y lo que se guarda coincide
+      // con el overlay final. corner = [lon_or_e, lat_or_n] segun crs.
+      const toUTM = (corner) => {
+        const [x, y] = corner; // x=lon/e, y=lat/n
+        if (crs === 'EPSG:4326') {
+          return proj4('EPSG:4326', 'EPSG:24877', [x, y]);
+        }
+        if (crs === 'EPSG:24877') {
+          // Puede ser geograficas PSAD56 (lat/lon) o UTM PSAD56 ya proyectadas.
+          if (Math.abs(x) < 180 && Math.abs(y) < 90) {
+            // lat/lon PSAD56 (datum Intl 1924) -> UTM PSAD56 17S
+            return proj4('PSAD56GEO', 'EPSG:24877', [x, y]);
+          }
+          return [x, y]; // ya son UTM
+        }
+        // Otro CRS proyectado/lat-lon conocido por proj4
+        return proj4(crs, 'EPSG:24877', [x, y]);
+      };
+      const cornersUTM = {};
+      for (const key of ['tl', 'tr', 'bl', 'br']) { cornersUTM[key] = toUTM(c[key]); }
+      document.getElementById('georef-tl-e').value = cornersUTM.tl[0].toFixed(2);
+      document.getElementById('georef-tl-n').value = cornersUTM.tl[1].toFixed(2);
+      document.getElementById('georef-tr-e').value = cornersUTM.tr[0].toFixed(2);
+      document.getElementById('georef-tr-n').value = cornersUTM.tr[1].toFixed(2);
+      document.getElementById('georef-bl-e').value = cornersUTM.bl[0].toFixed(2);
+      document.getElementById('georef-bl-n').value = cornersUTM.bl[1].toFixed(2);
+      document.getElementById('georef-br-e').value = cornersUTM.br[0].toFixed(2);
+      document.getElementById('georef-br-n').value = cornersUTM.br[1].toFixed(2);
+      document.getElementById('georef-crs').value = 'EPSG:24877';
+      console.log('[handlePDFUpload] CRS entrada:', crs, '| corners UTM guardadas:', cornersUTM);
       showToast('Coordenadas detectadas!', 'success');
     } else {
       progressText.textContent = 'Ingresa coordenadas';
