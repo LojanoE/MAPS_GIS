@@ -1749,6 +1749,133 @@ img {
 }
 
 /* ============================================
+   CONFIG MODAL
+   ============================================ */
+
+.config-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.config-section {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.config-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.config-section-header h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.config-section-toggle {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  transition: transform var(--transition);
+}
+
+.config-section:not(.open) .config-section-toggle {
+  transform: rotate(180deg);
+}
+
+.config-section-body {
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.config-section:not(.open) .config-section-body {
+  display: none;
+}
+
+.config-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 4px;
+}
+
+.config-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.config-tag button {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.config-tag button:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.config-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.config-input-row input {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.config-input-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.config-input-row .btn-add-config {
+  padding: 8px 14px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.config-input-row .btn-add-config:hover {
+  background: var(--accent-hover);
+}
+
+/* ============================================
    MOBILE FIXES — Ensayos checkbox layout
    ============================================ */
 @media (max-width: 480px) {

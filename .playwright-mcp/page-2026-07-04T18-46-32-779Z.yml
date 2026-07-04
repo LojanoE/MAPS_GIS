@@ -1,0 +1,45 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e448]:
+    - banner [ref=f1e449]:
+      - button "Volver" [ref=f1e450] [cursor=pointer]:
+        - img [ref=f1e451]
+      - heading "DRT_PDF.pdf" [level=2] [ref=f1e453]
+      - button "QC" [ref=f1e454] [cursor=pointer]
+      - button "Marcadores" [ref=f1e455] [cursor=pointer]:
+        - img [ref=f1e456]
+      - button "Cambiar tema" [ref=f1e458] [cursor=pointer]:
+        - img [ref=f1e459]
+    - generic [ref=f1e462]:
+      - generic [ref=f1e463]:
+        - generic:
+          - generic [ref=f1e464]:
+            - button "Zoom in" [ref=f1e465] [cursor=pointer]: +
+            - button "Zoom out" [ref=f1e466] [cursor=pointer]: −
+          - generic [ref=f1e467]:
+            - link "Leaflet" [ref=f1e468] [cursor=pointer]:
+              - /url: https://leafletjs.com
+              - img [ref=f1e469]
+              - text: Leaflet
+            - text: "| © OSM © CARTO"
+      - generic [ref=f1e473]:
+        - generic [ref=f1e474]: PSAD56 UTM 17S
+        - generic [ref=f1e475]:
+          - generic [ref=f1e476]: "N: ---"
+          - generic [ref=f1e477]: "E: ---"
+        - generic [ref=f1e478]:
+          - generic [ref=f1e479]: "Lat: ---"
+          - generic [ref=f1e480]: "Lon: ---"
+      - generic [ref=f1e481]:
+        - button "Mi ubicacion" [ref=f1e482] [cursor=pointer]:
+          - img [ref=f1e483]
+        - button "Centrar en mapa" [ref=f1e486] [cursor=pointer]:
+          - img [ref=f1e487]
+        - button "Buscar por coordenadas" [ref=f1e491] [cursor=pointer]:
+          - img [ref=f1e492]
+        - button "Añadir marcador" [ref=f1e496] [cursor=pointer]:
+          - img [ref=f1e497]
+        - button "Exportar marcadores ZIP" [ref=f1e500] [cursor=pointer]:
+          - img [ref=f1e501]
+        - button "Calibrar mapa" [ref=f1e503] [cursor=pointer]:
+          - img [ref=f1e504]
+  - generic [ref=f1e57]: PDF cargado

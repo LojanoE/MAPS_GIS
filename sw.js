@@ -42,7 +42,7 @@ const CDN_ASSETS = [
   'https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js'
 ];
 
-// Tile URL patterns to handle separately (network-first for fresh tiles)
+// Tile URL patterns to handle separately (stale-while-revalidate for speed)
 const TILE_PATTERNS = [
   'basemaps.cartocdn.com',
   'tile.openstreetmap.org'
@@ -128,9 +128,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For tile servers: network-first with cache fallback
+  // For tile servers: stale-while-revalidate (fast cached load, background refresh)
   if (TILE_PATTERNS.some(pattern => url.hostname.includes(pattern))) {
-    event.respondWith(networkFirst(request));
+    event.respondWith(staleWhileRevalidate(request));
     return;
   }
 
@@ -186,28 +186,42 @@ async function cacheFirst(request, cacheName) {
 }
 
 // ============================================
-// STRATEGY: Network First
+// STRATEGY: Stale-While-Revalidate (tiles)
+// Serve cached tile immediately, then refresh in background.
+// This keeps the map fast even on slow/spotty connections.
 // ============================================
 
-async function networkFirst(request) {
-  try {
-    const networkResponse = await fetchWithTimeout(request, 4000);
-    if (networkResponse.ok) {
-      const cache = await caches.open(DYNAMIC_CACHE);
-      cache.put(request, networkResponse.clone());
-    }
-    return networkResponse;
-  } catch (error) {
-    const cachedResponse = await caches.match(request);
-    if (cachedResponse) {
-      return cachedResponse;
-    }
-    // Return a transparent 1x1 pixel for failed tile requests
-    return new Response('', {
-      status: 204,
-      statusText: 'No Content'
-    });
+async function staleWhileRevalidate(request) {
+  const cachedResponse = await caches.match(request);
+
+  const networkFetch = fetchWithTimeout(request, 1500)
+    .then((networkResponse) => {
+      if (networkResponse && networkResponse.ok) {
+        const cache = caches.open(DYNAMIC_CACHE);
+        cache.then((c) => c.put(request, networkResponse.clone()));
+      }
+      return networkResponse;
+    })
+    .catch(() => null);
+
+  if (cachedResponse) {
+    return cachedResponse;
   }
+
+  try {
+    const networkResponse = await networkFetch;
+    if (networkResponse) {
+      return networkResponse;
+    }
+  } catch (error) {
+    console.error('[SW] Stale-while-revalidate failed:', error);
+  }
+
+  // Return a transparent 1x1 pixel for failed tile requests
+  return new Response('', {
+    status: 204,
+    statusText: 'No Content'
+  });
 }
 
 // ============================================
