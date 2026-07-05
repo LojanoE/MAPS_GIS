@@ -52,6 +52,7 @@ Agregar `./assets/logo_lab_chino_PNG.png` a `CORE_ASSETS` en `sw.js` para que se
 - Se conserva el `originalBlob` en IndexedDB.
 - La foto estampada re-inyecta la metadata EXIF/GPS original vía **piexif.js**.
 - La exportación ZIP usa la foto estampada.
+- **Georreferenciación GPS:** las fotos LSM y QC incluyen tags EXIF GPS en WGS84; ver sección dedicada más abajo.
 
 ## Almacenamiento local
 | Datos | Tecnología | Clave |
@@ -98,6 +99,22 @@ Al agregar un campo LSM, actualizar:
 - Funciones clave en `js/app.js`: `getMarkerNameSuggestions`, `setupAutocomplete`, `renderAutocompleteList`.
 - Los inputs afectados son `#marker-name` (QC) y `#lsm-nombre-muestra` (LSM).
 
+## Georreferenciación EXIF GPS en fotos
+- Toda foto QC y LSM guardada incluye metadata EXIF GPS en **WGS84 lat/lon**, compatible con QGIS.
+- Tags escritos: `GPSLatitudeRef`, `GPSLatitude`, `GPSLongitudeRef`, `GPSLongitude` (formato DMS racional requerido por piexif).
+- Para QC: `compressImageWithGps()` comprime e inyecta GPS usando `pendingMarkerLatLng`.
+- Para LSM: `stampImage()` recibe `lat`/`lng` en `markerData` y escribe GPS junto al EXIF original.
+- Al guardar marcador (`saveMarker()` / `saveLSMMarker()`), si una foto nueva no tiene GPS se inyecta antes de guardar en IndexedDB.
+- Las fotos exportadas en ZIP conservan el GPS y pueden importarse directamente a QGIS.
+- Helpers clave en `js/app.js`: `decimalToExifDms()`, `injectGpsExif()`.
+
+## Botón "Actualizar aplicación"
+- Icono de flecha circular (↻) en el header, junto a Sincronizar y Admin.
+- Fuerza el update del Service Worker (`reg.update()`), limpia caches `maps-gis-*` y recarga la página.
+- No borra `localStorage` ni `IndexedDB`; los marcadores y fotos se mantienen.
+- Si hay marcadores pendientes de subir, muestra advertencia pero permite actualizar de todos modos.
+
 ## Ignorar
 - `IGNORAR/` (excluido por `.gitignore`; **no** incluir assets de producción aquí)
 - `js/app.js.backup.v161`
+- `.playwright-mcp/` y capturas temporales (`*.png` fuera de `assets/`).

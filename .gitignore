@@ -1,1 +1,5 @@
 /IGNORAR/
+.playwright-mcp/
+*.png
+!assets/*.png
+!assets/**/*.png
