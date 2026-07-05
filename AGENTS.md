@@ -20,7 +20,7 @@ En `index.html`: Leaflet → Proj4 → GeoTIFF → GeoRaster → GeoRaster Layer
 Al subir versión, sincronizar **3 lugares**:
 - `sw.js:11` — `APP_VERSION`
 - `app.js:23` — `APP_VERSION`
-- `index.html:40` — texto de `#app-version-badge`
+- `index.html:41` — texto de `#app-version-badge`
 
 `CACHE_NAME` y los caches en `sw.js` se derivan de `APP_VERSION`; no editar a mano.
 
@@ -43,9 +43,12 @@ Agregar `./assets/logo_lab_chino_PNG.png` a `CORE_ASSETS` en `sw.js` para que se
 
 ## Fotos LSM
 - Las fotos LSM se estampan con:
-  - Logo `assets/logo_lab_chino_PNG.png` en margen derecho (25 px alto, 10 px del borde).
-  - Texto en margen izquierdo (10 px del borde), de abajo hacia arriba: fecha `YYYY-MM-DD`, subestructura, nombre del marcador.
-  - Fuente del sistema, blanco con contorno negro (`shadow`).
+  - Logo `assets/logo_lab_chino_PNG.png` en margen derecho; **tamaño configurable** en Configuración (`maps_gis_logo_size`, default 25 px).
+  - Texto en margen izquierdo (10 px del borde), de abajo hacia arriba: fecha `YYYY-MM-DD`, **localización**, nombre del marcador.
+  - Tamaño de fuente **configurable** (`maps_gis_stamp_font_size`, default 30 px) y proporcional al ancho de la foto.
+  - Fuente del sistema, blanco con contorno negro.
+- La configuración de estampado se edita en Configuración con slider + número, **preview en tiempo real** y botón **Probar con cámara** para ver el estampado sobre una foto real.
+- Al tomar una foto (QC o LSM) se muestra automáticamente un **modal de vista previa** con opciones **Aceptar**, **Eliminar** y **Retomar**. Tocar cualquier thumbnail de la grilla también abre el preview.
 - Se conserva el `originalBlob` en IndexedDB.
 - La foto estampada re-inyecta la metadata EXIF/GPS original vía **piexif.js**.
 - La exportación ZIP usa la foto estampada.
@@ -55,6 +58,8 @@ Agregar `./assets/logo_lab_chino_PNG.png` a `CORE_ASSETS` en `sw.js` para que se
 |-------|-----------|-------|
 | Marcadores | LocalStorage | `maps_gis_markers_v3` |
 | Config LSM | LocalStorage | `maps_gis_config_v2` |
+| Tamaño logo estampado | LocalStorage | `maps_gis_logo_size` |
+| Tamaño fuente estampado | LocalStorage | `maps_gis_stamp_font_size` |
 | Mapas / fotos | IndexedDB | `MapsGISDB` v3 (`maps`, `photos`) |
 | Offset por mapa | LocalStorage | `maps_gis_offset_<mapId>` |
 | Device name / id | LocalStorage | `maps_gis_device_name` / `maps_gis_device_id` |
@@ -80,11 +85,18 @@ Al agregar un campo LSM, actualizar:
 2. Modal `#lsm-marker-modal` en `index.html`
 3. `saveLSMMarker()` en `app.js`
 4. `stampImage()` en `app.js` si el nuevo campo debe aparecer en la foto estampada
-5. `supabase_schema_v2.sql`
-6. `uploadLSM` en `sync-manager.js`
-7. Exportación ZIP en `app.js`
-8. Tabla / detalle / edición en `admin-manager.js`
-9. `autoLearnLSMConfig()` en `app.js` si aplica
+5. Preview en `renderStampPreview()` si el nuevo campo debe mostrarse en la previsualización
+6. `supabase_schema_v2.sql`
+7. `uploadLSM` en `sync-manager.js`
+8. Exportación ZIP en `app.js`
+9. Tabla / detalle / edición en `admin-manager.js`
+10. `autoLearnLSMConfig()` en `app.js` si aplica
+
+## Autocompletar nombres de marcadores
+- Al crear/editar marcadores QC y LSM, el campo de nombre muestra sugerencias de nombres usados previamente en marcadores locales del mismo tipo.
+- Máximo 5 sugerencias, case-insensitive, ignorando acentos.
+- Funciones clave en `js/app.js`: `getMarkerNameSuggestions`, `setupAutocomplete`, `renderAutocompleteList`.
+- Los inputs afectados son `#marker-name` (QC) y `#lsm-nombre-muestra` (LSM).
 
 ## Ignorar
 - `IGNORAR/` (excluido por `.gitignore`; **no** incluir assets de producción aquí)

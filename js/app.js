@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.3.6';
+const APP_VERSION = '2.3.8';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -36,8 +36,9 @@ const AppState = {
   isAddMarkerMode: false, pendingMarkerLatLng: null, currentMapId: null,
   currentMapType: 'tiff', mapTitle: '', editingMarkerId: null,
   selectedCategory: 'red', darkTiles: null, lightTiles: null,
-  pendingPDF: null, pendingPhotos: [], currentMarkerMode: localStorage.getItem('maps_gis_marker_mode') || 'qc',
-  lsmSelectedCategory: 'red', gotoMarkerType: 'qc'
+  pendingPDF: null, pendingPhotos: [], previewPhotoIndex: -1,
+  currentMarkerMode: localStorage.getItem('maps_gis_marker_mode') || 'qc',
+  lsmSelectedCategory: 'red', gotoMarkerType: 'qc', pendingMarkerType: 'qc'
 };
 
 // ============================================
@@ -295,8 +296,9 @@ function compressImage(file, maxWidth = 1024, quality = 0.75) {
 }
 
 async function stampImage(imageFile, markerData) {
-  const { nombreMuestra, subestructura, fecha } = markerData || {};
+  const { nombreMuestra, localizacion, fecha } = markerData || {};
   const MAX_WIDTH = 1600;
+  const stampConfig = getStampConfig();
 
   let originalExifBytes = null;
   try {
@@ -340,8 +342,8 @@ async function stampImage(imageFile, markerData) {
 
   ctx.drawImage(img, 0, 0, width, height);
 
-  // Logo en margen derecho, 25px de alto, 10px del borde
-  const logoHeight = 25;
+  // Logo en margen derecho, configurable
+  const logoHeight = stampConfig.logoSize;
   const logoWidth = (logo.width / logo.height) * logoHeight;
   const logoX = width - logoWidth - 10;
   const logoY = height - logoHeight - 10;
@@ -350,11 +352,11 @@ async function stampImage(imageFile, markerData) {
   // Texto en margen izquierdo, de abajo hacia arriba
   const lines = [
     fecha || '',
-    subestructura || '',
+    localizacion || '',
     nombreMuestra || ''
   ].filter(Boolean);
 
-  const fontSize = Math.max(12, Math.round(width * 0.025));
+  const fontSize = Math.max(12, Math.round(stampConfig.fontSize * (width / 1600)));
   ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
   ctx.textBaseline = 'bottom';
   ctx.textAlign = 'left';
@@ -453,7 +455,7 @@ async function handlePhotoCapture(file) {
     if (isLsm) {
       const markerData = {
         nombreMuestra: document.getElementById('lsm-nombre-muestra')?.value?.trim() || '',
-        subestructura: document.getElementById('lsm-subestructuras')?.value?.trim() || '',
+        localizacion: document.getElementById('lsm-localizacion')?.value?.trim() || '',
         fecha: new Date().toISOString().slice(0, 10)
       };
       const stamped = await stampImage(file, markerData);
@@ -469,21 +471,73 @@ async function handlePhotoCapture(file) {
     AppState.pendingPhotos.push({ blob: compressedBlob, dataUrl: dataUrl, originalBlob: originalBlob });
     renderPhotoGrid();
     showToast('Foto agregada', 'success');
+    openPhotoPreview(AppState.pendingPhotos.length - 1);
   } catch (error) { showToast('Error al procesar foto', 'error'); }
 }
 function getPhotoGridId() { return AppState.pendingMarkerType === 'lsm' ? 'lsm-photo-grid' : 'photo-grid'; }
 function getAddPhotoBtnId() { return AppState.pendingMarkerType === 'lsm' ? 'btn-lsm-add-photo' : 'btn-add-photo'; }
+function getPhotoInputId() { return AppState.pendingMarkerType === 'lsm' ? 'lsm-photo-input' : 'photo-input'; }
 function renderPhotoGrid() {
   const grid = document.getElementById(getPhotoGridId());
   if (!grid) return;
   grid.innerHTML = AppState.pendingPhotos.map((photo, index) => {
-    return '<div class="photo-thumb"><img src="' + photo.dataUrl + '" alt="Foto"><button class="photo-remove" data-index="' + index + '">&times;</button></div>';
+    return '<div class="photo-thumb" data-index="' + index + '" role="button" tabindex="0"><img src="' + photo.dataUrl + '" alt="Foto"><button class="photo-remove" data-index="' + index + '" aria-label="Eliminar foto">&times;</button></div>';
   }).join('');
   grid.querySelectorAll('.photo-remove').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); AppState.pendingPhotos.splice(parseInt(btn.dataset.index), 1); renderPhotoGrid(); });
   });
+  grid.querySelectorAll('.photo-thumb').forEach(thumb => {
+    thumb.addEventListener('click', () => openPhotoPreview(parseInt(thumb.dataset.index)));
+    thumb.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openPhotoPreview(parseInt(thumb.dataset.index)); });
+  });
   const btnAddPhoto = document.getElementById(getAddPhotoBtnId());
   if (btnAddPhoto) btnAddPhoto.style.display = AppState.pendingPhotos.length >= 2 ? 'none' : 'flex';
+}
+
+// ============================================
+// PHOTO PREVIEW MODAL
+// ============================================
+function openPhotoPreview(index) {
+  const photo = AppState.pendingPhotos[index];
+  if (!photo) return;
+  AppState.previewPhotoIndex = index;
+  const img = document.getElementById('photo-preview-img');
+  const title = document.getElementById('photo-preview-title');
+  img.src = photo.dataUrl;
+  title.textContent = AppState.pendingMarkerType === 'lsm' ? 'Vista previa LSM' : 'Vista previa';
+  document.getElementById('photo-preview-modal').classList.remove('hidden');
+}
+
+function closePhotoPreview() {
+  document.getElementById('photo-preview-modal').classList.add('hidden');
+  document.getElementById('photo-preview-img').src = '';
+  AppState.previewPhotoIndex = -1;
+}
+
+function deletePendingPhotoFromPreview() {
+  const index = AppState.previewPhotoIndex;
+  if (index >= 0 && index < AppState.pendingPhotos.length) {
+    AppState.pendingPhotos.splice(index, 1);
+    renderPhotoGrid();
+    closePhotoPreview();
+    showToast('Foto eliminada', 'info');
+  }
+}
+
+function retakePhoto() {
+  const index = AppState.previewPhotoIndex;
+  if (index >= 0 && index < AppState.pendingPhotos.length) {
+    AppState.pendingPhotos.splice(index, 1);
+    renderPhotoGrid();
+  }
+  closePhotoPreview();
+  if (AppState.pendingPhotos.length >= 2) {
+    showToast('Max 2 fotos', 'error');
+    return;
+  }
+  const inputId = getPhotoInputId();
+  const input = document.getElementById(inputId);
+  if (input) input.click();
 }
 function clearPendingPhotos() { AppState.pendingPhotos = []; renderPhotoGrid(); }
 
@@ -1921,6 +1975,7 @@ function initEventListeners() {
         else if (modal.id === 'marker-detail-modal') closeMarkerDetail();
         else if (modal.id === 'go-to-coords-modal') closeGoToCoordsModal();
         else if (modal.id === 'delete-map-modal') { pendingDeleteMapId = null; modal.classList.add('hidden'); }
+        else if (modal.id === 'photo-preview-modal') closePhotoPreview();
         else modal.classList.add('hidden');
       }
     });
@@ -1944,6 +1999,12 @@ function initEventListeners() {
   document.getElementById('btn-lsm-add-photo').addEventListener('click', () => { document.getElementById('lsm-photo-input').click(); });
   document.getElementById('lsm-photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0]); e.target.value = ''; } });
 
+  // Photo preview modal
+  document.getElementById('btn-close-photo-preview').addEventListener('click', closePhotoPreview);
+  document.getElementById('btn-accept-photo-preview').addEventListener('click', closePhotoPreview);
+  document.getElementById('btn-delete-photo-preview').addEventListener('click', deletePendingPhotoFromPreview);
+  document.getElementById('btn-retake-photo-preview').addEventListener('click', retakePhoto);
+
   // Config button (local only)
   document.getElementById('btn-config').addEventListener('click', openConfigModal);
   document.getElementById('btn-close-config').addEventListener('click', closeConfigModal);
@@ -1964,8 +2025,169 @@ function initEventListeners() {
 // ============================================
 // CONFIG MODAL (LOCAL ONLY)
 // ============================================
+const STAMP_LOGO_SIZE_KEY = 'maps_gis_logo_size';
+const STAMP_FONT_SIZE_KEY = 'maps_gis_stamp_font_size';
+const DEFAULT_STAMP_LOGO_SIZE = 25;
+const DEFAULT_STAMP_FONT_SIZE = 30;
+
+function getStampConfig() {
+  const logoSize = parseInt(localStorage.getItem(STAMP_LOGO_SIZE_KEY), 10);
+  const fontSize = parseInt(localStorage.getItem(STAMP_FONT_SIZE_KEY), 10);
+  return {
+    logoSize: isNaN(logoSize) ? DEFAULT_STAMP_LOGO_SIZE : Math.max(15, Math.min(150, logoSize)),
+    fontSize: isNaN(fontSize) ? DEFAULT_STAMP_FONT_SIZE : Math.max(12, Math.min(80, fontSize))
+  };
+}
+
+function setStampConfig(logoSize, fontSize) {
+  localStorage.setItem(STAMP_LOGO_SIZE_KEY, String(Math.max(15, Math.min(150, logoSize))));
+  localStorage.setItem(STAMP_FONT_SIZE_KEY, String(Math.max(12, Math.min(80, fontSize))));
+}
+
+function initStampConfig() {
+  const logoRange = document.getElementById('stamp-logo-size');
+  const logoNumber = document.getElementById('stamp-logo-size-number');
+  const fontRange = document.getElementById('stamp-font-size');
+  const fontNumber = document.getElementById('stamp-font-size-number');
+  const canvas = document.getElementById('stamp-preview-canvas');
+  if (!logoRange || !logoNumber || !fontRange || !fontNumber || !canvas) return;
+
+  const cfg = getStampConfig();
+  logoRange.value = cfg.logoSize;
+  logoNumber.value = cfg.logoSize;
+  fontRange.value = cfg.fontSize;
+  fontNumber.value = cfg.fontSize;
+
+  const update = () => {
+    const logoSize = parseInt(logoRange.value, 10);
+    const fontSize = parseInt(fontRange.value, 10);
+    logoNumber.value = logoSize;
+    fontNumber.value = fontSize;
+    setStampConfig(logoSize, fontSize);
+    renderStampPreview(canvas, logoSize, fontSize);
+  };
+
+  logoRange.addEventListener('input', update);
+  fontRange.addEventListener('input', update);
+  logoNumber.addEventListener('change', () => {
+    const v = parseInt(logoNumber.value, 10);
+    if (!isNaN(v)) {
+      logoRange.value = v;
+      update();
+    }
+  });
+  fontNumber.addEventListener('change', () => {
+    const v = parseInt(fontNumber.value, 10);
+    if (!isNaN(v)) {
+      fontRange.value = v;
+      update();
+    }
+  });
+
+  renderStampPreview(canvas, cfg.logoSize, cfg.fontSize);
+
+  // Boton para probar estampado con camara real
+  const btnTestCamera = document.getElementById('btn-test-stamp-camera');
+  const inputTestCamera = document.getElementById('test-stamp-photo-input');
+  if (btnTestCamera && inputTestCamera) {
+    btnTestCamera.addEventListener('click', () => inputTestCamera.click());
+    inputTestCamera.addEventListener('change', async (e) => {
+      if (e.target.files.length === 0) return;
+      const file = e.target.files[0];
+      e.target.value = '';
+      try {
+        showToast('Procesando foto de prueba...', 'info');
+        const markerData = {
+          nombreMuestra: 'Nombre de muestra',
+          localizacion: 'Localizacion',
+          fecha: new Date().toISOString().slice(0, 10)
+        };
+        const stamped = await stampImage(file, markerData);
+        const stampedUrl = await blobToDataURL(stamped.stampedBlob);
+        const stampedImg = await loadImage(stampedUrl);
+
+        // Ajustar canvas al aspecto de la foto estampada
+        const maxPreviewWidth = 300;
+        const maxPreviewHeight = 180;
+        let w = stampedImg.width;
+        let h = stampedImg.height;
+        if (w > maxPreviewWidth) {
+          h = Math.round(h * maxPreviewWidth / w);
+          w = maxPreviewWidth;
+        }
+        if (h > maxPreviewHeight) {
+          w = Math.round(w * maxPreviewHeight / h);
+          h = maxPreviewHeight;
+        }
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d').drawImage(stampedImg, 0, 0, w, h);
+        showToast('Vista previa actualizada', 'success');
+      } catch (err) {
+        console.error('[testStampWithCamera]', err);
+        showToast('Error al procesar foto de prueba', 'error');
+      }
+    });
+  }
+}
+
+async function renderStampPreview(canvas, logoSize, fontSize) {
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  const isLight = document.body.classList.contains('light-mode');
+
+  // Fondo
+  ctx.fillStyle = isLight ? '#f6f8fa' : '#0d1117';
+  ctx.fillRect(0, 0, width, height);
+
+  // Simular ancho de foto para escala proporcional de fuente
+  const previewPhotoWidth = 1600;
+  const scaledFontSize = Math.max(12, Math.round(fontSize * (previewPhotoWidth / 1600)));
+
+  // Dibujar texto izquierdo
+  const lines = ['2026-07-05', 'Localizacion', 'Nombre de muestra'];
+  ctx.font = `bold ${scaledFontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign = 'left';
+  ctx.lineJoin = 'round';
+  const lineHeight = scaledFontSize * 1.3;
+  const textX = 10;
+  const bottomMargin = 10;
+
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    const y = height - bottomMargin - (i * lineHeight);
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = Math.max(2, scaledFontSize * 0.15);
+    ctx.strokeText(text, textX, y);
+    ctx.fillStyle = 'white';
+    ctx.fillText(text, textX, y);
+  }
+
+  // Dibujar logo derecho
+  try {
+    const logoUrl = await loadLogoDataUrl();
+    const logo = await loadImage(logoUrl);
+    const aspect = logo.width / logo.height;
+    const drawHeight = logoSize;
+    const drawWidth = drawHeight * aspect;
+    const logoX = width - drawWidth - 10;
+    const logoY = height - drawHeight - 10;
+    ctx.drawImage(logo, logoX, logoY, drawWidth, drawHeight);
+  } catch (e) {
+    // Fallback: rectangulo con etiqueta
+    ctx.fillStyle = '#58a6ff';
+    ctx.fillRect(width - 50, height - 30, 40, 20);
+    ctx.fillStyle = 'white';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('LOGO', width - 48, height - 16);
+  }
+}
+
 function openConfigModal() {
   renderConfigSections();
+  initStampConfig();
   document.getElementById('config-modal').classList.remove('hidden');
 }
 function closeConfigModal() {

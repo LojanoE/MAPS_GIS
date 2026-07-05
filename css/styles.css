@@ -792,6 +792,57 @@ img {
   max-width: 480px;
 }
 
+/* --- Photo Preview Modal --- */
+.modal-photo-preview {
+  max-width: 520px;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.photo-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.photo-preview-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.photo-preview-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  min-height: 280px;
+  max-height: 60vh;
+  overflow: hidden;
+}
+
+.photo-preview-body img {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+}
+
+.photo-preview-actions {
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.photo-preview-actions button {
+  flex: 1;
+}
+
 /* --- Form Groups --- */
 .form-group {
   margin-bottom: 12px;
@@ -1802,6 +1853,89 @@ img {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* --- Stamp config section --- */
+.config-stamp-section {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.config-stamp-section h4 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.stamp-preview-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+#stamp-preview-canvas {
+  width: 100%;
+  max-width: 300px;
+  height: 120px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+}
+
+.stamp-control {
+  margin-bottom: 10px;
+}
+
+.stamp-control:last-child {
+  margin-bottom: 0;
+}
+
+.stamp-control label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.stamp-control-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stamp-control-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.stamp-control-row input[type="number"] {
+  width: 60px;
+  padding: 6px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.stamp-test-camera-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.stamp-test-camera-row .btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
 }
 
 .config-section {
