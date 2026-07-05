@@ -749,6 +749,50 @@ img {
   color: var(--accent);
 }
 
+.marker-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.marker-item-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--transition), transform 0.1s ease;
+  background: transparent;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.marker-item-btn:active {
+  transform: scale(0.95);
+}
+
+.marker-btn-edit {
+  background: rgba(88, 166, 255, 0.12);
+  color: var(--accent);
+}
+
+.marker-btn-edit:hover {
+  background: rgba(88, 166, 255, 0.22);
+}
+
+.marker-btn-delete {
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--danger);
+}
+
+.marker-btn-delete:hover {
+  background: rgba(248, 81, 73, 0.22);
+}
+
 /* --- Modals --- */
 .modal {
   position: fixed;

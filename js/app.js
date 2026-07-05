@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.3.8';
+const APP_VERSION = '2.3.9';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -1502,7 +1502,7 @@ function renderMarkersList(filter = '') {
   container.innerHTML = markers.map(m => {
     const color = MARKER_COLORS[m.color]?.hex || MARKER_COLORS.red.hex;
     const typeLabel = m.markerType === 'lsm' ? 'LSM' : 'QC';
-    return '<div class="marker-item" data-id="' + m.id + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div><div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + '</div></div><div class="marker-item-actions"><button class="marker-item-btn edit" data-id="' + m.id + '" title="Editar">Edit</button><button class="marker-item-btn delete" data-id="' + m.id + '" title="Eliminar">Del</button></div></div>';
+    return '<div class="marker-item" data-id="' + m.id + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div><div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + '</div></div><div class="marker-item-actions"><button class="marker-item-btn marker-btn-edit" data-id="' + m.id + '" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button><button class="marker-item-btn marker-btn-delete" data-id="' + m.id + '" title="Eliminar" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"></path><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg></button></div></div>';
   }).join('');
   container.querySelectorAll('.marker-item').forEach(item => {
     item.addEventListener('click', (e) => {
@@ -1512,7 +1512,7 @@ function renderMarkersList(filter = '') {
       if (marker) { AppState.map.setView([marker.lat, marker.lng], 17); closeMarkersPanel(); }
     });
   });
-  container.querySelectorAll('.marker-item-btn.edit').forEach(btn => {
+  container.querySelectorAll('.marker-item-btn.marker-btn-edit').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = btn.dataset.id;
@@ -1520,10 +1520,13 @@ function renderMarkersList(filter = '') {
       if (marker) { closeMarkersPanel(); if (marker.markerType === 'lsm') openLSMMarkerModal({ lat: marker.lat, lng: marker.lng }, id); else openMarkerModal({ lat: marker.lat, lng: marker.lng }, id); }
     });
   });
-  container.querySelectorAll('.marker-item-btn.delete').forEach(btn => {
+  container.querySelectorAll('.marker-item-btn.marker-btn-delete').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = btn.dataset.id;
+      const marker = MarkerManager.getById(id);
+      const name = marker ? marker.name : 'este marcador';
+      if (!confirm('¿Eliminar "' + name + '"? Esta accion no se puede deshacer.')) return;
       MarkerManager.remove(id);
       if (AppState.markersLayer) refreshMarkersOnMap();
       updateMarkerCountBadge();
