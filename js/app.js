@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '2.4.1';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -324,8 +324,44 @@ function compressImage(file, maxWidth = 1024, quality = 0.75) {
   });
 }
 
+function decimalToExifDms(value) {
+  const abs = Math.abs(value);
+  const degrees = Math.floor(abs);
+  const minutesFloat = (abs - degrees) * 60;
+  const minutes = Math.floor(minutesFloat);
+  const seconds = Math.round((minutesFloat - minutes) * 6000);
+  return [
+    [degrees, 1],
+    [minutes, 1],
+    [seconds, 100]
+  ];
+}
+
+function injectGpsExif(dataUrl, lat, lng) {
+  if (typeof piexif === 'undefined' || lat == null || lng == null) return dataUrl;
+  try {
+    const exifObj = piexif.load(dataUrl);
+    exifObj.GPS = exifObj.GPS || {};
+    exifObj.GPS[piexif.GPSIFD.GPSLatitudeRef] = lat >= 0 ? 'N' : 'S';
+    exifObj.GPS[piexif.GPSIFD.GPSLatitude] = decimalToExifDms(lat);
+    exifObj.GPS[piexif.GPSIFD.GPSLongitudeRef] = lng >= 0 ? 'E' : 'W';
+    exifObj.GPS[piexif.GPSIFD.GPSLongitude] = decimalToExifDms(lng);
+    return piexif.insert(piexif.dump(exifObj), dataUrl);
+  } catch (e) {
+    console.warn('[injectGpsExif] No se pudo inyectar GPS:', e);
+    return dataUrl;
+  }
+}
+
+async function compressImageWithGps(file, maxWidth, quality, lat, lng) {
+  const compressed = await compressImage(file, maxWidth, quality);
+  const dataUrl = await blobToDataURL(compressed);
+  const withGps = injectGpsExif(dataUrl, lat, lng);
+  return dataURLtoBlob(withGps);
+}
+
 async function stampImage(imageFile, markerData) {
-  const { nombreMuestra, localizacion, fecha } = markerData || {};
+  const { nombreMuestra, localizacion, fecha, lat, lng } = markerData || {};
   const MAX_WIDTH = 1600;
   const stampConfig = getStampConfig();
 
@@ -411,13 +447,19 @@ async function stampImage(imageFile, markerData) {
 
   const stampedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
-  // Re-inyectar EXIF original en la imagen estampada
+  // Re-inyectar EXIF original + GPS en la imagen estampada
   let finalDataUrl = stampedDataUrl;
-  if (originalExifBytes && typeof piexif !== 'undefined') {
+  if (typeof piexif !== 'undefined') {
     try {
-      finalDataUrl = piexif.insert(piexif.dump(originalExifBytes), stampedDataUrl);
+      const exifObj = originalExifBytes || {};
+      exifObj.GPS = exifObj.GPS || {};
+      exifObj.GPS[piexif.GPSIFD.GPSLatitudeRef] = lat >= 0 ? 'N' : 'S';
+      exifObj.GPS[piexif.GPSIFD.GPSLatitude] = decimalToExifDms(lat);
+      exifObj.GPS[piexif.GPSIFD.GPSLongitudeRef] = lng >= 0 ? 'E' : 'W';
+      exifObj.GPS[piexif.GPSIFD.GPSLongitude] = decimalToExifDms(lng);
+      finalDataUrl = piexif.insert(piexif.dump(exifObj), stampedDataUrl);
     } catch (e) {
-      console.warn('[stampImage] No se pudo re-inyectar EXIF:', e);
+      console.warn('[stampImage] No se pudo inyectar EXIF/GPS:', e);
     }
   }
 
@@ -474,24 +516,30 @@ function blobToDataURL(blob) {
     reader.readAsDataURL(blob);
   });
 }
-async function handlePhotoCapture(file) {
+async function handlePhotoCapture(file, latLng) {
   if (!file) return;
   try {
     showToast('Procesando foto...', 'info');
     const isLsm = AppState.pendingMarkerType === 'lsm';
     let compressedBlob, dataUrl, originalBlob;
 
+    const coords = latLng || AppState.pendingMarkerLatLng;
+    const lat = coords?.lat ?? null;
+    const lng = coords?.lng ?? null;
+
     if (isLsm) {
       const markerData = {
         nombreMuestra: document.getElementById('lsm-nombre-muestra')?.value?.trim() || '',
         localizacion: document.getElementById('lsm-localizacion')?.value?.trim() || '',
-        fecha: new Date().toISOString().slice(0, 10)
+        fecha: new Date().toISOString().slice(0, 10),
+        lat,
+        lng
       };
       const stamped = await stampImage(file, markerData);
       compressedBlob = stamped.stampedBlob;
       originalBlob = stamped.originalBlob;
     } else {
-      compressedBlob = await compressImage(file, 1600, 0.90);
+      compressedBlob = await compressImageWithGps(file, 1600, 0.90, lat, lng);
       originalBlob = file;
     }
 
@@ -1308,12 +1356,26 @@ async function saveLSMMarker() {
     ensayos: Array.from(document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]:checked')).map(cb => cb.value)
   };
   const photoIds = [];
+  const markerLatLng = AppState.editingMarkerId
+    ? (() => {
+        const m = MarkerManager.getById(AppState.editingMarkerId);
+        return m ? { lat: m.lat, lng: m.lng } : null;
+      })()
+    : AppState.pendingMarkerLatLng;
+
   for (const photo of AppState.pendingPhotos) {
     try {
-      if (photo.photoId) photoIds.push(photo.photoId);
-      else if (photo.blob) {
+      let blobToSave = photo.blob;
+      if (photo.photoId) {
+        photoIds.push(photo.photoId);
+      } else if (photo.blob) {
         const markerId = AppState.editingMarkerId || ('m_' + Date.now());
-        const photoId = await MapStorage.savePhoto(photo.blob, markerId, photo.originalBlob || null);
+        if (markerLatLng && (photo.lat == null || photo.lng == null)) {
+          const dataUrl = await blobToDataURL(photo.blob);
+          const withGps = injectGpsExif(dataUrl, markerLatLng.lat, markerLatLng.lng);
+          blobToSave = dataURLtoBlob(withGps);
+        }
+        const photoId = await MapStorage.savePhoto(blobToSave, markerId, photo.originalBlob || null);
         photoIds.push(photoId);
       }
     } catch (e) { console.error('Error saving photo:', e); }
@@ -1395,12 +1457,26 @@ async function saveMarker() {
   const description = document.getElementById('marker-description').value.trim();
   if (!name) { showToast('Ingresa un nombre', 'error'); return; }
   const photoIds = [];
+  const markerLatLng = AppState.editingMarkerId
+    ? (() => {
+        const m = MarkerManager.getById(AppState.editingMarkerId);
+        return m ? { lat: m.lat, lng: m.lng } : null;
+      })()
+    : AppState.pendingMarkerLatLng;
+
   for (const photo of AppState.pendingPhotos) {
     try {
-      if (photo.photoId) photoIds.push(photo.photoId);
-      else if (photo.blob) {
+      let blobToSave = photo.blob;
+      if (photo.photoId) {
+        photoIds.push(photo.photoId);
+      } else if (photo.blob) {
         const markerId = AppState.editingMarkerId || ('m_' + Date.now());
-        const photoId = await MapStorage.savePhoto(photo.blob, markerId, photo.originalBlob || null);
+        if (markerLatLng && (photo.lat == null || photo.lng == null)) {
+          const dataUrl = await blobToDataURL(photo.blob);
+          const withGps = injectGpsExif(dataUrl, markerLatLng.lat, markerLatLng.lng);
+          blobToSave = dataURLtoBlob(withGps);
+        }
+        const photoId = await MapStorage.savePhoto(blobToSave, markerId, photo.originalBlob || null);
         photoIds.push(photoId);
       }
     } catch (e) { console.error('Error saving photo:', e); }
@@ -1981,7 +2057,7 @@ function initEventListeners() {
   document.getElementById('btn-edit-marker').addEventListener('click', editCurrentMarker);
   document.getElementById('btn-delete-marker').addEventListener('click', deleteCurrentMarker);
   document.getElementById('btn-add-photo').addEventListener('click', () => { document.getElementById('photo-input').click(); });
-  document.getElementById('photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0]); e.target.value = ''; } });
+  document.getElementById('photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0], AppState.pendingMarkerLatLng); e.target.value = ''; } });
   document.getElementById('btn-export').addEventListener('click', openExportModal);
   document.getElementById('btn-calibrate').addEventListener('click', showCalibrationPanel);
   document.getElementById('btn-markers-panel').addEventListener('click', openMarkersPanel);
@@ -2034,7 +2110,7 @@ function initEventListeners() {
     btn.addEventListener('click', () => { AppState.lsmSelectedCategory = btn.dataset.color; updateLSMCategorySelector(); });
   });
   document.getElementById('btn-lsm-add-photo').addEventListener('click', () => { document.getElementById('lsm-photo-input').click(); });
-  document.getElementById('lsm-photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0]); e.target.value = ''; } });
+  document.getElementById('lsm-photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0], AppState.pendingMarkerLatLng); e.target.value = ''; } });
 
   // Photo preview modal
   document.getElementById('btn-close-photo-preview').addEventListener('click', closePhotoPreview);
