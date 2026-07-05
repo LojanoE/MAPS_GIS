@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.3.9';
+const APP_VERSION = '2.4.0';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -273,6 +273,35 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function forceAppUpdate() {
+  const pending = MarkerManager.getAll().filter(m => m.pendingUpload).length;
+  let msg = 'Actualizar aplicacion. Los marcadores guardados se mantendran.';
+  if (pending > 0) msg += '\nTienes ' + pending + ' marcador' + (pending === 1 ? '' : 'es') + ' sin subir. Se mantendran locales.';
+  msg += '\n\nContinuar?';
+  if (!confirm(msg)) return;
+
+  showToast('Buscando actualizacion...', 'info');
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistration().then(async (reg) => {
+      if (reg) {
+        try {
+          await reg.update();
+        } catch (e) { console.warn('[forceAppUpdate] reg.update failed:', e); }
+      }
+      const keys = await caches.keys();
+      for (const key of keys) {
+        if (key.startsWith('maps-gis-')) await caches.delete(key);
+      }
+      location.reload(true);
+    }).catch((err) => {
+      console.error('[forceAppUpdate]', err);
+      location.reload(true);
+    });
+  } else {
+    location.reload(true);
+  }
+}
+
 // ============================================
 // IMAGE COMPRESSION & PHOTO HANDLING
 // ============================================
@@ -471,7 +500,7 @@ async function handlePhotoCapture(file) {
     AppState.pendingPhotos.push({ blob: compressedBlob, dataUrl: dataUrl, originalBlob: originalBlob });
     renderPhotoGrid();
     showToast('Foto agregada', 'success');
-    openPhotoPreview(AppState.pendingPhotos.length - 1);
+    openPhotoPreviewByIndex(AppState.pendingPhotos.length - 1);
   } catch (error) { showToast('Error al procesar foto', 'error'); }
 }
 function getPhotoGridId() { return AppState.pendingMarkerType === 'lsm' ? 'lsm-photo-grid' : 'photo-grid'; }
@@ -487,8 +516,8 @@ function renderPhotoGrid() {
     btn.addEventListener('click', (e) => { e.stopPropagation(); AppState.pendingPhotos.splice(parseInt(btn.dataset.index), 1); renderPhotoGrid(); });
   });
   grid.querySelectorAll('.photo-thumb').forEach(thumb => {
-    thumb.addEventListener('click', () => openPhotoPreview(parseInt(thumb.dataset.index)));
-    thumb.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openPhotoPreview(parseInt(thumb.dataset.index)); });
+    thumb.addEventListener('click', () => openPhotoPreviewByIndex(parseInt(thumb.dataset.index)));
+    thumb.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openPhotoPreviewByIndex(parseInt(thumb.dataset.index)); });
   });
   const btnAddPhoto = document.getElementById(getAddPhotoBtnId());
   if (btnAddPhoto) btnAddPhoto.style.display = AppState.pendingPhotos.length >= 2 ? 'none' : 'flex';
@@ -497,14 +526,19 @@ function renderPhotoGrid() {
 // ============================================
 // PHOTO PREVIEW MODAL
 // ============================================
-function openPhotoPreview(index) {
+function openPhotoPreviewByIndex(index) {
   const photo = AppState.pendingPhotos[index];
   if (!photo) return;
   AppState.previewPhotoIndex = index;
+  const title = AppState.pendingMarkerType === 'lsm' ? 'Vista previa LSM' : 'Vista previa';
+  openPhotoPreview(photo.dataUrl, title);
+}
+
+function openPhotoPreview(dataUrl, title) {
   const img = document.getElementById('photo-preview-img');
-  const title = document.getElementById('photo-preview-title');
-  img.src = photo.dataUrl;
-  title.textContent = AppState.pendingMarkerType === 'lsm' ? 'Vista previa LSM' : 'Vista previa';
+  const titleEl = document.getElementById('photo-preview-title');
+  img.src = dataUrl;
+  titleEl.textContent = title || 'Vista previa';
   document.getElementById('photo-preview-modal').classList.remove('hidden');
 }
 
@@ -2020,6 +2054,10 @@ function initEventListeners() {
   const syncBtn = document.getElementById('btn-sync');
   if (syncBtn) syncBtn.addEventListener('click', () => SyncManager.syncAllPending(true));
 
+  // Force app update button
+  const updateBtn = document.getElementById('btn-update-app');
+  if (updateBtn) updateBtn.addEventListener('click', forceAppUpdate);
+
   // Autocomplete de nombres de marcadores
   setupAutocomplete('marker-name', 'marker-name-suggestions', 'qc');
   setupAutocomplete('lsm-nombre-muestra', 'lsm-name-suggestions', 'lsm');
@@ -2107,24 +2145,7 @@ function initStampConfig() {
         };
         const stamped = await stampImage(file, markerData);
         const stampedUrl = await blobToDataURL(stamped.stampedBlob);
-        const stampedImg = await loadImage(stampedUrl);
-
-        // Ajustar canvas al aspecto de la foto estampada
-        const maxPreviewWidth = 300;
-        const maxPreviewHeight = 180;
-        let w = stampedImg.width;
-        let h = stampedImg.height;
-        if (w > maxPreviewWidth) {
-          h = Math.round(h * maxPreviewWidth / w);
-          w = maxPreviewWidth;
-        }
-        if (h > maxPreviewHeight) {
-          w = Math.round(w * maxPreviewHeight / h);
-          h = maxPreviewHeight;
-        }
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext('2d').drawImage(stampedImg, 0, 0, w, h);
+        openPhotoPreview(stampedUrl, 'Vista previa de estampado');
         showToast('Vista previa actualizada', 'success');
       } catch (err) {
         console.error('[testStampWithCamera]', err);
@@ -2135,6 +2156,8 @@ function initStampConfig() {
 }
 
 async function renderStampPreview(canvas, logoSize, fontSize) {
+  canvas.width = 320;
+  canvas.height = 180;
   const ctx = canvas.getContext('2d');
   const width = canvas.width;
   const height = canvas.height;
