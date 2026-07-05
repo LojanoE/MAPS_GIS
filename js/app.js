@@ -267,6 +267,13 @@ function formatDateTime(isoString) {
   const d = new Date(isoString);
   return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+function getLocalDateString(date) {
+  const d = date || new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return year + '-' + month + '-' + day;
+}
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -531,7 +538,7 @@ async function handlePhotoCapture(file, latLng) {
       const markerData = {
         nombreMuestra: document.getElementById('lsm-nombre-muestra')?.value?.trim() || '',
         localizacion: document.getElementById('lsm-localizacion')?.value?.trim() || '',
-        fecha: new Date().toISOString().slice(0, 10),
+        fecha: getLocalDateString(),
         lat,
         lng
       };
@@ -1657,7 +1664,7 @@ function updateMarkerCountBadge() {
 // ZIP + EXCEL EXPORT
 // ============================================
 function openExportModal() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateString();
   document.getElementById('export-today-date').textContent = formatDate(today);
   document.getElementById('export-date-from').value = today;
   document.getElementById('export-date-to').value = today;
@@ -1670,13 +1677,13 @@ function getExportMarkers() {
   const markers = MarkerManager.getAll();
   const type = getExportType();
   if (type === 'today') {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = getLocalDateString();
     return markers.filter(m => m.createdAt && m.createdAt.startsWith(todayStr));
   } else {
-    const fromDate = new Date(document.getElementById('export-date-from').value);
-    fromDate.setHours(0, 0, 0, 0);
-    const toDate = new Date(document.getElementById('export-date-to').value);
-    toDate.setHours(23, 59, 59, 999);
+    const fromStr = document.getElementById('export-date-from').value || getLocalDateString();
+    const toStr = document.getElementById('export-date-to').value || getLocalDateString();
+    const fromDate = new Date(fromStr + 'T00:00:00');
+    const toDate = new Date(toStr + 'T23:59:59.999');
     return markers.filter(m => { if (!m.createdAt) return false; const d = new Date(m.createdAt); return d >= fromDate && d <= toDate; });
   }
 }
@@ -1695,6 +1702,7 @@ async function exportToZIP() {
       const qcData = [['Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2']];
       for (let i = 0; i < qcMarkers.length; i++) {
         const m = qcMarkers[i];
+        const prefix = 'QC';
         const safeName = (m.name || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '_');
         const rowNum = String(i + 1).padStart(3, '0');
         let foto1 = '', foto2 = '';
@@ -1704,7 +1712,7 @@ async function exportToZIP() {
             try {
               const photoRecord = await MapStorage.getPhoto(photoId);
               if (photoRecord && photoRecord.blob) {
-                const fileName = safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
+                const fileName = prefix + '_' + safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
                 folder.file(fileName, photoRecord.blob);
                 if (p === 0) foto1 = fileName;
                 if (p === 1) foto2 = fileName;
@@ -1729,6 +1737,7 @@ async function exportToZIP() {
       for (let i = 0; i < lsmMarkers.length; i++) {
         const m = lsmMarkers[i];
         const d = m.lsmData || {};
+        const prefix = 'LSM';
         const safeName = (m.name || 'SinNombre').replace(/[^a-zA-Z0-9]/g, '_');
         const rowNum = String(i + 1).padStart(3, '0');
         let foto1 = '', foto2 = '';
@@ -1738,7 +1747,7 @@ async function exportToZIP() {
             try {
               const photoRecord = await MapStorage.getPhoto(photoId);
               if (photoRecord && photoRecord.blob) {
-                const fileName = safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
+                const fileName = prefix + '_' + safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
                 folder.file(fileName, photoRecord.blob);
                 if (p === 0) foto1 = fileName;
                 if (p === 1) foto2 = fileName;
@@ -1750,7 +1759,7 @@ async function exportToZIP() {
       }
       const wsLSM = XLSX.utils.aoa_to_sheet(lsmData, { cellDates: true });
       for (let r = 1; r < lsmData.length; r++) {
-        const addr = XLSX.utils.encode_col(7) + (r + 1);
+        const addr = XLSX.utils.encode_col(6) + (r + 1);
         if (wsLSM[addr] && wsLSM[addr].v instanceof Date) {
           wsLSM[addr].z = 'DD/MM/YYYY';
           wsLSM[addr].t = 'd';
@@ -1764,7 +1773,7 @@ async function exportToZIP() {
     saveAs(zipBlob, 'marcadores_' + new Date().toISOString().slice(0, 10) + '.zip');
     showToast(markers.length + ' marcadores exportados', 'success');
     closeExportModal();
-  } catch (error) { showToast('Error al generar ZIP', 'error'); }
+  } catch (error) { console.error('[exportToZIP]', error); showToast('Error al generar ZIP', 'error'); }
 }
 
 // ============================================
