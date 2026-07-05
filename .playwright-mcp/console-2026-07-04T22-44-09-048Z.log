@@ -1,0 +1,17 @@
+[     531ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:8080/index.html?v=final:0
+[     531ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8080/index.html?v=final:0
+[     535ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:8080/index.html?v=final:0
+[     535ms] [LOG] [App] SW registered: http://localhost:8080/ @ http://localhost:8080/index.html?v=final:878
+[    3094ms] [LOG] [App] SW update found @ http://localhost:8080/index.html?v=final:899
+[    3533ms] [WARNING] The resource http://localhost:8080/assets/logo_lab_chino_PNG.png?v=2.3.4 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:8080/index.html?v=final:0
+[    3748ms] [LOG] [App] SW state changed to: installed @ http://localhost:8080/index.html?v=final:910
+[    3748ms] [LOG] [App] New version installed, forcing activation... @ http://localhost:8080/index.html?v=final:913
+[    3749ms] [LOG] [App] SW state changed to: activating @ http://localhost:8080/index.html?v=final:910
+[    3750ms] [LOG] [App] New service worker activated, reloading... @ http://localhost:8080/index.html?v=final:871
+[    3759ms] [LOG] [App] SW state changed to: activated @ http://localhost:8080/index.html?v=final:910
+[    3930ms] [LOG] [App] Config migrated to version 2.3.5 @ http://localhost:8080/js/app.js?v=2.3.4:1982
+[    3932ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:8080/index.html?v=final:0
+[    3932ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8080/index.html?v=final:0
+[    3955ms] [LOG] [App] SW registered: http://localhost:8080/ @ http://localhost:8080/index.html?v=final:878
+[    3955ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:8080/index.html?v=final:0
+[    6943ms] [WARNING] The resource http://localhost:8080/assets/logo_lab_chino_PNG.png?v=2.3.4 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:8080/index.html?v=final:0

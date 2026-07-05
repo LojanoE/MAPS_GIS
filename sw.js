@@ -8,7 +8,7 @@
 // ============================================
 // VERSION CONTROL - BUMP THIS TO FORCE UPDATE
 // ============================================
-const APP_VERSION = '2.3.3'; // Bump to force cache refresh on all devices
+const APP_VERSION = '2.3.6'; // Bump to force cache refresh on all devices
 
 const CACHE_NAME = 'maps-gis-v' + APP_VERSION;
 const STATIC_CACHE = 'maps-gis-static-v' + APP_VERSION;
@@ -18,13 +18,14 @@ const DYNAMIC_CACHE = 'maps-gis-dynamic-v' + APP_VERSION;
 const CORE_ASSETS = [
   './',
   './index.html',
-  './css/styles.css',
-  './js/app.js',
-  './js/storage.js',
-  './js/pdf-processor.js',
-  './js/sync-manager.js',
-  './js/admin-manager.js',
-  './manifest.json'
+  './css/styles.css?v=2.3.4',
+  './js/app.js?v=2.3.4',
+  './js/storage.js?v=2.3.4',
+  './js/pdf-processor.js?v=2.3.4',
+  './js/sync-manager.js?v=2.3.4',
+  './js/admin-manager.js?v=2.3.4',
+  './manifest.json',
+  './assets/logo_lab_chino_PNG.png?v=2.3.4'
 ];
 
 // CDN resources to cache (external dependencies)
@@ -34,12 +35,13 @@ const CDN_ASSETS = [
   'https://unpkg.com/proj4@2.9.2/dist/proj4.js',
   'https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.min.js',
   'https://cdn.jsdelivr.net/npm/georaster@1.6.0/dist/georaster.browser.bundle.min.js',
-  'https://cdn.jsdelivr.net/npm/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js',
+  'https://cdn.jsdelivr.net/npm/georaster-layer-for-leaflet@3.10.0/dist/georaster-layer-for-leaflet.min.js',
   'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
   'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
   'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js',
+  'https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js'
 ];
 
 // Tile URL patterns to handle separately (stale-while-revalidate for speed)

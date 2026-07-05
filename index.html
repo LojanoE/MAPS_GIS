@@ -12,11 +12,12 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <!-- App CSS -->
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/styles.css?v=2.3.6">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.3.6">
 </head>
 <body>
 
@@ -37,7 +38,7 @@
               <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.3.3</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.3.6</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -243,9 +244,10 @@
       <h3 id="marker-modal-title">Nuevo Marcador</h3>
       <p id="marker-coords-display"></p>
 
-      <div class="form-group">
+      <div class="form-group autocomplete-wrap">
         <label for="marker-name">Nombre *</label>
         <input type="text" id="marker-name" placeholder="Nombre del punto" maxlength="50" autocomplete="off">
+        <ul id="marker-name-suggestions" class="autocomplete-list hidden"></ul>
       </div>
 
       <div class="form-group">
@@ -582,9 +584,10 @@
         <select id="lsm-tipo-material" class="crs-select"></select>
       </div>
 
-      <div class="form-group">
+      <div class="form-group autocomplete-wrap">
         <label for="lsm-nombre-muestra">Nombre de Muestra *</label>
         <input type="text" id="lsm-nombre-muestra" placeholder="Nombre de la muestra" maxlength="50" autocomplete="off">
+        <ul id="lsm-name-suggestions" class="autocomplete-list hidden"></ul>
       </div>
 
       <div class="form-group">
@@ -825,7 +828,7 @@
   <script defer src="https://cdn.jsdelivr.net/npm/georaster@1.6.0/dist/georaster.browser.bundle.min.js"></script>
 
   <!-- GeoRaster Layer for Leaflet -->
-  <script defer src="https://cdn.jsdelivr.net/npm/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/georaster-layer-for-leaflet@3.10.0/dist/georaster-layer-for-leaflet.min.js"></script>
 
   <!-- PDF.js -->
   <script defer src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
@@ -839,20 +842,23 @@
   <!-- FileSaver (Downloads) -->
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
+  <!-- Piexif (EXIF read/write for stamped photos) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
+
   <!-- Storage Module (IndexedDB) -->
-  <script defer src="js/storage.js"></script>
+  <script defer src="js/storage.js?v=2.3.6"></script>
 
   <!-- PDF Processor -->
-  <script defer src="js/pdf-processor.js"></script>
+  <script defer src="js/pdf-processor.js?v=2.3.6"></script>
 
   <!-- App Main Logic -->
-  <script defer src="js/app.js"></script>
+  <script defer src="js/app.js?v=2.3.6"></script>
 
   <!-- Sync Manager (Offline-first Supabase sync) -->
-  <script defer src="js/sync-manager.js"></script>
+  <script defer src="js/sync-manager.js?v=2.3.6"></script>
 
   <!-- Admin Manager (Remote admin panel) -->
-  <script defer src="js/admin-manager.js"></script>
+  <script defer src="js/admin-manager.js?v=2.3.6"></script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>

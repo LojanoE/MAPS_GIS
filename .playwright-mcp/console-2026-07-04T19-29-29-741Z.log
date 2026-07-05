@@ -1,0 +1,16 @@
+[    2104ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://cdn.jsdelivr.net/npm/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js:0
+[    2162ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:8080/:0
+[    2162ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8080/:0
+[    2164ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:8080/:0
+[    2165ms] [LOG] [App] SW registered: http://localhost:8080/ @ http://localhost:8080/:874
+[    4248ms] [LOG] [App] SW update found @ http://localhost:8080/:895
+[    4360ms] [LOG] [App] SW state changed to: installed @ http://localhost:8080/:906
+[    4360ms] [LOG] [App] New version installed, forcing activation... @ http://localhost:8080/:909
+[    4362ms] [LOG] [App] SW state changed to: activating @ http://localhost:8080/:906
+[    4363ms] [LOG] [App] New service worker activated, reloading... @ http://localhost:8080/:867
+[    5370ms] [LOG] [App] SW state changed to: activated @ http://localhost:8080/:906
+[    5398ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://cdn.jsdelivr.net/npm/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js:0
+[    5741ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:8080/:0
+[    5742ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8080/:0
+[    5743ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:8080/:0
+[    5767ms] [LOG] [App] SW registered: http://localhost:8080/ @ http://localhost:8080/:874

@@ -256,7 +256,7 @@ const MapStorage = (() => {
   // PHOTO OPERATIONS
   // ============================================
 
-  async function savePhoto(blob, markerId) {
+  async function savePhoto(blob, markerId, originalBlob) {
     const database = await initDB();
 
     return new Promise((resolve, reject) => {
@@ -268,6 +268,7 @@ const MapStorage = (() => {
         id: photoId,
         markerId: markerId || null,
         blob: blob,
+        originalBlob: originalBlob || null,
         createdAt: new Date().toISOString()
       };
 
@@ -322,6 +323,11 @@ const MapStorage = (() => {
         reject(new Error('Error en transaccion de lectura de foto'));
       };
     });
+  }
+
+  async function getPhotoOriginal(photoId) {
+    const record = await getPhoto(photoId);
+    return record && record.originalBlob ? record.originalBlob : null;
   }
 
   async function getPhotosByMarker(markerId) {
@@ -406,6 +412,7 @@ const MapStorage = (() => {
     // Photos
     savePhoto,
     getPhoto,
+    getPhotoOriginal,
     getPhotosByMarker,
     deletePhoto,
     deletePhotosByMarker

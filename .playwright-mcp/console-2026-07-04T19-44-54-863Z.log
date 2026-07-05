@@ -1,0 +1,20 @@
+[     669ms] [LOG] [App] Config migrated to version 2.3.4 @ http://localhost:8080/js/app.js?v=2.3.4:1982
+[     671ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:8080/index.html?v=fresh3:0
+[     671ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8080/index.html?v=fresh3:0
+[     673ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:8080/index.html?v=fresh3:0
+[     677ms] [LOG] [App] SW registered: http://localhost:8080/ @ http://localhost:8080/index.html?v=fresh3:878
+[     699ms] [LOG] [App] SW update found @ http://localhost:8080/index.html?v=fresh3:899
+[     802ms] [LOG] [App] SW state changed to: installed @ http://localhost:8080/index.html?v=fresh3:910
+[     808ms] [LOG] [App] SW state changed to: activating @ http://localhost:8080/index.html?v=fresh3:910
+[    1813ms] [LOG] [App] New service worker activated, reloading... @ http://localhost:8080/index.html?v=fresh3:871
+[    1814ms] [LOG] [App] SW state changed to: activated @ http://localhost:8080/index.html?v=fresh3:910
+[    1901ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://cdn.jsdelivr.net/npm/georaster-layer-for-leaflet@3.11.0/dist/georaster-layer-for-leaflet.min.js:0
+[    2087ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:8080/index.html?v=fresh3:0
+[    2087ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8080/index.html?v=fresh3:0
+[    2102ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:8080/index.html?v=fresh3:0
+[    2102ms] [LOG] [App] SW registered: http://localhost:8080/ @ http://localhost:8080/index.html?v=fresh3:878
+[    5101ms] [WARNING] The resource http://localhost:8080/assets/logo_lab_chino_PNG.png?v=2.3.4 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:8080/index.html?v=fresh3:0
+[   65059ms] [WARNING] The resource http://localhost:8080/assets/logo_lab_chino_PNG.png?v=2.3.4 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:8080/index.html?v=fresh3:0
+[  139013ms] [WARNING] The resource http://localhost:8080/assets/logo_lab_chino_PNG.png?v=2.3.4 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:8080/index.html?v=fresh3:0
+[  252641ms] [WARNING] The resource http://localhost:8080/assets/logo_lab_chino_PNG.png?v=2.3.4 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:8080/index.html?v=fresh3:0
+[  268683ms] [WARNING] The resource http://localhost:8080/assets/logo_lab_chino_PNG.png?v=2.3.4 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:8080/index.html?v=fresh3:0

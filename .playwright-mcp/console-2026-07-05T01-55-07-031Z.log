@@ -1,0 +1,5 @@
+[     428ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:8080/index.html?v=autocomplete:0
+[     428ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8080/index.html?v=autocomplete:0
+[     435ms] [LOG] [App] SW registered: http://localhost:8080/ @ http://localhost:8080/index.html?v=autocomplete:880
+[     435ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:8080/index.html?v=autocomplete:0
+[    3438ms] [WARNING] The resource http://localhost:8080/assets/logo_lab_chino_PNG.png?v=2.3.4 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:8080/index.html?v=autocomplete:0

@@ -14,7 +14,7 @@ PWA offline-first en español para visualizar mapas GIS (GeoTIFF/PDF) y recolect
 - No hay linter ni formateador configurado.
 
 ## Carga de scripts (NO CAMBIAR ORDEN)
-En `index.html`: Leaflet → Proj4 → GeoTIFF → GeoRaster → GeoRaster Layer → PDF.js → SheetJS → JSZip → FileSaver → `storage.js` → `pdf-processor.js` → `app.js` → `sync-manager.js` → `admin-manager.js`.
+En `index.html`: Leaflet → Proj4 → GeoTIFF → GeoRaster → GeoRaster Layer → PDF.js → SheetJS → JSZip → FileSaver → **Piexif** → `storage.js` → `pdf-processor.js` → `app.js` → `sync-manager.js` → `admin-manager.js`.
 
 ## Versionado
 Al subir versión, sincronizar **3 lugares**:
@@ -25,7 +25,7 @@ Al subir versión, sincronizar **3 lugares**:
 `CACHE_NAME` y los caches en `sw.js` se derivan de `APP_VERSION`; no editar a mano.
 
 ## Dependencias CDN
-Las URLs en `sw.js` (`CDN_ASSETS`) deben coincidir exactamente con los `<script src>` de `index.html`. Incluir `pdf.worker.min.js` en `sw.js` aunque no esté explícito en `index.html`.
+Las URLs en `sw.js` (`CDN_ASSETS`) deben coincidir exactamente con los `<script src>` de `index.html`. Incluir `pdf.worker.min.js` y **piexif** en `sw.js` aunque no estén explícitos en `index.html`.
 
 ## Sistemas de coordenadas
 - Primario: PSAD56 UTM 17S (`EPSG:24877`) — definición proj4 en `app.js:6-10`.
@@ -37,6 +37,18 @@ Dos tipos con formularios distintos:
 - `qc` → tabla `qc_markers` (nombre, descripción, color, fotos).
 - `lsm` → tabla `lsm_markers` (~15 campos de laboratorio).
 - Máximo **2 fotos** por marcador.
+
+## Assets estáticos
+Agregar `./assets/logo_lab_chino_PNG.png` a `CORE_ASSETS` en `sw.js` para que se cachee offline.
+
+## Fotos LSM
+- Las fotos LSM se estampan con:
+  - Logo `assets/logo_lab_chino_PNG.png` en margen derecho (25 px alto, 10 px del borde).
+  - Texto en margen izquierdo (10 px del borde), de abajo hacia arriba: fecha `YYYY-MM-DD`, subestructura, nombre del marcador.
+  - Fuente del sistema, blanco con contorno negro (`shadow`).
+- Se conserva el `originalBlob` en IndexedDB.
+- La foto estampada re-inyecta la metadata EXIF/GPS original vía **piexif.js**.
+- La exportación ZIP usa la foto estampada.
 
 ## Almacenamiento local
 | Datos | Tecnología | Clave |
@@ -67,12 +79,13 @@ Al agregar un campo LSM, actualizar:
 1. `MarkerManager.createLSM()` en `app.js`
 2. Modal `#lsm-marker-modal` en `index.html`
 3. `saveLSMMarker()` en `app.js`
-4. `supabase_schema_v2.sql`
-5. `uploadLSM` en `sync-manager.js`
-6. Exportación ZIP en `app.js`
-7. Tabla / detalle / edición en `admin-manager.js`
-8. `autoLearnLSMConfig()` en `app.js` si aplica
+4. `stampImage()` en `app.js` si el nuevo campo debe aparecer en la foto estampada
+5. `supabase_schema_v2.sql`
+6. `uploadLSM` en `sync-manager.js`
+7. Exportación ZIP en `app.js`
+8. Tabla / detalle / edición en `admin-manager.js`
+9. `autoLearnLSMConfig()` en `app.js` si aplica
 
 ## Ignorar
-- `IGNORAR/` (excluido por `.gitignore`)
+- `IGNORAR/` (excluido por `.gitignore`; **no** incluir assets de producción aquí)
 - `js/app.js.backup.v161`

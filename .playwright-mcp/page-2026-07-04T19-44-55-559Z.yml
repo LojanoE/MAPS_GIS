@@ -1,0 +1,36 @@
+- generic [ref=f2e2]:
+  - banner [ref=f2e3]:
+    - generic [ref=f2e4]:
+      - heading "MAPS GIS" [level=1] [ref=f2e5]
+      - generic [ref=f2e6]:
+        - button "Sincronizar" [ref=f2e7] [cursor=pointer]:
+          - img [ref=f2e8]
+        - button "Admin" [ref=f2e11] [cursor=pointer]:
+          - img [ref=f2e12]
+        - generic [ref=f2e16]: v2.3.4
+    - paragraph [ref=f2e17]: Visor de Mapas y Marcadores
+  - main [ref=f2e18]:
+    - generic [ref=f2e19]:
+      - heading "Cargar Mapa" [level=2] [ref=f2e20]
+      - generic [ref=f2e21] [cursor=pointer]:
+        - img [ref=f2e23]
+        - generic [ref=f2e25]: Seleccionar archivo .TIF, .TIFF o .PDF
+    - generic [ref=f2e26]:
+      - generic [ref=f2e27]:
+        - heading "Mis Mapas" [level=2] [ref=f2e28]
+        - generic [ref=f2e29]: "1"
+      - generic [ref=f2e31] [cursor=pointer]:
+        - img [ref=f2e33]
+        - generic [ref=f2e35]:
+          - generic [ref=f2e36]: DRT_PDF.pdf
+          - generic [ref=f2e37]: PDF - 4.1 MB - 04 jul 2026
+        - button "X" [ref=f2e38]
+    - generic [ref=f2e40]:
+      - img [ref=f2e42]
+      - generic [ref=f2e45]:
+        - generic [ref=f2e46]: Marcadores guardados
+        - generic [ref=f2e47]: "0"
+    - button "Configuracion" [ref=f2e49] [cursor=pointer]:
+      - img [ref=f2e50]
+      - text: Configuracion
+  - contentinfo [ref=f2e53]: 4.1 MB usado

@@ -1,0 +1,15 @@
+[     445ms] [LOG] [App] Config migrated to version 2.3.6 @ http://localhost:8080/js/app.js?v=2.3.6:2111
+[     447ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:8080/index.html?v=autocomplete2:0
+[     447ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8080/index.html?v=autocomplete2:0
+[     449ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:8080/index.html?v=autocomplete2:0
+[     489ms] [LOG] [App] SW registered: http://localhost:8080/ @ http://localhost:8080/index.html?v=autocomplete2:880
+[     489ms] [LOG] [App] SW installing... @ http://localhost:8080/index.html?v=autocomplete2:894
+[    1239ms] [LOG] [App] SW state changed to: installed @ http://localhost:8080/index.html?v=autocomplete2:912
+[    1239ms] [LOG] [App] SW state changed to: activating @ http://localhost:8080/index.html?v=autocomplete2:912
+[    1240ms] [LOG] [App] New service worker activated, reloading... @ http://localhost:8080/index.html?v=autocomplete2:873
+[    1241ms] [LOG] [App] SW state changed to: activated @ http://localhost:8080/index.html?v=autocomplete2:912
+[    1418ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) @ http://localhost:8080/index.html?v=autocomplete2:0
+[    1418ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://localhost:8080/index.html?v=autocomplete2:0
+[    1450ms] [LOG] [App] SW registered: http://localhost:8080/ @ http://localhost:8080/index.html?v=autocomplete2:880
+[    1450ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:8080/index.html?v=autocomplete2:0
+[    4431ms] [WARNING] The resource http://localhost:8080/assets/logo_lab_chino_PNG.png?v=2.3.6 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:8080/index.html?v=autocomplete2:0

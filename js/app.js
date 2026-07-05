@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.3.3';
+const APP_VERSION = '2.3.6';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -293,6 +293,148 @@ function compressImage(file, maxWidth = 1024, quality = 0.75) {
     reader.readAsDataURL(file);
   });
 }
+
+async function stampImage(imageFile, markerData) {
+  const { nombreMuestra, subestructura, fecha } = markerData || {};
+  const MAX_WIDTH = 1600;
+
+  let originalExifBytes = null;
+  try {
+    if (typeof piexif !== 'undefined') {
+      const originalDataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(imageFile);
+      });
+      originalExifBytes = piexif.load(originalDataUrl);
+    }
+  } catch (e) {
+    console.warn('[stampImage] No se pudo leer EXIF original:', e);
+  }
+
+  const [photoDataUrl, logoDataUrl] = await Promise.all([
+    new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(imageFile);
+    }),
+    loadLogoDataUrl()
+  ]);
+
+  const img = await loadImage(photoDataUrl);
+  const logo = await loadImage(logoDataUrl);
+
+  let width = img.width;
+  let height = img.height;
+  if (width > MAX_WIDTH) {
+    height = Math.round((height * MAX_WIDTH) / width);
+    width = MAX_WIDTH;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  ctx.drawImage(img, 0, 0, width, height);
+
+  // Logo en margen derecho, 25px de alto, 10px del borde
+  const logoHeight = 25;
+  const logoWidth = (logo.width / logo.height) * logoHeight;
+  const logoX = width - logoWidth - 10;
+  const logoY = height - logoHeight - 10;
+  ctx.drawImage(logo, logoX, logoY, logoWidth, logoHeight);
+
+  // Texto en margen izquierdo, de abajo hacia arriba
+  const lines = [
+    fecha || '',
+    subestructura || '',
+    nombreMuestra || ''
+  ].filter(Boolean);
+
+  const fontSize = Math.max(12, Math.round(width * 0.025));
+  ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign = 'left';
+  ctx.lineJoin = 'round';
+
+  const lineHeight = fontSize * 1.3;
+  const textX = 10;
+  const bottomMargin = 10;
+
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    const y = height - bottomMargin - (i * lineHeight);
+
+    // Contorno negro
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = Math.max(2, fontSize * 0.15);
+    ctx.strokeText(text, textX, y);
+
+    // Relleno blanco
+    ctx.fillStyle = 'white';
+    ctx.fillText(text, textX, y);
+  }
+
+  const stampedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+  // Re-inyectar EXIF original en la imagen estampada
+  let finalDataUrl = stampedDataUrl;
+  if (originalExifBytes && typeof piexif !== 'undefined') {
+    try {
+      finalDataUrl = piexif.insert(piexif.dump(originalExifBytes), stampedDataUrl);
+    } catch (e) {
+      console.warn('[stampImage] No se pudo re-inyectar EXIF:', e);
+    }
+  }
+
+  const stampedBlob = dataURLtoBlob(finalDataUrl);
+
+  return {
+    stampedBlob,
+    originalBlob: imageFile
+  };
+}
+
+function loadLogoDataUrl() {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('No se pudo cargar el logo'));
+    img.src = 'assets/logo_lab_chino_PNG.png';
+  });
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se pudo cargar la imagen'));
+    img.src = src;
+  });
+}
+
+function dataURLtoBlob(dataUrl) {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)[1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new Blob([u8arr], { type: mime });
+}
+
 function blobToDataURL(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -305,10 +447,26 @@ async function handlePhotoCapture(file) {
   if (!file) return;
   try {
     showToast('Procesando foto...', 'info');
-    const compressedBlob = await compressImage(file, 1600, 0.90);
-    const dataUrl = await blobToDataURL(compressedBlob);
+    const isLsm = AppState.pendingMarkerType === 'lsm';
+    let compressedBlob, dataUrl, originalBlob;
+
+    if (isLsm) {
+      const markerData = {
+        nombreMuestra: document.getElementById('lsm-nombre-muestra')?.value?.trim() || '',
+        subestructura: document.getElementById('lsm-subestructuras')?.value?.trim() || '',
+        fecha: new Date().toISOString().slice(0, 10)
+      };
+      const stamped = await stampImage(file, markerData);
+      compressedBlob = stamped.stampedBlob;
+      originalBlob = stamped.originalBlob;
+    } else {
+      compressedBlob = await compressImage(file, 1600, 0.90);
+      originalBlob = file;
+    }
+
+    dataUrl = await blobToDataURL(compressedBlob);
     if (AppState.pendingPhotos.length >= 2) { showToast('Max 2 fotos', 'error'); return; }
-    AppState.pendingPhotos.push({ blob: compressedBlob, dataUrl: dataUrl });
+    AppState.pendingPhotos.push({ blob: compressedBlob, dataUrl: dataUrl, originalBlob: originalBlob });
     renderPhotoGrid();
     showToast('Foto agregada', 'success');
   } catch (error) { showToast('Error al procesar foto', 'error'); }
@@ -923,12 +1081,127 @@ async function openLSMMarkerModal(latlng, editId) {
 }
 function closeLSMMarkerModal() {
   document.getElementById('lsm-marker-modal').classList.add('hidden');
+  clearAutocomplete(document.getElementById('lsm-name-suggestions'));
   AppState.pendingMarkerLatLng = null;
   AppState.editingMarkerId = null;
   AppState.isAddMarkerMode = false;
   clearPendingPhotos();
   document.getElementById('btn-add-marker').classList.remove('active');
 }
+
+// ============================================
+// AUTOCOMPLETE DE NOMBRES DE MARCADORES
+// ============================================
+function getMarkerNameSuggestions(type, query, excludeId) {
+  if (!query || query.length < 1) return [];
+  const q = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const markers = MarkerManager.getAll();
+  const names = new Set();
+  for (const m of markers) {
+    if (m.markerType !== type) continue;
+    if (excludeId && m.id === excludeId) continue;
+    if (!m.name) continue;
+    const nameNorm = m.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (nameNorm.includes(q)) names.add(m.name.trim());
+    if (names.size >= 5) break;
+  }
+  return Array.from(names);
+}
+
+function renderAutocompleteList(listEl, items, query) {
+  listEl.innerHTML = '';
+  if (items.length === 0) {
+    listEl.classList.add('hidden');
+    return;
+  }
+  const q = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  for (const item of items) {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'option');
+    li.dataset.value = item;
+    const itemNorm = item.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const idx = itemNorm.indexOf(q);
+    if (idx >= 0) {
+      li.innerHTML = escapeHtml(item.slice(0, idx)) + '<em>' + escapeHtml(item.slice(idx, idx + query.length)) + '</em>' + escapeHtml(item.slice(idx + query.length));
+    } else {
+      li.textContent = item;
+    }
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const input = listEl.previousElementSibling;
+      if (input) {
+        input.value = item;
+        input.focus();
+      }
+      listEl.classList.add('hidden');
+    });
+    listEl.appendChild(li);
+  }
+  listEl.classList.remove('hidden');
+  listEl.dataset.activeIndex = '-1';
+}
+
+function clearAutocomplete(listEl) {
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  listEl.classList.add('hidden');
+  listEl.dataset.activeIndex = '-1';
+}
+
+function setupAutocomplete(inputId, listId, type) {
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+  if (!input || !list) return;
+
+  function refreshSuggestions() {
+    const query = input.value;
+    const excludeId = AppState.editingMarkerId || null;
+    const items = getMarkerNameSuggestions(type, query, excludeId);
+    renderAutocompleteList(list, items, query);
+  }
+
+  input.addEventListener('input', refreshSuggestions);
+
+  input.addEventListener('focus', () => {
+    if (input.value.trim().length > 0) refreshSuggestions();
+  });
+
+  input.addEventListener('blur', () => {
+    setTimeout(() => clearAutocomplete(list), 150);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (list.classList.contains('hidden')) return;
+    const items = Array.from(list.querySelectorAll('li'));
+    let activeIndex = parseInt(list.dataset.activeIndex || '-1', 10);
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, items.length - 1);
+      updateActiveItem(items, activeIndex, list);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, -1);
+      updateActiveItem(items, activeIndex, list);
+    } else if (e.key === 'Enter') {
+      if (activeIndex >= 0 && items[activeIndex]) {
+        e.preventDefault();
+        input.value = items[activeIndex].dataset.value;
+        clearAutocomplete(list);
+      }
+    } else if (e.key === 'Escape') {
+      clearAutocomplete(list);
+    }
+  });
+}
+
+function updateActiveItem(items, activeIndex, listEl) {
+  items.forEach((li, idx) => li.classList.toggle('active', idx === activeIndex));
+  listEl.dataset.activeIndex = String(activeIndex);
+  const active = items[activeIndex];
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
 async function saveLSMMarker() {
   const nombreMuestra = document.getElementById('lsm-nombre-muestra').value.trim();
   if (!nombreMuestra) { showToast('Ingresa el Nombre de Muestra', 'error'); return; }
@@ -952,7 +1225,7 @@ async function saveLSMMarker() {
       if (photo.photoId) photoIds.push(photo.photoId);
       else if (photo.blob) {
         const markerId = AppState.editingMarkerId || ('m_' + Date.now());
-        const photoId = await MapStorage.savePhoto(photo.blob, markerId);
+        const photoId = await MapStorage.savePhoto(photo.blob, markerId, photo.originalBlob || null);
         photoIds.push(photoId);
       }
     } catch (e) { console.error('Error saving photo:', e); }
@@ -1022,6 +1295,7 @@ async function openMarkerModal(latlng, editId) {
 }
 function closeMarkerModal() {
   document.getElementById('marker-modal').classList.add('hidden');
+  clearAutocomplete(document.getElementById('marker-name-suggestions'));
   AppState.pendingMarkerLatLng = null;
   AppState.editingMarkerId = null;
   AppState.isAddMarkerMode = false;
@@ -1038,7 +1312,7 @@ async function saveMarker() {
       if (photo.photoId) photoIds.push(photo.photoId);
       else if (photo.blob) {
         const markerId = AppState.editingMarkerId || ('m_' + Date.now());
-        const photoId = await MapStorage.savePhoto(photo.blob, markerId);
+        const photoId = await MapStorage.savePhoto(photo.blob, markerId, photo.originalBlob || null);
         photoIds.push(photoId);
       }
     } catch (e) { console.error('Error saving photo:', e); }
@@ -1603,7 +1877,12 @@ function initEventListeners() {
   });
   document.getElementById('btn-save-marker').addEventListener('click', saveMarker);
   document.getElementById('btn-cancel-marker').addEventListener('click', closeMarkerModal);
-  document.getElementById('marker-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveMarker(); if (e.key === 'Escape') closeMarkerModal(); });
+  document.getElementById('marker-name').addEventListener('keydown', (e) => {
+    const list = document.getElementById('marker-name-suggestions');
+    const activeIndex = parseInt(list?.dataset.activeIndex || '-1', 10);
+    if (e.key === 'Enter' && activeIndex < 0) saveMarker();
+    if (e.key === 'Escape') closeMarkerModal();
+  });
   document.querySelectorAll('.category-btn').forEach(btn => {
     btn.addEventListener('click', () => { AppState.selectedCategory = btn.dataset.color; updateCategorySelector(); });
   });
@@ -1654,7 +1933,11 @@ function initEventListeners() {
   document.getElementById('lsm-nickname').addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmLSMLogin(); });
   document.getElementById('btn-save-lsm-marker').addEventListener('click', saveLSMMarker);
   document.getElementById('btn-cancel-lsm-marker').addEventListener('click', closeLSMMarkerModal);
-  document.getElementById('lsm-nombre-muestra').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveLSMMarker(); });
+  document.getElementById('lsm-nombre-muestra').addEventListener('keydown', (e) => {
+    const list = document.getElementById('lsm-name-suggestions');
+    const activeIndex = parseInt(list?.dataset.activeIndex || '-1', 10);
+    if (e.key === 'Enter' && activeIndex < 0) saveLSMMarker();
+  });
   document.querySelectorAll('#lsm-category-selector .category-btn').forEach(btn => {
     btn.addEventListener('click', () => { AppState.lsmSelectedCategory = btn.dataset.color; updateLSMCategorySelector(); });
   });
@@ -1672,6 +1955,10 @@ function initEventListeners() {
   // Sync button
   const syncBtn = document.getElementById('btn-sync');
   if (syncBtn) syncBtn.addEventListener('click', () => SyncManager.syncAllPending(true));
+
+  // Autocomplete de nombres de marcadores
+  setupAutocomplete('marker-name', 'marker-name-suggestions', 'qc');
+  setupAutocomplete('lsm-nombre-muestra', 'lsm-name-suggestions', 'lsm');
 }
 
 // ============================================
