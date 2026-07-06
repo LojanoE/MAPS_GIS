@@ -17,12 +17,16 @@ PWA offline-first en español para visualizar mapas GIS (GeoTIFF/PDF) y recolect
 En `index.html`: Leaflet → Proj4 → GeoTIFF → GeoRaster → GeoRaster Layer → PDF.js → SheetJS → JSZip → FileSaver → **Piexif** → `storage.js` → `pdf-processor.js` → `app.js` → `sync-manager.js` → `admin-manager.js`.
 
 ## Versionado
-Al subir versión, sincronizar **3 lugares**:
+Al subir versión, sincronizar **todos** estos lugares:
 - `sw.js:11` — `APP_VERSION`
 - `app.js:23` — `APP_VERSION`
 - `index.html:41` — texto de `#app-version-badge`
+- `index.html` — query strings `?v=X.Y.Z` en `<link>` y `<script>` locales (`css/styles.css`, `js/*.js`, `assets/logo_lab_chino_PNG.png`).
+- `sw.js` — query strings `?v=X.Y.Z` en `CORE_ASSETS` y `APP_ASSETS` (si aplica).
 
 `CACHE_NAME` y los caches en `sw.js` se derivan de `APP_VERSION`; no editar a mano.
+
+> **IMPORTANTE:** siempre actualizar la versión en el mismo PR/commit que contiene cambios funcionales. No se debe hacer push a `main` sin subir la versión, para garantizar que los dispositivos reciban el cache actualizado.
 
 ## Dependencias CDN
 Las URLs en `sw.js` (`CDN_ASSETS`) deben coincidir exactamente con los `<script src>` de `index.html`. Incluir `pdf.worker.min.js` y **piexif** en `sw.js` aunque no estén explícitos en `index.html`.
