@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.4.2';
+const APP_VERSION = '2.4.3';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -145,7 +145,7 @@ const CONFIG_KEYS = [
   'fuente', 'ensayos'
 ];
 
-const DEFAULT_CONFIG = {
+let DEFAULT_CONFIG = {
   nombre_proyecto: [
     '-',
     'Ingenieria Detallada para los Crecimientos El.945 m, El.970 m del DRT',
@@ -2415,7 +2415,21 @@ function saveDeviceName() {
 // ============================================
 // APP INITIALIZATION
 // ============================================
+async function loadConfigFromJSON() {
+  try {
+    const res = await fetch('./config.json');
+    if (res.ok) {
+      const json = await res.json();
+      DEFAULT_CONFIG = json;
+      console.log('[App] Config loaded from config.json');
+    }
+  } catch (e) {
+    console.warn('[App] Could not load config.json, using built-in defaults');
+  }
+}
+
 async function initApp() {
+  await loadConfigFromJSON();
   loadThemePreference();
   initEventListeners();
   loadMapsList(); // no bloquear la UI
