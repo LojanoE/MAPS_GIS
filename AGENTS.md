@@ -118,6 +118,9 @@ Al agregar un campo LSM, actualizar:
 - No borra `localStorage` ni `IndexedDB`; los marcadores y fotos se mantienen.
 - Si hay marcadores pendientes de subir, muestra advertencia pero permite actualizar de todos modos.
 
+## Licencia
+Este proyecto se distribuye bajo la **Apache License, Version 2.0**. Ver el archivo `LICENSE` en la raíz del repositorio.
+
 ## Ignorar
 - `IGNORAR/` (excluido por `.gitignore`; **no** incluir assets de producción aquí)
 - `js/app.js.backup.v161`
