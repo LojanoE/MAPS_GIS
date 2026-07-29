@@ -36,6 +36,15 @@ Las URLs en `sw.js` (`CDN_ASSETS`) deben coincidir exactamente con los `<script 
 - Secundario: WGS84 (`EPSG:4326`).
 - El panel muestra ambos simultáneamente.
 
+## Herramientas de medición
+- Botón toggle en `.map-controls` activa el modo medición.
+- Dos modos: **Distancia** (polilínea) y **Área** (polígono).
+- Los cálculos se realizan en **EPSG:24877** (metros) usando `proj4` para mayor precisión.
+- Panel flotante `#measurement-panel` muestra el resultado y botones Terminar/Borrar/Cerrar.
+- Doble clic en el mapa finaliza la medición actual.
+- El modo medición es mutuamente excluyente con el modo marcador.
+- No requiere plugins externos ni dependencias CDN adicionales.
+
 ## Marcadores
 Dos tipos con formularios distintos:
 - `qc` → tabla `qc_markers` (nombre, descripción, color, fotos).

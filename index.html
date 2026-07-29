@@ -12,12 +12,12 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <!-- App CSS -->
-  <link rel="stylesheet" href="css/styles.css?v=2.4.3">
+  <link rel="stylesheet" href="css/styles.css?v=2.4.4">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.4.3">
+  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.4.4">
 </head>
 <body>
 
@@ -43,7 +43,7 @@
               <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.4.3</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.4.4</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -160,6 +160,31 @@
       <!-- Barra de escala -->
       <div id="scale-bar" class="scale-bar"></div>
 
+      <!-- Panel flotante de medicion -->
+      <div id="measurement-panel" class="measurement-panel hidden">
+        <div class="measurement-header">
+          <span class="measurement-title">Medicion</span>
+          <button id="btn-close-measurement" class="icon-btn" title="Cerrar">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="measurement-type">
+          <button id="btn-measure-distance" class="measurement-type-btn active" data-type="distance">Distancia</button>
+          <button id="btn-measure-area" class="measurement-type-btn" data-type="area">Area</button>
+        </div>
+        <div class="measurement-result">
+          <span id="measurement-value">0 m</span>
+          <span id="measurement-secondary" class="measurement-secondary"></span>
+        </div>
+        <div class="measurement-actions">
+          <button id="btn-measure-finish" class="btn-sm btn-primary" title="Terminar medicion">Terminar</button>
+          <button id="btn-measure-clear" class="btn-sm btn-secondary" title="Borrar medicion">Borrar</button>
+        </div>
+        <p class="measurement-hint">Toca el mapa para agregar puntos. Doble tap para terminar.</p>
+      </div>
+
       <!-- Botones flotantes del mapa -->
       <div class="map-controls">
         <!-- Mi ubicacion -->
@@ -180,6 +205,16 @@
         <button id="btn-go-to-coords" class="map-btn" title="Buscar por coordenadas">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/><circle cx="12" cy="12" r="2"/>
+          </svg>
+        </button>
+
+        <!-- Medir distancia/area -->
+        <button id="btn-measure" class="map-btn" title="Medir distancia o area">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M3 12h18M3 18h18" opacity="0.3"/>
+            <path d="M2 22L22 2"/>
+            <path d="M16 2h6v6"/>
+            <path d="M2 16v6h6"/>
           </svg>
         </button>
 
@@ -906,19 +941,19 @@
   <script defer src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
 
   <!-- Storage Module (IndexedDB) -->
-  <script defer src="js/storage.js?v=2.4.3"></script>
+  <script defer src="js/storage.js?v=2.4.4"></script>
 
   <!-- PDF Processor -->
-  <script defer src="js/pdf-processor.js?v=2.4.3"></script>
+  <script defer src="js/pdf-processor.js?v=2.4.4"></script>
 
   <!-- App Main Logic -->
-  <script defer src="js/app.js?v=2.4.3"></script>
+  <script defer src="js/app.js?v=2.4.4"></script>
 
   <!-- Sync Manager (Offline-first Supabase sync) -->
-  <script defer src="js/sync-manager.js?v=2.4.3"></script>
+  <script defer src="js/sync-manager.js?v=2.4.4"></script>
 
   <!-- Admin Manager (Remote admin panel) -->
-  <script defer src="js/admin-manager.js?v=2.4.3"></script>
+  <script defer src="js/admin-manager.js?v=2.4.4"></script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>

@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.4.3';
+const APP_VERSION = '2.4.4';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -38,7 +38,16 @@ const AppState = {
   selectedCategory: 'red', darkTiles: null, lightTiles: null,
   pendingPDF: null, pendingPhotos: [], previewPhotoIndex: -1,
   currentMarkerMode: localStorage.getItem('maps_gis_marker_mode') || 'qc',
-  lsmSelectedCategory: 'red', gotoMarkerType: 'qc', pendingMarkerType: 'qc'
+  lsmSelectedCategory: 'red', gotoMarkerType: 'qc', pendingMarkerType: 'qc',
+  isMeasurementMode: false,
+  measurementType: 'distance',
+  measurementLayer: null,
+  measurementLatLngs: [],
+  measurementUtmPoints: [],
+  measurementMarkers: [],
+  measurementLine: null,
+  measurementPolygon: null,
+  measurementFinished: false
 };
 
 // ============================================
@@ -649,11 +658,21 @@ function initMap() {
   AppState.lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19 });
   AppState.darkTiles.addTo(AppState.map);
   AppState.markersLayer = L.layerGroup().addTo(AppState.map);
+  AppState.measurementLayer = L.layerGroup().addTo(AppState.map);
   AppState.map.on('click', (e) => {
+    if (AppState.isMeasurementMode && !AppState.measurementFinished) {
+      addMeasurementPoint(e.latlng);
+      return;
+    }
     if (AppState.isAddMarkerMode) {
       hideGpsSnackbar();
       if (AppState.currentMarkerMode === 'lsm') openLSMLoginOrMarkerModal(e.latlng);
       else openMarkerModal(e.latlng);
+    }
+  });
+  AppState.map.on('dblclick', (e) => {
+    if (AppState.isMeasurementMode && !AppState.measurementFinished && AppState.measurementLatLngs.length >= 2) {
+      finishMeasurement();
     }
   });
   AppState.map.on('mousemove', (e) => updateCoordsDisplay(e.latlng));
@@ -665,6 +684,181 @@ function updateCoordsDisplay(latlng) {
   document.getElementById('coord-este').textContent = 'E: ' + Math.round(east);
   document.getElementById('coord-lat').textContent = 'Lat: ' + latlng.lat.toFixed(6);
   document.getElementById('coord-lng').textContent = 'Lon: ' + latlng.lng.toFixed(6);
+}
+
+// ============================================
+// MEASUREMENT TOOLS
+// ============================================
+function toggleMeasurementMode() {
+  AppState.isMeasurementMode = !AppState.isMeasurementMode;
+  const btn = document.getElementById('btn-measure');
+  const panel = document.getElementById('measurement-panel');
+  btn.classList.toggle('active', AppState.isMeasurementMode);
+  panel.classList.toggle('hidden', !AppState.isMeasurementMode);
+  if (AppState.isMeasurementMode) {
+    if (AppState.isAddMarkerMode) {
+      AppState.isAddMarkerMode = false;
+      document.getElementById('btn-add-marker').classList.remove('active');
+      hideGpsSnackbar();
+    }
+    AppState.map.doubleClickZoom.disable();
+    showToast('Modo medicion activo', 'info');
+  } else {
+    stopMeasurement();
+    AppState.map.doubleClickZoom.enable();
+    showToast('Modo medicion desactivado', 'info');
+  }
+}
+
+function stopMeasurement() {
+  clearMeasurement();
+  AppState.isMeasurementMode = false;
+  AppState.measurementFinished = false;
+  document.getElementById('btn-measure').classList.remove('active');
+  document.getElementById('measurement-panel').classList.add('hidden');
+  if (AppState.map) AppState.map.doubleClickZoom.enable();
+}
+
+function setMeasurementType(type) {
+  if (type !== 'distance' && type !== 'area') return;
+  AppState.measurementType = type;
+  document.querySelectorAll('.measurement-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+  clearMeasurement();
+  updateMeasurementPanel();
+}
+
+function addMeasurementPoint(latlng) {
+  if (!latlng || AppState.measurementFinished) return;
+  const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
+  AppState.measurementLatLngs.push(latlng);
+  AppState.measurementUtmPoints.push({ east, north });
+  const marker = L.circleMarker(latlng, { radius: 5, className: 'measurement-vertex' }).addTo(AppState.measurementLayer);
+  AppState.measurementMarkers.push(marker);
+  renderMeasurementGeometry();
+  updateMeasurementPanel();
+}
+
+function renderMeasurementGeometry() {
+  if (!AppState.measurementLayer) return;
+  if (AppState.measurementLine) { AppState.measurementLayer.removeLayer(AppState.measurementLine); AppState.measurementLine = null; }
+  if (AppState.measurementPolygon) { AppState.measurementLayer.removeLayer(AppState.measurementPolygon); AppState.measurementPolygon = null; }
+  if (AppState.measurementLatLngs.length < 2) return;
+  if (AppState.measurementType === 'distance') {
+    AppState.measurementLine = L.polyline(AppState.measurementLatLngs, { className: 'measurement-line' }).addTo(AppState.measurementLayer);
+  } else {
+    AppState.measurementLine = L.polyline(AppState.measurementLatLngs, { className: 'measurement-line' }).addTo(AppState.measurementLayer);
+    if (AppState.measurementLatLngs.length >= 3) {
+      AppState.measurementPolygon = L.polygon(AppState.measurementLatLngs, { className: 'measurement-polygon' }).addTo(AppState.measurementLayer);
+    }
+  }
+}
+
+function clearMeasurement() {
+  AppState.measurementLatLngs = [];
+  AppState.measurementUtmPoints = [];
+  AppState.measurementFinished = false;
+  if (AppState.measurementLayer) {
+    AppState.measurementMarkers.forEach(m => AppState.measurementLayer.removeLayer(m));
+    if (AppState.measurementLine) AppState.measurementLayer.removeLayer(AppState.measurementLine);
+    if (AppState.measurementPolygon) AppState.measurementLayer.removeLayer(AppState.measurementPolygon);
+  }
+  AppState.measurementMarkers = [];
+  AppState.measurementLine = null;
+  AppState.measurementPolygon = null;
+  updateMeasurementPanel();
+}
+
+function finishMeasurement() {
+  if (AppState.measurementLatLngs.length < 2) return;
+  AppState.measurementFinished = true;
+  updateMeasurementPanel(true);
+  showToast('Medicion finalizada', 'success');
+}
+
+function calculateDistance(utmPoints) {
+  let total = 0;
+  for (let i = 1; i < utmPoints.length; i++) {
+    const dx = utmPoints[i].east - utmPoints[i - 1].east;
+    const dy = utmPoints[i].north - utmPoints[i - 1].north;
+    total += Math.sqrt(dx * dx + dy * dy);
+  }
+  return total;
+}
+
+function calculatePolygonArea(utmPoints) {
+  if (utmPoints.length < 3) return 0;
+  let area = 0;
+  const n = utmPoints.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += utmPoints[i].east * utmPoints[j].north;
+    area -= utmPoints[j].east * utmPoints[i].north;
+  }
+  return Math.abs(area) / 2;
+}
+
+function calculatePolygonPerimeter(utmPoints) {
+  if (utmPoints.length < 2) return 0;
+  let total = 0;
+  const n = utmPoints.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const dx = utmPoints[j].east - utmPoints[i].east;
+    const dy = utmPoints[j].north - utmPoints[i].north;
+    total += Math.sqrt(dx * dx + dy * dy);
+  }
+  return total;
+}
+
+function formatDistance(meters) {
+  if (meters < 1000) return meters.toFixed(1) + ' m';
+  return (meters / 1000).toFixed(3) + ' km';
+}
+
+function formatArea(sqMeters) {
+  if (sqMeters < 10000) return sqMeters.toFixed(1) + ' m²';
+  if (sqMeters < 1000000) return (sqMeters / 10000).toFixed(3) + ' ha';
+  return (sqMeters / 1000000).toFixed(4) + ' km²';
+}
+
+function updateMeasurementPanel(finished) {
+  const valueEl = document.getElementById('measurement-value');
+  const secondaryEl = document.getElementById('measurement-secondary');
+  const finishBtn = document.getElementById('btn-measure-finish');
+  const clearBtn = document.getElementById('btn-measure-clear');
+  if (!valueEl) return;
+  const points = AppState.measurementUtmPoints;
+  if (points.length === 0) {
+    valueEl.textContent = AppState.measurementType === 'distance' ? '0 m' : '0 m²';
+    secondaryEl.textContent = '';
+    if (finishBtn) finishBtn.disabled = true;
+    return;
+  }
+  if (AppState.measurementType === 'distance') {
+    const total = calculateDistance(points);
+    valueEl.textContent = formatDistance(total);
+    let sec = '';
+    if (points.length >= 2) {
+      const lastIdx = points.length - 1;
+      const lastSegment = Math.sqrt(
+        Math.pow(points[lastIdx].east - points[lastIdx - 1].east, 2) +
+        Math.pow(points[lastIdx].north - points[lastIdx - 1].north, 2)
+      );
+      sec = 'Segmento actual: ' + formatDistance(lastSegment);
+    }
+    secondaryEl.textContent = sec;
+  } else {
+    if (points.length < 3) {
+      valueEl.textContent = '0 m²';
+      secondaryEl.textContent = 'Agrega al menos 3 puntos';
+    } else {
+      const area = calculatePolygonArea(points);
+      const perimeter = calculatePolygonPerimeter(points);
+      valueEl.textContent = formatArea(area);
+      secondaryEl.textContent = 'Perimetro: ' + formatDistance(perimeter);
+    }
+  }
+  if (finishBtn) finishBtn.disabled = points.length < 2;
 }
 
 // ============================================
@@ -1973,6 +2167,7 @@ async function openMap(mapId) {
   AppState.currentMarkerMode = localStorage.getItem('maps_gis_marker_mode') || AppState.currentMarkerMode || 'qc';
   updateModeToggleButton();
   showScreen('map-screen');
+  stopMeasurement();
   initMap();
   setTimeout(() => AppState.map.invalidateSize(), 200);
   if (AppState.currentMapType === 'pdf') await loadPDFMap(mapId);
@@ -2019,7 +2214,7 @@ function loadThemePreference() {
 // ============================================
 function initEventListeners() {
   document.getElementById('map-input').addEventListener('change', (e) => { if (e.target.files.length > 0) handleFileUpload(e.target.files[0]); });
-  document.getElementById('btn-back').addEventListener('click', () => { showScreen('home-screen'); loadMapsList(); updateMarkerCountBadge(); });
+  document.getElementById('btn-back').addEventListener('click', () => { stopMeasurement(); showScreen('home-screen'); loadMapsList(); updateMarkerCountBadge(); });
   document.getElementById('btn-theme').addEventListener('click', toggleTheme);
   document.getElementById('btn-location').addEventListener('click', goToMyLocation);
   document.getElementById('btn-center').addEventListener('click', () => { if (AppState.mapOverlay) AppState.map.fitBounds(AppState.mapOverlay.getBounds()); });
@@ -2027,12 +2222,20 @@ function initEventListeners() {
     AppState.isAddMarkerMode = !AppState.isAddMarkerMode;
     document.getElementById('btn-add-marker').classList.toggle('active', AppState.isAddMarkerMode);
     if (AppState.isAddMarkerMode) {
+      if (AppState.isMeasurementMode) stopMeasurement();
       showToast('Modo marcador activo', 'info');
       requestGpsForMarker();
     } else {
       hideGpsSnackbar();
       showToast('Modo marcador desactivado', 'info');
     }
+  });
+  document.getElementById('btn-measure').addEventListener('click', toggleMeasurementMode);
+  document.getElementById('btn-close-measurement').addEventListener('click', stopMeasurement);
+  document.getElementById('btn-measure-finish').addEventListener('click', finishMeasurement);
+  document.getElementById('btn-measure-clear').addEventListener('click', clearMeasurement);
+  document.querySelectorAll('.measurement-type-btn').forEach(btn => {
+    btn.addEventListener('click', () => setMeasurementType(btn.dataset.type));
   });
   document.getElementById('btn-go-to-coords').addEventListener('click', openGoToCoordsModal);
   document.getElementById('btn-cancel-goto').addEventListener('click', closeGoToCoordsModal);
