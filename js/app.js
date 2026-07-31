@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.5.1';
+const APP_VERSION = '2.5.2';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -1325,6 +1325,23 @@ function formatDuration(seconds) {
   return parts.join(' ');
 }
 
+function getTrackAltitudeStats(track) {
+  const alts = (track.points || [])
+    .map(p => p.altitude)
+    .filter(a => a !== null && a !== undefined && !isNaN(a));
+  if (alts.length === 0) return null;
+  return {
+    min: Math.min(...alts),
+    max: Math.max(...alts),
+    avg: alts.reduce((s, a) => s + a, 0) / alts.length
+  };
+}
+
+function formatAltitude(stats) {
+  if (!stats) return null;
+  return Math.round(stats.min) + '-' + Math.round(stats.max) + ' m';
+}
+
 function generateTrackName() {
   const now = new Date();
   return 'Recorrido ' + now.toISOString().slice(0, 10) + ' ' +
@@ -1477,7 +1494,8 @@ function onTrackPosition(position) {
   AppState.trackLastPoint = newPoint;
 
   renderActiveTrack();
-  updateTrackStatusText('Grabando: ' + track.points.length + ' pts | ' + formatDistance(track.distance));
+  updateTrackStatusText('Grabando: ' + track.points.length + ' pts | ' + formatDistance(track.distance) +
+    (altitude ? ' | Alt: ' + Math.round(altitude) + ' m' : ''));
 }
 
 let _lastTrackErrorToast = 0;
@@ -1549,7 +1567,9 @@ async function renderTracksOnMap() {
       lineCap: 'round',
       lineJoin: 'round'
     });
-    polyline.bindPopup(escapeHtml(track.name) + '<br>' + formatDistance(track.distance || 0) + ' | ' + formatDuration(track.duration || 0));
+    const alt = formatAltitude(getTrackAltitudeStats(track));
+    polyline.bindPopup(escapeHtml(track.name) + '<br>' + formatDistance(track.distance || 0) + ' | ' + formatDuration(track.duration || 0) +
+      (alt ? '<br>Alt: ' + alt : ''));
     AppState.tracksLayer.addLayer(polyline);
 
     // Inicio
@@ -1610,10 +1630,11 @@ async function updateTrackPanelList() {
 
   container.innerHTML = tracks.map(t => {
     const pts = (t.points || []).length;
+    const alt = formatAltitude(getTrackAltitudeStats(t));
     return '<div class="track-item" data-id="' + t.id + '">' +
              '<div class="track-item-info">' +
                '<div class="track-item-name">' + escapeHtml(t.name) + '</div>' +
-               '<div class="track-item-meta">' + formatDistance(t.distance || 0) + ' | ' + formatDuration(t.duration || 0) + ' | ' + pts + ' pts</div>' +
+               '<div class="track-item-meta">' + formatDistance(t.distance || 0) + ' | ' + formatDuration(t.duration || 0) + ' | ' + pts + ' pts' + (alt ? ' | Alt: ' + alt : '') + '</div>' +
              '</div>' +
              '<div class="track-item-actions">' +
                '<button class="track-btn-view" data-id="' + t.id + '" title="Ver en mapa">Ver</button>' +
@@ -1656,22 +1677,32 @@ async function deleteTrackById(id) {
 
 function trackToGeoJSON(track) {
   const points = track.points || [];
-  const coordinates = points.map(p => [p.lng, p.lat]);
+  const toCoord = (p) => (p.altitude !== null && p.altitude !== undefined && !isNaN(p.altitude))
+    ? [p.lng, p.lat, p.altitude]
+    : [p.lng, p.lat];
+  const coordinates = points.map(toCoord);
   const start = points[0];
   const end = points[points.length - 1];
   const features = [];
+  const altStats = getTrackAltitudeStats(track);
 
   if (coordinates.length > 0) {
+    const props = {
+      name: track.name,
+      type: 'track',
+      distance: track.distance || 0,
+      duration: track.duration || 0,
+      startedAt: track.startedAt,
+      endedAt: track.endedAt
+    };
+    if (altStats) {
+      props.altitude_min = Math.round(altStats.min);
+      props.altitude_max = Math.round(altStats.max);
+      props.altitude_avg = Math.round(altStats.avg);
+    }
     features.push({
       type: 'Feature',
-      properties: {
-        name: track.name,
-        type: 'track',
-        distance: track.distance || 0,
-        duration: track.duration || 0,
-        startedAt: track.startedAt,
-        endedAt: track.endedAt
-      },
+      properties: props,
       geometry: {
         type: coordinates.length === 1 ? 'Point' : 'LineString',
         coordinates: coordinates.length === 1 ? coordinates[0] : coordinates
@@ -1683,14 +1714,14 @@ function trackToGeoJSON(track) {
     features.push({
       type: 'Feature',
       properties: { name: track.name + ' - Inicio', type: 'start' },
-      geometry: { type: 'Point', coordinates: [start.lng, start.lat] }
+      geometry: { type: 'Point', coordinates: toCoord(start) }
     });
   }
   if (end) {
     features.push({
       type: 'Feature',
       properties: { name: track.name + ' - Fin', type: 'end' },
-      geometry: { type: 'Point', coordinates: [end.lng, end.lat] }
+      geometry: { type: 'Point', coordinates: toCoord(end) }
     });
   }
 
@@ -2450,11 +2481,12 @@ async function exportToZIP() {
     // Recorridos / Tracks
     if (filteredTracks.length > 0) {
       const tracksFolder = zip.folder('recorridos');
-      const trackData = [['Nombre', 'Fecha_Inicio', 'Fecha_Fin', 'Distancia_m', 'Distancia_km', 'Duracion_s', 'Duracion', 'Puntos']];
+      const trackData = [['Nombre', 'Fecha_Inicio', 'Fecha_Fin', 'Distancia_m', 'Distancia_km', 'Duracion_s', 'Duracion', 'Puntos', 'Alt_Min_m', 'Alt_Max_m', 'Alt_Prom_m']];
       for (const t of filteredTracks) {
         const geojson = trackToGeoJSON(t);
         const fileName = (t.name || 'recorrido').replace(/[^a-zA-Z0-9]/g, '_') + '.geojson';
         tracksFolder.file(fileName, JSON.stringify(geojson, null, 2));
+        const altStats = getTrackAltitudeStats(t);
         trackData.push([
           t.name || '',
           t.startedAt || '',
@@ -2463,7 +2495,10 @@ async function exportToZIP() {
           ((t.distance || 0) / 1000).toFixed(3),
           t.duration || 0,
           formatDuration(t.duration || 0),
-          (t.points || []).length
+          (t.points || []).length,
+          altStats ? Math.round(altStats.min) : '',
+          altStats ? Math.round(altStats.max) : '',
+          altStats ? Math.round(altStats.avg) : ''
         ]);
       }
       const wsTracks = XLSX.utils.aoa_to_sheet(trackData);
