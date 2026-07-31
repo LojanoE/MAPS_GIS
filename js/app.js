@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.5.2';
+const APP_VERSION = '2.5.3';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -55,7 +55,9 @@ const AppState = {
   currentTrack: null,
   trackWatchId: null,
   trackLastPoint: null,
-  trackConfig: { minDistance: 5, minAccuracy: 50 }
+  trackConfig: { minDistance: 5, minAccuracy: 50 },
+  // Altitud GPS actual (para panel N/E/Z y marcadores)
+  currentAltitude: null
 };
 
 // ============================================
@@ -74,7 +76,7 @@ const MarkerManager = {
     } catch { this._cache = []; return this._cache; }
   },
   saveAll(markers) { this._cache = markers; localStorage.setItem(this.STORAGE_KEY, JSON.stringify(markers)); },
-  createQC(name, description, lat, lng, color, photos) {
+  createQC(name, description, lat, lng, color, photos, altura) {
     const markers = this.getAll();
     const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
     const marker = {
@@ -87,9 +89,12 @@ const MarkerManager = {
       syncedAt: null,
       createdAt: new Date().toISOString()
     };
+    if (altura !== null && altura !== undefined && !isNaN(altura)) {
+      marker.altura = Math.round(altura);
+    }
     markers.push(marker); this.saveAll(markers); return marker;
   },
-  createLSM(lat, lng, color, photos, lsmData) {
+  createLSM(lat, lng, color, photos, lsmData, altura) {
     const markers = this.getAll();
     const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
     const marker = {
@@ -102,6 +107,9 @@ const MarkerManager = {
       syncedAt: null,
       createdAt: new Date().toISOString()
     };
+    if (altura !== null && altura !== undefined && !isNaN(altura)) {
+      marker.altura = Math.round(altura);
+    }
     markers.push(marker); this.saveAll(markers); return marker;
   },
   update(id, updates) {
@@ -741,6 +749,10 @@ function updateCoordsDisplay(latlng) {
   document.getElementById('coord-este').textContent = 'E: ' + Math.round(east);
   document.getElementById('coord-lat').textContent = 'Lat: ' + latlng.lat.toFixed(6);
   document.getElementById('coord-lng').textContent = 'Lon: ' + latlng.lng.toFixed(6);
+  const altEl = document.getElementById('coord-altura');
+  if (altEl) {
+    altEl.textContent = 'Z: ' + (AppState.currentAltitude != null ? Math.round(AppState.currentAltitude) + ' m' : '---');
+  }
 }
 
 // ============================================
@@ -1238,7 +1250,10 @@ function goToMyLocation() {
   if (!navigator.geolocation) { showToast('Geolocalizacion no disponible', 'error'); return; }
   showToast('Obteniendo ubicacion...', 'info');
   navigator.geolocation.getCurrentPosition((position) => {
-    const { latitude: lat, longitude: lng, accuracy } = position.coords;
+    const { latitude: lat, longitude: lng, accuracy, altitude } = position.coords;
+    if (altitude !== null && altitude !== undefined && !isNaN(altitude)) {
+      AppState.currentAltitude = altitude;
+    }
     if (AppState.userLocationLayer) AppState.map.removeLayer(AppState.userLocationLayer);
     AppState.userLocationLayer = L.layerGroup([
       L.circle([lat, lng], { radius: accuracy, color: '#58a6ff', fillColor: '#58a6ff', fillOpacity: 0.08, weight: 1 }),
@@ -1265,7 +1280,10 @@ function requestGpsForMarker() {
   snackbar.classList.add('hidden');
   _gpsSnackbarCoords = null;
   navigator.geolocation.getCurrentPosition((position) => {
-    const { latitude: lat, longitude: lng, accuracy } = position.coords;
+    const { latitude: lat, longitude: lng, accuracy, altitude } = position.coords;
+    if (altitude !== null && altitude !== undefined && !isNaN(altitude)) {
+      AppState.currentAltitude = altitude;
+    }
     _gpsSnackbarCoords = { lat, lng, accuracy };
     textEl.textContent = 'Ubicacion detectada (' + Math.round(accuracy) + 'm)';
     snackbar.classList.remove('hidden');
@@ -1468,6 +1486,11 @@ function onTrackPosition(position) {
 
   const { latitude: lat, longitude: lng, accuracy, altitude, speed } = position.coords;
 
+  // Actualizar altitud actual si es valida
+  if (altitude !== null && altitude !== undefined && !isNaN(altitude)) {
+    AppState.currentAltitude = altitude;
+  }
+
   // Filtrar por precision minima
   if (accuracy && accuracy > AppState.trackConfig.minAccuracy) {
     return;
@@ -1511,6 +1534,12 @@ function onTrackError(error) {
 function formatDistance(meters) {
   if (meters >= 1000) return (meters / 1000).toFixed(2) + ' km';
   return Math.round(meters) + ' m';
+}
+
+function formatNEZ(north, east, altura) {
+  let s = 'N: ' + Math.round(north) + ' | E: ' + Math.round(east);
+  if (altura != null) s += ' | Z: ' + Math.round(altura) + ' m';
+  return s;
 }
 
 function clearActiveTrack() {
@@ -1868,7 +1897,8 @@ async function openLSMMarkerModal(latlng, editId) {
   populateLsmSelect('lsm-fuente', 'fuente');
   populateLsmEnsayos();
   const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
-  document.getElementById('lsm-coords-display').textContent = 'N: ' + Math.round(north) + ' | E: ' + Math.round(east);
+  const lsmAltura = editId ? (MarkerManager.getById(editId)?.altura) : AppState.currentAltitude;
+  document.getElementById('lsm-coords-display').textContent = formatNEZ(north, east, lsmAltura);
   if (editId) {
     const marker = MarkerManager.getById(editId);
     if (!marker || marker.markerType !== 'lsm') return;
@@ -2098,7 +2128,7 @@ async function saveLSMMarker() {
     showToast('Muestra LSM actualizada', 'success');
   } else if (AppState.pendingMarkerLatLng) {
     const { lat, lng } = AppState.pendingMarkerLatLng;
-    MarkerManager.createLSM(lat, lng, AppState.lsmSelectedCategory, photoIds, lsmData);
+    MarkerManager.createLSM(lat, lng, AppState.lsmSelectedCategory, photoIds, lsmData, AppState.currentAltitude);
     showToast('Muestra LSM "' + nombreMuestra + '" guardada', 'success');
   }
   saveLastLSMForm(lsmData);
@@ -2124,7 +2154,7 @@ async function openMarkerModal(latlng, editId) {
     document.getElementById('marker-description').value = marker.description || '';
     AppState.selectedCategory = marker.color || 'red';
     const [east, north] = proj4(WGS84, 'EPSG:24877', [marker.lng, marker.lat]);
-    document.getElementById('marker-coords-display').textContent = 'N: ' + Math.round(north) + ' | E: ' + Math.round(east);
+    document.getElementById('marker-coords-display').textContent = formatNEZ(north, east, marker.altura);
     if (marker.photos && marker.photos.length > 0) {
       for (const photoId of marker.photos) {
         try {
@@ -2143,7 +2173,7 @@ async function openMarkerModal(latlng, editId) {
     document.getElementById('marker-description').value = '';
     AppState.selectedCategory = 'red';
     const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
-    document.getElementById('marker-coords-display').textContent = 'N: ' + Math.round(north) + ' | E: ' + Math.round(east);
+    document.getElementById('marker-coords-display').textContent = formatNEZ(north, east, AppState.currentAltitude);
   }
   updateCategorySelector();
   document.getElementById('marker-modal').classList.remove('hidden');
@@ -2199,7 +2229,7 @@ async function saveMarker() {
     showToast('Marcador actualizado', 'success');
   } else if (AppState.pendingMarkerLatLng) {
     const { lat, lng } = AppState.pendingMarkerLatLng;
-    MarkerManager.createQC(name, description, lat, lng, AppState.selectedCategory, photoIds);
+    MarkerManager.createQC(name, description, lat, lng, AppState.selectedCategory, photoIds, AppState.currentAltitude);
     showToast('Marcador "' + name + '" guardado', 'success');
   }
   if (AppState.markersLayer) refreshMarkersOnMap();
@@ -2229,9 +2259,9 @@ async function openMarkerDetail(id) {
   if (marker.markerType === 'lsm') {
     const d = marker.lsmData || {};
     const ensayosStr = (d.ensayos || []).join(', ');
-    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">LSM</span></div><div class="detail-row"><span class="detail-label">Proyecto</span><span class="detail-value">' + escapeHtml(d.nombreProyecto || '-') + '</span></div><div class="detail-row"><span class="detail-label">Solicitante</span><span class="detail-value">' + escapeHtml(d.solicitante || '-') + '</span></div><div class="detail-row"><span class="detail-label">Estructura/Deposito</span><span class="detail-value">' + escapeHtml(d.estructuraDeposito || '-') + '</span></div><div class="detail-row"><span class="detail-label">Subestructuras</span><span class="detail-value">' + escapeHtml(d.subestructuras || '-') + '</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + escapeHtml(d.categoria || '-') + '</span></div><div class="detail-row"><span class="detail-label">Semana Laboratorio</span><span class="detail-value">' + escapeHtml(d.semanaLaboratorio || '-') + '</span></div><div class="detail-row"><span class="detail-label">Tipo de Material</span><span class="detail-value">' + escapeHtml(d.tipoMaterial || '-') + '</span></div><div class="detail-row"><span class="detail-label">Proveniencia</span><span class="detail-value">' + escapeHtml(d.proveniencia || '-') + '</span></div><div class="detail-row"><span class="detail-label">Localizacion</span><span class="detail-value">' + escapeHtml(d.localizacion || '-') + '</span></div><div class="detail-row"><span class="detail-label">Fuente</span><span class="detail-value">' + escapeHtml(d.fuente || '-') + '</span></div><div class="detail-row"><span class="detail-label">Ensayos</span><span class="detail-value">' + escapeHtml(ensayosStr || '-') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
+    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">LSM</span></div><div class="detail-row"><span class="detail-label">Proyecto</span><span class="detail-value">' + escapeHtml(d.nombreProyecto || '-') + '</span></div><div class="detail-row"><span class="detail-label">Solicitante</span><span class="detail-value">' + escapeHtml(d.solicitante || '-') + '</span></div><div class="detail-row"><span class="detail-label">Estructura/Deposito</span><span class="detail-value">' + escapeHtml(d.estructuraDeposito || '-') + '</span></div><div class="detail-row"><span class="detail-label">Subestructuras</span><span class="detail-value">' + escapeHtml(d.subestructuras || '-') + '</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + escapeHtml(d.categoria || '-') + '</span></div><div class="detail-row"><span class="detail-label">Semana Laboratorio</span><span class="detail-value">' + escapeHtml(d.semanaLaboratorio || '-') + '</span></div><div class="detail-row"><span class="detail-label">Tipo de Material</span><span class="detail-value">' + escapeHtml(d.tipoMaterial || '-') + '</span></div><div class="detail-row"><span class="detail-label">Proveniencia</span><span class="detail-value">' + escapeHtml(d.proveniencia || '-') + '</span></div><div class="detail-row"><span class="detail-label">Localizacion</span><span class="detail-value">' + escapeHtml(d.localizacion || '-') + '</span></div><div class="detail-row"><span class="detail-label">Fuente</span><span class="detail-value">' + escapeHtml(d.fuente || '-') + '</span></div><div class="detail-row"><span class="detail-label">Ensayos</span><span class="detail-value">' + escapeHtml(ensayosStr || '-') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Altura</span><span class="detail-value">' + (marker.altura != null ? marker.altura + ' m' : '-') + '</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
   } else {
-    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">QC</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + (MARKER_COLORS[marker.color]?.label || 'Rojo') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-description-row" class="detail-row detail-description"><span class="detail-label">Descripcion</span><p id="detail-marker-description"></p></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
+    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">QC</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + (MARKER_COLORS[marker.color]?.label || 'Rojo') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Altura</span><span class="detail-value">' + (marker.altura != null ? marker.altura + ' m' : '-') + '</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-description-row" class="detail-row detail-description"><span class="detail-label">Descripcion</span><p id="detail-marker-description"></p></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
     const descRow = document.getElementById('detail-description-row');
     if (marker.description) { descRow.classList.remove('hidden'); document.getElementById('detail-marker-description').textContent = marker.description; }
     else { descRow.classList.add('hidden'); }
@@ -2287,7 +2317,7 @@ async function deleteCurrentMarker() {
 // ============================================
 function addMarkerToMap(marker) {
   const icon = createMarkerIcon(marker);
-  const popupContent = '<div style="min-width:140px;padding:4px;"><strong style="font-size:0.9rem;">' + escapeHtml(marker.name) + '</strong><br><span style="font-size:0.75rem;color:#666;">N: ' + marker.norte + ' | E: ' + marker.este + '</span></div>';
+  const popupContent = '<div style="min-width:140px;padding:4px;"><strong style="font-size:0.9rem;">' + escapeHtml(marker.name) + '</strong><br><span style="font-size:0.75rem;color:#666;">N: ' + marker.norte + ' | E: ' + marker.este + (marker.altura != null ? ' | Z: ' + marker.altura + ' m' : '') + '</span></div>';
   L.marker([marker.lat, marker.lng], { icon: icon }).bindPopup(popupContent).on('click', () => {
     AppState.map.setView([marker.lat, marker.lng], AppState.map.getZoom());
   }).addTo(AppState.markersLayer);
@@ -2318,7 +2348,7 @@ function renderMarkersList(filter = '') {
   container.innerHTML = markers.map(m => {
     const color = MARKER_COLORS[m.color]?.hex || MARKER_COLORS.red.hex;
     const typeLabel = m.markerType === 'lsm' ? 'LSM' : 'QC';
-    return '<div class="marker-item" data-id="' + m.id + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div><div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + '</div></div><div class="marker-item-actions"><button class="marker-item-btn marker-btn-edit" data-id="' + m.id + '" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button><button class="marker-item-btn marker-btn-delete" data-id="' + m.id + '" title="Eliminar" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"></path><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg></button></div></div>';
+    return '<div class="marker-item" data-id="' + m.id + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div><div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + (m.altura != null ? ' | Z: ' + m.altura + ' m' : '') + '</div></div><div class="marker-item-actions"><button class="marker-item-btn marker-btn-edit" data-id="' + m.id + '" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button><button class="marker-item-btn marker-btn-delete" data-id="' + m.id + '" title="Eliminar" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"></path><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg></button></div></div>';
   }).join('');
   container.querySelectorAll('.marker-item').forEach(item => {
     item.addEventListener('click', (e) => {
@@ -2409,7 +2439,7 @@ async function exportToZIP() {
     const qcMarkers = markers.filter(m => m.markerType === 'qc');
     const lsmMarkers = markers.filter(m => m.markerType === 'lsm');
     if (qcMarkers.length > 0) {
-      const qcData = [['Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2']];
+      const qcData = [['Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)', 'Altura (m)', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2']];
       for (let i = 0; i < qcMarkers.length; i++) {
         const m = qcMarkers[i];
         const prefix = 'QC';
@@ -2430,7 +2460,7 @@ async function exportToZIP() {
             } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-        qcData.push([m.name || '', MARKER_COLORS[m.color]?.label || '', m.description || '', m.norte, m.este, m.lat, m.lng, new Date(m.createdAt), foto1, foto2]);
+        qcData.push([m.name || '', MARKER_COLORS[m.color]?.label || '', m.description || '', m.norte, m.este, m.altura != null ? m.altura : '', m.lat, m.lng, new Date(m.createdAt), foto1, foto2]);
       }
       const wsQC = XLSX.utils.aoa_to_sheet(qcData, { cellDates: true });
       for (let r = 1; r < qcData.length; r++) {
@@ -2443,7 +2473,7 @@ async function exportToZIP() {
       XLSX.utils.book_append_sheet(wb, wsQC, 'QC');
     }
     if (lsmMarkers.length > 0) {
-      const lsmData = [['Proyecto', 'Solicitante', 'Estructura', 'Subestructuras', 'Categoria', 'Semana_Laboratorio', 'Fecha_Hora', 'Tipo_Material', 'Nombre_Muestra', 'Proveniencia', 'Localizacion', 'Fuente', 'Este', 'Norte', 'Ensayos', 'Latitud', 'Longitud', 'Foto_1', 'Foto_2']];
+      const lsmData = [['Proyecto', 'Solicitante', 'Estructura', 'Subestructuras', 'Categoria', 'Semana_Laboratorio', 'Fecha_Hora', 'Tipo_Material', 'Nombre_Muestra', 'Proveniencia', 'Localizacion', 'Fuente', 'Este', 'Norte', 'Altura (m)', 'Ensayos', 'Latitud', 'Longitud', 'Foto_1', 'Foto_2']];
       for (let i = 0; i < lsmMarkers.length; i++) {
         const m = lsmMarkers[i];
         const d = m.lsmData || {};
@@ -2465,7 +2495,7 @@ async function exportToZIP() {
             } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-        lsmData.push([d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', d.semanaLaboratorio || '', new Date(m.createdAt), d.tipoMaterial || '', m.name || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', m.este, m.norte, (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
+        lsmData.push([d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', d.semanaLaboratorio || '', new Date(m.createdAt), d.tipoMaterial || '', m.name || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', m.este, m.norte, m.altura != null ? m.altura : '', (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
       }
       const wsLSM = XLSX.utils.aoa_to_sheet(lsmData, { cellDates: true });
       for (let r = 1; r < lsmData.length; r++) {
