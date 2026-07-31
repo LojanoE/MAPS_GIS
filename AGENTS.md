@@ -2,66 +2,90 @@
 
 ## Resumen del proyecto
 
-MAPS GIS es una **Progressive Web App (PWA) offline-first** en español para visualizar mapas GIS (GeoTIFF y PDF georreferenciados) y recolectar marcadores de campo. Está construida con **HTML, CSS y JavaScript puro**, sin build step, bundler ni gestor de paquetes. No existe `package.json`, `pyproject.toml` ni ningún archivo de configuración de build; el proyecto se sirve directamente como archivos estáticos.
+MAPS GIS es una **Progressive Web App (PWA) offline-first** en español para visualizar mapas GIS (GeoTIFF y PDF georreferenciados), recolectar marcadores de campo y registrar recorridos GPS. Está construida con **HTML, CSS y JavaScript puro**, sin build step, bundler ni gestor de paquetes. No existe `package.json`, `pyproject.toml`, `Cargo.toml` ni ningún archivo de configuración de build; el proyecto se sirve directamente como archivos estáticos.
 
 La aplicación está orientada a dos perfiles de marcador:
 
-- **QC (Control de Calidad):** marcadores simples con nombre, descripción, color y fotos.
-- **LSM (Laboratorio de Suelos y Materiales):** marcadores con ~15 campos de laboratorio (proyecto, solicitante, estructura, subestructuras, categoría, semana laboratorio, tipo de material, proveniencia, localización, fuente, ensayos, etc.).
+- **QC (Control de Calidad):** marcadores simples con nombre, descripción, color, fotos y altura GPS.
+- **LSM (Laboratorio de Suelos y Materiales):** marcadores con ~15 campos de laboratorio (proyecto, solicitante, estructura, subestructuras, categoría, semana laboratorio, tipo de material, nombre de muestra, proveniencia, localización, fuente, ensayos, etc.).
+
+Además, la app incluye **recorridos GPS** (tracks), **herramientas de medición** de distancia y área, y un **panel de administración remoto** que lee los datos sincronizados en Supabase.
 
 ## Arquitectura y organización del código
 
 ```
 C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
-├── index.html              # UI única, carga todos los scripts y CSS
-├── sw.js                   # Service Worker con cache-first y versionado
+├── index.html              # UI única, carga todos los scripts y CSS (~1075 líneas)
+├── sw.js                   # Service Worker con cache-first y versionado (~244 líneas)
 ├── manifest.json           # Manifest PWA
 ├── config.json             # Listas por defecto para selects LSM
-├── css/styles.css          # Estilos mobile-first, tema oscuro por defecto
+├── css/styles.css          # Estilos mobile-first, tema oscuro por defecto (~2411 líneas)
 ├── js/
-│   ├── storage.js          # IndexedDB (mapas y fotos)
+│   ├── storage.js          # IndexedDB (mapas, fotos, recorridos)
 │   ├── pdf-processor.js    # Procesamiento y georreferenciación de PDFs
-│   ├── app.js              # Lógica principal de la app, UI, mapa, marcadores
+│   ├── app.js              # Lógica principal de la app, UI, mapa, marcadores (~3272 líneas)
 │   ├── sync-manager.js     # Sincronización unidireccional a Supabase
 │   └── admin-manager.js    # Panel de administración remoto (Supabase)
 ├── assets/
 │   └── logo_lab_chino_PNG.png   # Logo usado en el estampado de fotos LSM
+├── js/app.js.backup.v161   # Backup antiguo, no usado en producción
 └── LICENSE                 # Apache License 2.0
 ```
 
 ### Módulos principales
 
 - **`index.html`**: contiene toda la estructura de pantallas (`home-screen`, `map-screen`), modales y la carga de scripts. **El orden de carga de scripts es crítico** y no debe cambiarse.
-- **`sw.js`**: implementa estrategia cache-first para assets locales y CDN; limpia caches antiguos al activarse. El versionado de la app se controla centralmente mediante `APP_VERSION`.
-- **`js/storage.js`**: abstracción sobre IndexedDB (`MapsGISDB` v3) con stores `maps` y `photos`. Soporta guardar/recuperar mapas TIFF/PDF, fotos y blobs originales.
-- **`js/pdf-processor.js`**: extrae metadatos geoespaciales de GeoPDFs (ISO 32000-2, OGC GeoPDF, viewport bounds) y crea overlays georreferenciados sobre Leaflet.
-- **`js/app.js`**: módulo más grande (~2670 líneas). Inicializa el mapa (Leaflet), gestiona marcadores QC/LSM, fotos, exportación ZIP/Excel, configuración local, calibración de mapas y coordinación de UI.
+- **`sw.js`**: implementa estrategia cache-first para assets locales y CDN, stale-while-revalidate para tiles de mapa, y network-only para Supabase. Limpia caches antiguos al activarse. El versionado se controla centralmente mediante `APP_VERSION`.
+- **`js/storage.js`**: abstracción sobre IndexedDB (`MapsGISDB` v4) con stores `maps`, `photos` y `tracks`. Soporta guardar/recuperar mapas TIFF/PDF, fotos originales/procesadas y recorridos GPS.
+- **`js/pdf-processor.js`**: extrae metadatos geoespaciales de GeoPDFs (ISO 32000-2, OGC GeoPDF, viewport bounds, anotaciones PDF.js) y crea overlays georreferenciados sobre Leaflet.
+- **`js/app.js`**: módulo monolítico principal. Inicializa el mapa (Leaflet), gestiona marcadores QC/LSM, fotos, estampado LSM, exportación ZIP/Excel, configuración local, calibración de mapas, recorridos GPS, medición de distancia/área y coordinación de UI.
 - **`js/sync-manager.js`**: sincroniza marcadores pendientes (`pendingUpload: true`) hacia Supabase vía REST. Es unidireccional: dispositivo → Supabase.
-- **`js/admin-manager.js`**: panel de administración que lee los datos sincronizados en Supabase, con filtros, tabla, mapa y exportación Excel.
+- **`js/admin-manager.js`**: panel de administración que lee los datos sincronizados en Supabase, con filtros, tabla, mapa, edición, soft-delete y exportación Excel.
+
+### Orden de carga de scripts (NO CAMBIAR)
+
+`index.html` carga los scripts en este orden:
+
+1. Leaflet JS
+2. Proj4js
+3. GeoTIFF.js
+4. GeoRaster
+5. GeoRaster Layer for Leaflet
+6. PDF.js
+7. SheetJS (xlsx)
+8. JSZip
+9. FileSaver
+10. Piexif
+11. `js/storage.js`
+12. `js/pdf-processor.js`
+13. `js/app.js`
+14. `js/sync-manager.js`
+15. `js/admin-manager.js`
 
 ## Stack tecnológico
 
-Todas las dependencias se cargan por CDN en `index.html` (y deben coincidir exactamente con `CDN_ASSETS` en `sw.js`):
+Todas las dependencias se cargan por CDN en `index.html` y deben coincidir exactamente con `CDN_ASSETS` en `sw.js`:
 
-| Librería | Uso |
-|----------|-----|
-| Leaflet 1.9.4 | Mapa interactivo base |
-| Proj4js 2.9.2 | Transformación de coordenadas |
-| GeoTIFF 2.1.3 | Lectura de archivos GeoTIFF |
-| GeoRaster 1.6.0 + GeoRaster Layer for Leaflet 3.10.0 | Renderizado de GeoTIFF geográficos |
-| PDF.js 3.11.174 | Renderizado y parseo de PDFs |
-| SheetJS (xlsx) 0.20.1 | Exportación a Excel |
-| JSZip 3.10.1 | Generación de ZIPs de exportación |
-| FileSaver.js 2.0.5 | Descarga de archivos |
-| Piexif.js 1.0.6 | Lectura/escritura de metadatos EXIF/GPS en fotos |
+| Librería | Versión | Uso |
+|----------|---------|-----|
+| Leaflet | 1.9.4 | Mapa interactivo base |
+| Proj4js | 2.9.2 | Transformación de coordenadas |
+| GeoTIFF.js | 2.1.3 | Lectura de archivos GeoTIFF |
+| GeoRaster | 1.6.0 | Procesamiento de rasters geográficos |
+| GeoRaster Layer for Leaflet | 3.10.0 | Renderizado de GeoTIFF en Leaflet |
+| PDF.js | 3.11.174 | Renderizado y parseo de PDFs |
+| SheetJS (xlsx) | 0.20.1 | Exportación a Excel |
+| JSZip | 3.10.1 | Generación de ZIPs de exportación |
+| FileSaver.js | 2.0.5 | Descarga de archivos |
+| Piexif.js | 1.0.6 | Lectura/escritura de metadatos EXIF/GPS en fotos |
 
 Almacenamiento:
 
-- **IndexedDB** (`MapsGISDB` v3): mapas (`maps`) y fotos (`photos`).
-- **LocalStorage**: marcadores QC/LSM, configuración LSM, offsets de calibración por mapa, nombre/id del dispositivo, usuario LSM y preferencias de tema.
+- **IndexedDB** (`MapsGISDB` v4): mapas (`maps`), fotos (`photos`) y recorridos (`tracks`).
+- **LocalStorage**: marcadores QC/LSM, configuración LSM, offsets de calibración por mapa, nombre/id del dispositivo, usuario LSM, modo de marcador y preferencias de tema.
 - **Supabase**: backend para sincronización y panel admin (conexión directa vía REST, credenciales hardcodeadas).
 
-## Cómo ejecutar el proyecto
+## Comandos de build y ejecución
 
 No hay comando de build. Solo se requiere servir los archivos estáticamente:
 
@@ -77,17 +101,29 @@ npx serve .
 
 Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades de PWA (service worker, cámara, geolocalización, IndexedDB) se recomienda usar **localhost con HTTPS o un dispositivo real**; algunas APIs no funcionan en `file://`.
 
-### No hay tests automatizados
+### Notas sobre el build
 
-El proyecto no tiene tests unitarios ni de integración. Las validaciones se hacen manualmente en el navegador. Flujos recomendados para probar:
+- No existe `package.json`, `pyproject.toml`, `Cargo.toml` ni archivo de configuración de build.
+- No hay scripts de npm, yarn, pnpm, pip, cargo ni make.
+- Las dependencias se cargan directamente desde CDN y se cachean mediante el Service Worker.
+
+## Instrucciones de testing
+
+**No hay tests automatizados** (ni unitarios ni de integración). Las validaciones se hacen manualmente en el navegador. Flujos recomendados para probar:
 
 1. Cargar un GeoTIFF y un PDF georreferenciado.
-2. Crear/editar marcadores QC y LSM.
-3. Tomar fotos (QC y LSM) y verificar el modal de vista previa.
-4. Exportar ZIP con Excel + fotos.
-5. Sincronizar con Supabase (requiere conexión).
-6. Probar el panel Admin con la contraseña correspondiente.
-7. Verificar que la app funcione offline tras la primera carga.
+2. Verificar que el mapa se posicione correctamente y se muestre el overlay.
+3. Aplicar y persistir offsets de calibración (este/norte) por mapa.
+4. Crear/editar marcadores QC y LSM.
+5. Tomar fotos (QC y LSM) y verificar el modal de vista previa.
+6. Verificar el estampado LSM en las fotos (logo, fecha, localización, nombre de muestra).
+7. Comprobar que las fotos exportadas incluyen metadata EXIF GPS en WGS84.
+8. Grabar un recorrido GPS y verificar que se guarda en IndexedDB.
+9. Usar las herramientas de medición de distancia y área.
+10. Exportar ZIP con Excel + fotos + recorridos GeoJSON.
+11. Sincronizar con Supabase (requiere conexión y credenciales válidas).
+12. Probar el panel Admin con la contraseña correspondiente.
+13. Verificar que la app funcione offline tras la primera carga.
 
 ## Convenciones de código
 
@@ -98,11 +134,11 @@ El proyecto no tiene tests unitarios ni de integración. Las validaciones se hac
 - **Versionado:** la versión actual es `2.5.3` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
-  - `index.html:41` — texto de `#app-version-badge`
-  - `index.html` — query strings `?v=X.Y.Z` en `<link>` y `<script>` locales
-  - `sw.js` — query strings `?v=X.Y.Z` en `CORE_ASSETS`
-- **Carga de scripts (NO CAMBIAR ORDEN):**
-  Leaflet → Proj4 → GeoTIFF → GeoRaster → GeoRaster Layer → PDF.js → SheetJS → JSZip → FileSaver → Piexif → `storage.js` → `pdf-processor.js` → `app.js` → `sync-manager.js` → `admin-manager.js`.
+  - `index.html:46` — texto de `#app-version-badge`
+  - `index.html:15,20` — query strings `?v=X.Y.Z` en `<link>` y `<preload>` locales
+  - `index.html:1000,1003,1006,1009,1012` — query strings `?v=X.Y.Z` en `<script>` locales
+  - `sw.js:21-28` — query strings `?v=X.Y.Z` en `CORE_ASSETS`
+  - `app.js:563` — URL del logo con versión
 
 ## Almacenamiento local (referencia rápida)
 
@@ -112,7 +148,7 @@ El proyecto no tiene tests unitarios ni de integración. Las validaciones se hac
 | Config LSM | LocalStorage | `maps_gis_config_v2` |
 | Tamaño logo estampado | LocalStorage | `maps_gis_logo_size` (default 25 px) |
 | Tamaño fuente estampado | LocalStorage | `maps_gis_stamp_font_size` (default 30 px) |
-| Mapas / fotos | IndexedDB | `MapsGISDB` v3 (`maps`, `photos`) |
+| Mapas / fotos / recorridos | IndexedDB | `MapsGISDB` v4 (`maps`, `photos`, `tracks`) |
 | Offset por mapa | LocalStorage | `maps_gis_offset_<mapId>` |
 | Device name / id | LocalStorage | `maps_gis_device_name` / `maps_gis_device_id` |
 | Usuario LSM | LocalStorage | `maps_gis_lsm_user` |
@@ -129,7 +165,7 @@ El proyecto no tiene tests unitarios ni de integración. Las validaciones se hac
 - Soporta **GeoTIFF** y **PDF georreferenciado**.
 - GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4.
 - GeoTIFF geográficos (EPSG:4326): `GeoRasterLayer`.
-- PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF o ingreso manual; se guardan las esquinas en UTM PSAD56.
+- PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF, viewport bounds o anotaciones PDF.js; se guardan las esquinas en UTM PSAD56.
 - **Calibración de mapa:** offset en metros (este/norte) por mapa, editable en pantalla (`maps_gis_offset_<mapId>`).
 
 ### Marcadores
@@ -150,20 +186,34 @@ El proyecto no tiene tests unitarios ni de integración. Las validaciones se hac
 - Se conserva el `originalBlob` en IndexedDB.
 - La exportación ZIP usa la foto estampada.
 
+### Recorridos GPS
+
+- Los recorridos se graban con la API de geolocalización del navegador.
+- Se almacenan en IndexedDB (`tracks`) con puntos WGS84 y sus equivalentes UTM PSAD56.
+- Configuración de filtros: `minDistance` (5 m por defecto) y `minAccuracy` (50 m por defecto).
+- Los recorridos se exportan como GeoJSON dentro del ZIP, pero **no se sincronizan a Supabase**.
+
+### Medición
+
+- Herramientas de medición de **distancia** y **área** sobre el mapa.
+- Los resultados se muestran en metros (m) y hectáreas (ha).
+
 ### Sincronización y administración
 
 - Sincronización **unidireccional dispositivo → Supabase**.
 - Tablas en Supabase: `qc_markers` y `lsm_markers`.
 - Identificación de registros por combinación `local_marker_id` + `device_id`.
 - `POST` para crear, `PATCH` para actualizar.
+- Auto-sync solo bajo WiFi/4G y con límite de 10 marcadores por ciclo; el sync manual fuerza todos los pendientes.
 - Panel Admin con contraseña hardcodeada (`LSMQC$` en `admin-manager.js`).
-- El panel admin lee directamente de Supabase; no afecta datos locales.
+- El panel admin lee directamente de Supabase; no afecta datos locales. Soporta edición y soft-delete.
 
 ### Exportación
 
 - Exportación local a **ZIP** que contiene:
-  - `marcadores.xlsx` con hojas separadas para QC y LSM.
+  - `marcadores.xlsx` con hojas separadas para QC, LSM y Recorridos.
   - Carpeta `fotos/` con las fotos estampadas (máximo 2 por marcador).
+  - Carpeta `recorridos/` con archivos GeoJSON.
 - El panel Admin puede exportar Excel de los registros seleccionados.
 
 ## Consideraciones de seguridad
@@ -175,7 +225,7 @@ El proyecto no tiene tests unitarios ni de integración. Las validaciones se hac
 - **RLS desactivado:** el backend se asume con Row Level Security desactivado; cualquier cliente con la key puede leer/escribir.
 - **No hay autenticación real:** el "login" LSM y Admin se basan únicamente en contraseñas locales.
 - **Service Worker cachea todo:** los assets locales, CDN y tiles se almacenan en el cliente. No se deben colocar secretos en archivos estáticos.
-- **Datos sensibles en LocalStorage/IndexedDB:** los marcadores, fotos y configuración viven en el navegador del usuario.
+- **Datos sensibles en LocalStorage/IndexedDB:** los marcadores, fotos, recorridos y configuración viven en el navegador del usuario.
 
 ## Proceso de despliegue
 
@@ -207,6 +257,7 @@ Si se agrega un campo al formulario LSM, actualizar:
 - **PDF.js consume el ArrayBuffer:** no reutilizar el mismo entre llamadas a `pdfjsLib.getDocument()`. Usar copia fresca (`freshUint8()` en `pdf-processor.js`).
 - **Detectar CRS solo dentro del diccionario geoespacial** (`VP`/`Measure`/`LGIDict`); escanear todo el texto del PDF produce falsos positivos.
 - GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4. GeoTIFF geográficos: `GeoRasterLayer`.
+- **Service Worker nunca cachea Supabase:** `supabase.co` está en `NETWORK_ONLY_DOMAINS`.
 
 ## Licencia
 
