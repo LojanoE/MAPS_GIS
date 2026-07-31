@@ -1,136 +1,220 @@
 # MAPS GIS — Notas para Agentes
 
-## Qué es esto
-PWA offline-first en español para visualizar mapas GIS (GeoTIFF/PDF) y recolectar marcadores de campo. HTML/CSS/JS puro, sin build, bundler ni gestor de paquetes.
+## Resumen del proyecto
 
-## Desarrollo
-- No hay `package.json`, tests, lint, typecheck ni build.
-- Servir estáticamente (`python -m http.server`, `npx serve`, etc.).
-- Límite de **3 mapas** simultáneos en IndexedDB.
+MAPS GIS es una **Progressive Web App (PWA) offline-first** en español para visualizar mapas GIS (GeoTIFF y PDF georreferenciados) y recolectar marcadores de campo. Está construida con **HTML, CSS y JavaScript puro**, sin build step, bundler ni gestor de paquetes. No existe `package.json`, `pyproject.toml` ni ningún archivo de configuración de build; el proyecto se sirve directamente como archivos estáticos.
 
-## Convenciones
-- Código y UI en español.
-- Tema oscuro por defecto; claro solo por sesión (`#btn-theme`).
-- No hay linter ni formateador configurado.
+La aplicación está orientada a dos perfiles de marcador:
 
-## Carga de scripts (NO CAMBIAR ORDEN)
-En `index.html`: Leaflet → Proj4 → GeoTIFF → GeoRaster → GeoRaster Layer → PDF.js → SheetJS → JSZip → FileSaver → **Piexif** → `storage.js` → `pdf-processor.js` → `app.js` → `sync-manager.js` → `admin-manager.js`.
+- **QC (Control de Calidad):** marcadores simples con nombre, descripción, color y fotos.
+- **LSM (Laboratorio de Suelos y Materiales):** marcadores con ~15 campos de laboratorio (proyecto, solicitante, estructura, subestructuras, categoría, semana laboratorio, tipo de material, proveniencia, localización, fuente, ensayos, etc.).
 
-## Versionado
-Al subir versión, sincronizar **todos** estos lugares:
-- `sw.js:11` — `APP_VERSION`
-- `app.js:23` — `APP_VERSION`
-- `index.html:41` — texto de `#app-version-badge`
-- `index.html` — query strings `?v=X.Y.Z` en `<link>` y `<script>` locales (`css/styles.css`, `js/*.js`, `assets/logo_lab_chino_PNG.png`).
-- `sw.js` — query strings `?v=X.Y.Z` en `CORE_ASSETS` y `APP_ASSETS` (si aplica).
+## Arquitectura y organización del código
 
-`CACHE_NAME` y los caches en `sw.js` se derivan de `APP_VERSION`; no editar a mano.
+```
+C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
+├── index.html              # UI única, carga todos los scripts y CSS
+├── sw.js                   # Service Worker con cache-first y versionado
+├── manifest.json           # Manifest PWA
+├── config.json             # Listas por defecto para selects LSM
+├── css/styles.css          # Estilos mobile-first, tema oscuro por defecto
+├── js/
+│   ├── storage.js          # IndexedDB (mapas y fotos)
+│   ├── pdf-processor.js    # Procesamiento y georreferenciación de PDFs
+│   ├── app.js              # Lógica principal de la app, UI, mapa, marcadores
+│   ├── sync-manager.js     # Sincronización unidireccional a Supabase
+│   └── admin-manager.js    # Panel de administración remoto (Supabase)
+├── assets/
+│   └── logo_lab_chino_PNG.png   # Logo usado en el estampado de fotos LSM
+└── LICENSE                 # Apache License 2.0
+```
 
-> **IMPORTANTE:** siempre actualizar la versión en el mismo PR/commit que contiene cambios funcionales. No se debe hacer push a `main` sin subir la versión, para garantizar que los dispositivos reciban el cache actualizado.
+### Módulos principales
 
-## Dependencias CDN
-Las URLs en `sw.js` (`CDN_ASSETS`) deben coincidir exactamente con los `<script src>` de `index.html`. Incluir `pdf.worker.min.js` y **piexif** en `sw.js` aunque no estén explícitos en `index.html`.
+- **`index.html`**: contiene toda la estructura de pantallas (`home-screen`, `map-screen`), modales y la carga de scripts. **El orden de carga de scripts es crítico** y no debe cambiarse.
+- **`sw.js`**: implementa estrategia cache-first para assets locales y CDN; limpia caches antiguos al activarse. El versionado de la app se controla centralmente mediante `APP_VERSION`.
+- **`js/storage.js`**: abstracción sobre IndexedDB (`MapsGISDB` v3) con stores `maps` y `photos`. Soporta guardar/recuperar mapas TIFF/PDF, fotos y blobs originales.
+- **`js/pdf-processor.js`**: extrae metadatos geoespaciales de GeoPDFs (ISO 32000-2, OGC GeoPDF, viewport bounds) y crea overlays georreferenciados sobre Leaflet.
+- **`js/app.js`**: módulo más grande (~2670 líneas). Inicializa el mapa (Leaflet), gestiona marcadores QC/LSM, fotos, exportación ZIP/Excel, configuración local, calibración de mapas y coordinación de UI.
+- **`js/sync-manager.js`**: sincroniza marcadores pendientes (`pendingUpload: true`) hacia Supabase vía REST. Es unidireccional: dispositivo → Supabase.
+- **`js/admin-manager.js`**: panel de administración que lee los datos sincronizados en Supabase, con filtros, tabla, mapa y exportación Excel.
 
-## Sistemas de coordenadas
-- Primario: PSAD56 UTM 17S (`EPSG:24877`) — definición proj4 en `app.js:6-10`.
-- Secundario: WGS84 (`EPSG:4326`).
-- El panel muestra ambos simultáneamente.
+## Stack tecnológico
 
-## Herramientas de medición
-- Botón toggle en `.map-controls` activa el modo medición.
-- Dos modos: **Distancia** (polilínea) y **Área** (polígono).
-- Los cálculos se realizan en **EPSG:24877** (metros) usando `proj4` para mayor precisión.
-- Panel flotante `#measurement-panel` muestra el resultado y botones Terminar/Borrar/Cerrar.
-- Doble clic en el mapa finaliza la medición actual.
-- El modo medición es mutuamente excluyente con el modo marcador.
-- No requiere plugins externos ni dependencias CDN adicionales.
+Todas las dependencias se cargan por CDN en `index.html` (y deben coincidir exactamente con `CDN_ASSETS` en `sw.js`):
 
-## Marcadores
-Dos tipos con formularios distintos:
-- `qc` → tabla `qc_markers` (nombre, descripción, color, fotos).
-- `lsm` → tabla `lsm_markers` (~15 campos de laboratorio).
-- Máximo **2 fotos** por marcador.
+| Librería | Uso |
+|----------|-----|
+| Leaflet 1.9.4 | Mapa interactivo base |
+| Proj4js 2.9.2 | Transformación de coordenadas |
+| GeoTIFF 2.1.3 | Lectura de archivos GeoTIFF |
+| GeoRaster 1.6.0 + GeoRaster Layer for Leaflet 3.10.0 | Renderizado de GeoTIFF geográficos |
+| PDF.js 3.11.174 | Renderizado y parseo de PDFs |
+| SheetJS (xlsx) 0.20.1 | Exportación a Excel |
+| JSZip 3.10.1 | Generación de ZIPs de exportación |
+| FileSaver.js 2.0.5 | Descarga de archivos |
+| Piexif.js 1.0.6 | Lectura/escritura de metadatos EXIF/GPS en fotos |
 
-## Assets estáticos
-Agregar `./assets/logo_lab_chino_PNG.png` a `CORE_ASSETS` en `sw.js` para que se cachee offline.
+Almacenamiento:
 
-## Fotos LSM
-- Las fotos LSM se estampan con:
-  - Logo `assets/logo_lab_chino_PNG.png` en margen derecho; **tamaño configurable** en Configuración (`maps_gis_logo_size`, default 25 px).
-  - Texto en margen izquierdo (10 px del borde), de abajo hacia arriba: fecha `YYYY-MM-DD`, **localización**, nombre del marcador.
-  - Tamaño de fuente **configurable** (`maps_gis_stamp_font_size`, default 30 px) y proporcional al ancho de la foto.
-  - Fuente del sistema, blanco con contorno negro.
-- La configuración de estampado se edita en Configuración con slider + número, **preview en tiempo real** y botón **Probar con cámara** para ver el estampado sobre una foto real.
-- Al tomar una foto (QC o LSM) se muestra automáticamente un **modal de vista previa** con opciones **Aceptar**, **Eliminar** y **Retomar**. Tocar cualquier thumbnail de la grilla también abre el preview.
-- Se conserva el `originalBlob` en IndexedDB.
-- La foto estampada re-inyecta la metadata EXIF/GPS original vía **piexif.js**.
-- La exportación ZIP usa la foto estampada.
-- **Georreferenciación GPS:** las fotos LSM y QC incluyen tags EXIF GPS en WGS84; ver sección dedicada más abajo.
+- **IndexedDB** (`MapsGISDB` v3): mapas (`maps`) y fotos (`photos`).
+- **LocalStorage**: marcadores QC/LSM, configuración LSM, offsets de calibración por mapa, nombre/id del dispositivo, usuario LSM y preferencias de tema.
+- **Supabase**: backend para sincronización y panel admin (conexión directa vía REST, credenciales hardcodeadas).
 
-## Almacenamiento local
+## Cómo ejecutar el proyecto
+
+No hay comando de build. Solo se requiere servir los archivos estáticamente:
+
+```bash
+# Opción 1: Python
+python -m http.server 8000
+
+# Opción 2: npx serve
+npx serve .
+
+# Opción 3: cualquier servidor estático
+```
+
+Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades de PWA (service worker, cámara, geolocalización, IndexedDB) se recomienda usar **localhost con HTTPS o un dispositivo real**; algunas APIs no funcionan en `file://`.
+
+### No hay tests automatizados
+
+El proyecto no tiene tests unitarios ni de integración. Las validaciones se hacen manualmente en el navegador. Flujos recomendados para probar:
+
+1. Cargar un GeoTIFF y un PDF georreferenciado.
+2. Crear/editar marcadores QC y LSM.
+3. Tomar fotos (QC y LSM) y verificar el modal de vista previa.
+4. Exportar ZIP con Excel + fotos.
+5. Sincronizar con Supabase (requiere conexión).
+6. Probar el panel Admin con la contraseña correspondiente.
+7. Verificar que la app funcione offline tras la primera carga.
+
+## Convenciones de código
+
+- **Idioma:** código y UI en **español**. Los comentarios principales también están en español.
+- **Tema:** oscuro por defecto. El modo claro solo aplica por sesión (`#btn-theme`, clase `light-mode` en `body`).
+- **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
+- **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
+- **Versionado:** la versión actual es `2.4.4` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
+  - `sw.js:11` — `APP_VERSION`
+  - `app.js:23` — `APP_VERSION`
+  - `index.html:41` — texto de `#app-version-badge`
+  - `index.html` — query strings `?v=X.Y.Z` en `<link>` y `<script>` locales
+  - `sw.js` — query strings `?v=X.Y.Z` en `CORE_ASSETS`
+- **Carga de scripts (NO CAMBIAR ORDEN):**
+  Leaflet → Proj4 → GeoTIFF → GeoRaster → GeoRaster Layer → PDF.js → SheetJS → JSZip → FileSaver → Piexif → `storage.js` → `pdf-processor.js` → `app.js` → `sync-manager.js` → `admin-manager.js`.
+
+## Almacenamiento local (referencia rápida)
+
 | Datos | Tecnología | Clave |
 |-------|-----------|-------|
-| Marcadores | LocalStorage | `maps_gis_markers_v3` |
+| Marcadores QC/LSM | LocalStorage | `maps_gis_markers_v3` |
 | Config LSM | LocalStorage | `maps_gis_config_v2` |
-| Tamaño logo estampado | LocalStorage | `maps_gis_logo_size` |
-| Tamaño fuente estampado | LocalStorage | `maps_gis_stamp_font_size` |
+| Tamaño logo estampado | LocalStorage | `maps_gis_logo_size` (default 25 px) |
+| Tamaño fuente estampado | LocalStorage | `maps_gis_stamp_font_size` (default 30 px) |
 | Mapas / fotos | IndexedDB | `MapsGISDB` v3 (`maps`, `photos`) |
 | Offset por mapa | LocalStorage | `maps_gis_offset_<mapId>` |
 | Device name / id | LocalStorage | `maps_gis_device_name` / `maps_gis_device_id` |
 | Usuario LSM | LocalStorage | `maps_gis_lsm_user` |
+| Último formulario LSM | LocalStorage | `maps_gis_last_lsm_form` |
+| Modo marcador | LocalStorage | `maps_gis_marker_mode` (`qc` o `lsm`) |
+| Tema | LocalStorage | `maps_gis_theme` (`light` o `dark`) |
+| Versión config | LocalStorage | `maps_gis_config_version` |
 
-## Backend / sync
-- Supabase vía REST, sync **unidireccional dispositivo → Supabase**.
-- RLS desactivado; URL + anon key en `sync-manager.js` y `admin-manager.js`.
-- Contraseñas hardcodeadas:
-  - Admin: `LSMQC$` (`admin-manager.js`)
-  - LSM: `354` (`app.js`)
-- `POST` para crear, `PATCH` para actualizar (identificado por `local_marker_id` + `device_id`).
-- Esquema autoritativo: `supabase_schema_v2.sql` (ignorar `supabase_schema.sql`).
+## Funcionalidades clave a conocer
 
-## Gotchas técnicos
-- **PDF.js consume el ArrayBuffer**: no reutilizar el mismo entre llamadas a `pdfjsLib.getDocument()`. Usar copia fresca (`freshUint8()` en `pdf-processor.js`).
+### Mapas
+
+- Se permiten **máximo 3 mapas** simultáneos en IndexedDB.
+- Soporta **GeoTIFF** y **PDF georreferenciado**.
+- GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4.
+- GeoTIFF geográficos (EPSG:4326): `GeoRasterLayer`.
+- PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF o ingreso manual; se guardan las esquinas en UTM PSAD56.
+- **Calibración de mapa:** offset en metros (este/norte) por mapa, editable en pantalla (`maps_gis_offset_<mapId>`).
+
+### Marcadores
+
+- Dos tipos: `qc` y `lsm`, cada uno con su propio formulario y modal.
+- Máximo **2 fotos** por marcador.
+- Autocompletar nombres de marcadores basado en nombres usados previamente (máximo 5 sugerencias, case-insensitive, sin acentos).
+- Login LSM con contraseña hardcodeada (`354` en `app.js`).
+
+### Fotos y estampado LSM
+
+- Las fotos LSM se estampan con:
+  - Logo `assets/logo_lab_chino_PNG.png` en margen derecho (tamaño configurable).
+  - Texto en margen izquierdo, de abajo hacia arriba: fecha `YYYY-MM-DD`, localización, nombre de muestra.
+  - Tamaño de fuente configurable y proporcional al ancho de la foto.
+  - Fuente del sistema, blanco con contorno negro.
+- Toda foto QC/LSM guardada incluye **metadata EXIF GPS en WGS84** lat/lon, compatible con QGIS.
+- Se conserva el `originalBlob` en IndexedDB.
+- La exportación ZIP usa la foto estampada.
+
+### Sincronización y administración
+
+- Sincronización **unidireccional dispositivo → Supabase**.
+- Tablas en Supabase: `qc_markers` y `lsm_markers`.
+- Identificación de registros por combinación `local_marker_id` + `device_id`.
+- `POST` para crear, `PATCH` para actualizar.
+- Panel Admin con contraseña hardcodeada (`LSMQC$` en `admin-manager.js`).
+- El panel admin lee directamente de Supabase; no afecta datos locales.
+
+### Exportación
+
+- Exportación local a **ZIP** que contiene:
+  - `marcadores.xlsx` con hojas separadas para QC y LSM.
+  - Carpeta `fotos/` con las fotos estampadas (máximo 2 por marcador).
+- El panel Admin puede exportar Excel de los registros seleccionados.
+
+## Consideraciones de seguridad
+
+> **Importante:** este proyecto tiene decisiones de seguridad deliberadas pero sensibles. Conócelas antes de tocar cualquier cosa relacionada.
+
+- **Credenciales hardcodeadas:** las contraseñas de Admin (`LSMQC$`) y LSM (`354`) están directamente en el código fuente (`admin-manager.js` y `app.js`).
+- **Claves de Supabase expuestas:** tanto la URL como la `anon key` de Supabase están en texto plano en `sync-manager.js` y `admin-manager.js`.
+- **RLS desactivado:** el backend se asume con Row Level Security desactivado; cualquier cliente con la key puede leer/escribir.
+- **No hay autenticación real:** el "login" LSM y Admin se basan únicamente en contraseñas locales.
+- **Service Worker cachea todo:** los assets locales, CDN y tiles se almacenan en el cliente. No se deben colocar secretos en archivos estáticos.
+- **Datos sensibles en LocalStorage/IndexedDB:** los marcadores, fotos y configuración viven en el navegador del usuario.
+
+## Proceso de despliegue
+
+1. Realizar los cambios funcionales.
+2. **Actualizar la versión** en todos los lugares indicados en la sección de convenciones.
+3. Verificar que `sw.js` tenga las mismas URLs de CDN que `index.html`.
+4. Servir o desplegar la carpeta raíz como contenido estático (GitHub Pages, Netlify, Vercel, servidor propio, etc.).
+5. Los dispositivos recibirán la nueva versión gracias al Service Worker; el botón "Actualizar aplicación" (↻) fuerza `reg.update()`, limpia caches `maps-gis-*` y recarga la página sin borrar `localStorage` ni `IndexedDB`.
+
+## Mantenimiento común
+
+### Agregar un campo LSM
+
+Si se agrega un campo al formulario LSM, actualizar:
+
+1. `MarkerManager.createLSM()` en `app.js`.
+2. Modal `#lsm-marker-modal` en `index.html`.
+3. `saveLSMMarker()` en `app.js`.
+4. `stampImage()` en `app.js` si el campo debe aparecer en la foto.
+5. `renderStampPreview()` si debe mostrarse en la previsualización.
+6. Esquema de Supabase (`supabase_schema_v2.sql`).
+7. `uploadLSM` en `sync-manager.js`.
+8. Exportación ZIP en `app.js`.
+9. Tabla / detalle / edición en `admin-manager.js`.
+10. `autoLearnLSMConfig()` en `app.js` si aplica.
+
+### Gotchas técnicos
+
+- **PDF.js consume el ArrayBuffer:** no reutilizar el mismo entre llamadas a `pdfjsLib.getDocument()`. Usar copia fresca (`freshUint8()` en `pdf-processor.js`).
 - **Detectar CRS solo dentro del diccionario geoespacial** (`VP`/`Measure`/`LGIDict`); escanear todo el texto del PDF produce falsos positivos.
 - GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4. GeoTIFF geográficos: `GeoRasterLayer`.
 
-## Mantenimiento LSM
-Al agregar un campo LSM, actualizar:
-1. `MarkerManager.createLSM()` en `app.js`
-2. Modal `#lsm-marker-modal` en `index.html`
-3. `saveLSMMarker()` en `app.js`
-4. `stampImage()` en `app.js` si el nuevo campo debe aparecer en la foto estampada
-5. Preview en `renderStampPreview()` si el nuevo campo debe mostrarse en la previsualización
-6. `supabase_schema_v2.sql`
-7. `uploadLSM` en `sync-manager.js`
-8. Exportación ZIP en `app.js`
-9. Tabla / detalle / edición en `admin-manager.js`
-10. `autoLearnLSMConfig()` en `app.js` si aplica
-
-## Autocompletar nombres de marcadores
-- Al crear/editar marcadores QC y LSM, el campo de nombre muestra sugerencias de nombres usados previamente en marcadores locales del mismo tipo.
-- Máximo 5 sugerencias, case-insensitive, ignorando acentos.
-- Funciones clave en `js/app.js`: `getMarkerNameSuggestions`, `setupAutocomplete`, `renderAutocompleteList`.
-- Los inputs afectados son `#marker-name` (QC) y `#lsm-nombre-muestra` (LSM).
-
-## Georreferenciación EXIF GPS en fotos
-- Toda foto QC y LSM guardada incluye metadata EXIF GPS en **WGS84 lat/lon**, compatible con QGIS.
-- Tags escritos: `GPSLatitudeRef`, `GPSLatitude`, `GPSLongitudeRef`, `GPSLongitude` (formato DMS racional requerido por piexif).
-- Para QC: `compressImageWithGps()` comprime e inyecta GPS usando `pendingMarkerLatLng`.
-- Para LSM: `stampImage()` recibe `lat`/`lng` en `markerData` y escribe GPS junto al EXIF original.
-- Al guardar marcador (`saveMarker()` / `saveLSMMarker()`), si una foto nueva no tiene GPS se inyecta antes de guardar en IndexedDB.
-- Las fotos exportadas en ZIP conservan el GPS y pueden importarse directamente a QGIS.
-- Helpers clave en `js/app.js`: `decimalToExifDms()`, `injectGpsExif()`.
-
-## Botón "Actualizar aplicación"
-- Icono de flecha circular (↻) en el header, junto a Sincronizar y Admin.
-- Fuerza el update del Service Worker (`reg.update()`), limpia caches `maps-gis-*` y recarga la página.
-- No borra `localStorage` ni `IndexedDB`; los marcadores y fotos se mantienen.
-- Si hay marcadores pendientes de subir, muestra advertencia pero permite actualizar de todos modos.
-
 ## Licencia
+
 Este proyecto se distribuye bajo la **Apache License, Version 2.0**. Ver el archivo `LICENSE` en la raíz del repositorio.
 
-## Ignorar
-- `IGNORAR/` (excluido por `.gitignore`; **no** incluir assets de producción aquí)
-- `js/app.js.backup.v161`
-- `.playwright-mcp/` y capturas temporales (`*.png` fuera de `assets/`).
+## Directorios y archivos a ignorar
+
+- `IGNORAR/` — excluido por `.gitignore`; no incluir assets de producción aquí.
+- `js/app.js.backup.v161` — backup antiguo, no se usa en producción.
+- `.playwright-mcp/` — logs temporales de automatización.
+- Capturas temporales (`*.png` fuera de `assets/`).
