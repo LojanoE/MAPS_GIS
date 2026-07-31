@@ -12,12 +12,12 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
   <!-- App CSS -->
-  <link rel="stylesheet" href="css/styles.css?v=2.4.4">
+  <link rel="stylesheet" href="css/styles.css?v=2.5.1">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.4.4">
+  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.5.1">
 </head>
 <body>
 
@@ -43,7 +43,7 @@
               <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.4.4</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.5.1</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -125,6 +125,13 @@
       <button id="btn-mode-toggle" class="mode-toggle" title="Cambiar modo">
         <span id="mode-label" class="mode-label">QC</span>
       </button>
+      <button id="btn-tracks-panel" class="icon-btn" title="Recorridos">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 17h6l3-10h9"/>
+          <circle cx="6" cy="17" r="2"/>
+          <circle cx="18" cy="7" r="2"/>
+        </svg>
+      </button>
       <button id="btn-markers-panel" class="icon-btn" title="Marcadores">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M9 6h11M9 12h11M9 18h11M5 6h.01M5 12h.01M5 18h.01"/>
@@ -155,6 +162,7 @@
           <span id="coord-lat">Lat: ---</span>
           <span id="coord-lng">Lon: ---</span>
         </div>
+        <div id="track-status-text" class="track-status hidden"></div>
       </div>
 
       <!-- Barra de escala -->
@@ -233,6 +241,15 @@
           </svg>
         </button>
 
+        <!-- Recorridos / Tracking -->
+        <button id="btn-track" class="map-btn" title="Iniciar recorrido">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+            <path d="M3 17l5-5 4 4 8-8"/>
+          </svg>
+        </button>
+
         <!-- Calibrar mapa -->
         <button id="btn-calibrate" class="map-btn" title="Calibrar mapa" style="display:none;">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
@@ -273,6 +290,28 @@
         </svg>
         Exportar ZIP
       </button>
+    </div>
+  </div>
+
+  <!-- ==================== PANEL LATERAL DE RECORRIDOS ==================== -->
+  <div id="tracks-panel" class="side-panel hidden">
+    <div class="panel-header">
+      <h3>Recorridos</h3>
+      <button id="btn-close-tracks-panel" class="icon-btn">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 6L6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Lista de recorridos -->
+    <div id="tracks-list-container" class="panel-content">
+      <p class="empty-msg">No hay recorridos guardados</p>
+    </div>
+
+    <!-- Acciones del panel -->
+    <div class="panel-actions">
+      <p class="track-hint">Los recorridos se guardan localmente y no se sincronizan.</p>
     </div>
   </div>
 
@@ -718,6 +757,22 @@
     </div>
   </div>
 
+  <!-- ==================== MODAL NOMBRE DE RECORRIDO ==================== -->
+  <div id="track-name-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Nuevo recorrido</h3>
+      <p class="login-info">Ingresa un nombre para identificar el recorrido.</p>
+      <div class="form-group">
+        <label for="track-name-input">Nombre del recorrido</label>
+        <input type="text" id="track-name-input" placeholder="Ej: Inspeccion DRT" maxlength="50" autocomplete="off">
+      </div>
+      <div class="modal-actions">
+        <button id="btn-cancel-track-name" class="btn-secondary">Cancelar</button>
+        <button id="btn-confirm-track-name" class="btn-primary">Iniciar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== MODAL SETUP DISPOSITIVO ==================== -->
   <div id="device-setup-modal" class="modal hidden">
     <div class="modal-content">
@@ -941,19 +996,19 @@
   <script defer src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
 
   <!-- Storage Module (IndexedDB) -->
-  <script defer src="js/storage.js?v=2.4.4"></script>
+  <script defer src="js/storage.js?v=2.5.1"></script>
 
   <!-- PDF Processor -->
-  <script defer src="js/pdf-processor.js?v=2.4.4"></script>
+  <script defer src="js/pdf-processor.js?v=2.5.1"></script>
 
   <!-- App Main Logic -->
-  <script defer src="js/app.js?v=2.4.4"></script>
+  <script defer src="js/app.js?v=2.5.1"></script>
 
   <!-- Sync Manager (Offline-first Supabase sync) -->
-  <script defer src="js/sync-manager.js?v=2.4.4"></script>
+  <script defer src="js/sync-manager.js?v=2.5.1"></script>
 
   <!-- Admin Manager (Remote admin panel) -->
-  <script defer src="js/admin-manager.js?v=2.4.4"></script>
+  <script defer src="js/admin-manager.js?v=2.5.1"></script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>

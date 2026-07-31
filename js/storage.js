@@ -8,9 +8,10 @@
 
 const MapStorage = (() => {
   const DB_NAME = 'MapsGISDB';
-  const DB_VERSION = 3;
+  const DB_VERSION = 4;
   const STORE_MAPS = 'maps';
   const STORE_PHOTOS = 'photos';
+  const STORE_TRACKS = 'tracks';
 
   let db = null;
 
@@ -55,6 +56,13 @@ const MapStorage = (() => {
           const photoStore = database.createObjectStore(STORE_PHOTOS, { keyPath: 'id' });
           photoStore.createIndex('markerId', 'markerId', { unique: false });
           photoStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+
+        // Tracks store (new in v4)
+        if (!database.objectStoreNames.contains(STORE_TRACKS)) {
+          const trackStore = database.createObjectStore(STORE_TRACKS, { keyPath: 'id' });
+          trackStore.createIndex('createdAt', 'createdAt', { unique: false });
+          trackStore.createIndex('name', 'name', { unique: false });
         }
       };
 
@@ -388,6 +396,121 @@ const MapStorage = (() => {
   }
 
   // ============================================
+  // TRACK OPERATIONS
+  // ============================================
+
+  async function saveTrack(record) {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_TRACKS], 'readwrite');
+      const store = transaction.objectStore(STORE_TRACKS);
+
+      const request = store.put(record);
+
+      request.onsuccess = () => {};
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al guardar el recorrido'));
+      };
+
+      transaction.oncomplete = () => resolve(record);
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de recorrido'));
+      };
+      transaction.onabort = (e) => {
+        const err = transaction.error || new Error('Transaccion de recorrido abortada. Posiblemente almacenamiento lleno.');
+        reject(err);
+      };
+    });
+  }
+
+  async function getAllTracks() {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_TRACKS], 'readonly');
+      const store = transaction.objectStore(STORE_TRACKS);
+      const request = store.getAll();
+
+      let result = [];
+
+      request.onsuccess = () => {
+        result = request.result || [];
+      };
+
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al obtener recorridos'));
+      };
+
+      transaction.oncomplete = () => {
+        result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        resolve(result);
+      };
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de lectura de recorridos'));
+      };
+    });
+  }
+
+  async function getTrack(id) {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_TRACKS], 'readonly');
+      const store = transaction.objectStore(STORE_TRACKS);
+      const request = store.get(id);
+
+      let result = null;
+
+      request.onsuccess = () => {
+        result = request.result;
+      };
+
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al obtener el recorrido'));
+      };
+
+      transaction.oncomplete = () => {
+        resolve(result);
+      };
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de lectura de recorrido'));
+      };
+    });
+  }
+
+  async function deleteTrack(id) {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_TRACKS], 'readwrite');
+      const store = transaction.objectStore(STORE_TRACKS);
+      const request = store.delete(id);
+
+      request.onsuccess = () => {};
+      request.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al eliminar el recorrido'));
+      };
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de eliminacion de recorrido'));
+      };
+      transaction.onabort = () => {
+        reject(new Error('Transaccion de eliminacion de recorrido abortada'));
+      };
+    });
+  }
+
+  // ============================================
   // UTILS
   // ============================================
 
@@ -415,6 +538,11 @@ const MapStorage = (() => {
     getPhotoOriginal,
     getPhotosByMarker,
     deletePhoto,
-    deletePhotosByMarker
+    deletePhotosByMarker,
+    // Tracks
+    saveTrack,
+    getAllTracks,
+    getTrack,
+    deleteTrack
   };
 })();

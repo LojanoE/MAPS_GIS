@@ -605,6 +605,10 @@ img {
   box-shadow: 0 2px 8px var(--shadow);
 }
 
+.map-btn svg {
+  pointer-events: none;
+}
+
 .map-btn:hover {
   background: var(--bg-tertiary);
   color: var(--accent);
@@ -2270,4 +2274,138 @@ img {
   stroke-width: 2;
   fill: var(--bg-secondary);
   fill-opacity: 0.9;
+}
+
+/* ============================================
+   TRACKING / RECORRIDOS
+   ============================================ */
+
+/* Estado del boton de tracking */
+.map-btn.tracking {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+  animation: pulse-track 1.5s infinite;
+}
+
+.map-btn.tracking:hover {
+  background: var(--danger-hover);
+}
+
+.map-btn.paused {
+  background: var(--warning);
+  color: #000;
+  border-color: var(--warning);
+}
+
+.map-btn.paused:hover {
+  background: #e6b800;
+}
+
+@keyframes pulse-track {
+  0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.5); }
+  70% { box-shadow: 0 0 0 10px rgba(248, 81, 73, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); }
+}
+
+/* Texto de estado del recorrido */
+.track-status {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--success);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-status.hidden {
+  display: none;
+}
+
+/* Items del panel de recorridos */
+.track-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+  border-bottom: 1px solid var(--border);
+}
+
+.track-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.track-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.track-item-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-item-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.track-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+}
+
+.track-item-actions button {
+  font-size: 0.7rem;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition), transform 0.1s ease;
+  flex-shrink: 0;
+}
+
+.track-btn-view {
+  background: rgba(88, 166, 255, 0.12);
+  color: var(--accent);
+}
+
+.track-btn-view:hover {
+  background: rgba(88, 166, 255, 0.22);
+}
+
+.track-btn-export {
+  background: rgba(63, 185, 80, 0.12);
+  color: var(--success);
+}
+
+.track-btn-export:hover {
+  background: rgba(63, 185, 80, 0.22);
+}
+
+.track-btn-delete {
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.track-btn-delete:hover {
+  background: rgba(248, 81, 73, 0.22);
+}
+
+.track-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 0;
 }

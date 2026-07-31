@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.4.4';
+const APP_VERSION = '2.5.1';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -33,6 +33,7 @@ const MARKER_COLORS = {
 
 const AppState = {
   map: null, mapOverlay: null, markersLayer: null, userLocationLayer: null,
+  tracksLayer: null, activeTrackLayer: null,
   isAddMarkerMode: false, pendingMarkerLatLng: null, currentMapId: null,
   currentMapType: 'tiff', mapTitle: '', editingMarkerId: null,
   selectedCategory: 'red', darkTiles: null, lightTiles: null,
@@ -47,7 +48,14 @@ const AppState = {
   measurementMarkers: [],
   measurementLine: null,
   measurementPolygon: null,
-  measurementFinished: false
+  measurementFinished: false,
+  // Tracking / recorridos
+  isTracking: false,
+  isTrackPaused: false,
+  currentTrack: null,
+  trackWatchId: null,
+  trackLastPoint: null,
+  trackConfig: { minDistance: 5, minAccuracy: 50 }
 };
 
 // ============================================
@@ -107,6 +115,44 @@ const MarkerManager = {
   remove(id) { this.saveAll(this.getAll().filter(m => m.id !== id)); },
   getById(id) { return this.getAll().find(m => m.id === id) || null; },
   getCount() { return this.getAll().length; }
+};
+
+// ============================================
+// TRACK MANAGER (IndexedDB)
+// ============================================
+const TrackManager = {
+  async getAll() {
+    try {
+      return await MapStorage.getAllTracks();
+    } catch (e) {
+      console.error('[TrackManager] Error al obtener recorridos:', e);
+      return [];
+    }
+  },
+  async save(track) {
+    try {
+      return await MapStorage.saveTrack(track);
+    } catch (e) {
+      console.error('[TrackManager] Error al guardar recorrido:', e);
+      throw e;
+    }
+  },
+  async delete(id) {
+    try {
+      await MapStorage.deleteTrack(id);
+    } catch (e) {
+      console.error('[TrackManager] Error al eliminar recorrido:', e);
+      throw e;
+    }
+  },
+  async getById(id) {
+    try {
+      return await MapStorage.getTrack(id);
+    } catch (e) {
+      console.error('[TrackManager] Error al obtener recorrido:', e);
+      return null;
+    }
+  }
 };
 
 // ============================================
@@ -396,18 +442,23 @@ async function stampImage(imageFile, markerData) {
     console.warn('[stampImage] No se pudo leer EXIF original:', e);
   }
 
-  const [photoDataUrl, logoDataUrl] = await Promise.all([
-    new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result);
-      r.onerror = reject;
-      r.readAsDataURL(imageFile);
-    }),
-    loadLogoDataUrl()
-  ]);
+  const photoDataUrl = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(imageFile);
+  });
+
+  // Cargar logo de forma resiliente: si falla (ej. offline y no cacheado), continuar sin logo
+  let logo = null;
+  try {
+    const logoDataUrl = await loadLogoDataUrl();
+    logo = await loadImage(logoDataUrl);
+  } catch (e) {
+    console.warn('[stampImage] Logo no disponible, continuando sin logo:', e);
+  }
 
   const img = await loadImage(photoDataUrl);
-  const logo = await loadImage(logoDataUrl);
 
   let width = img.width;
   let height = img.height;
@@ -423,12 +474,14 @@ async function stampImage(imageFile, markerData) {
 
   ctx.drawImage(img, 0, 0, width, height);
 
-  // Logo en margen derecho, configurable
-  const logoHeight = stampConfig.logoSize;
-  const logoWidth = (logo.width / logo.height) * logoHeight;
-  const logoX = width - logoWidth - 10;
-  const logoY = height - logoHeight - 10;
-  ctx.drawImage(logo, logoX, logoY, logoWidth, logoHeight);
+  // Logo en margen derecho, configurable (solo si cargo)
+  if (logo) {
+    const logoHeight = stampConfig.logoSize;
+    const logoWidth = (logo.width / logo.height) * logoHeight;
+    const logoX = width - logoWidth - 10;
+    const logoY = height - logoHeight - 10;
+    ctx.drawImage(logo, logoX, logoY, logoWidth, logoHeight);
+  }
 
   // Texto en margen izquierdo, de abajo hacia arriba
   const lines = [
@@ -499,7 +552,7 @@ function loadLogoDataUrl() {
       resolve(c.toDataURL('image/png'));
     };
     img.onerror = () => reject(new Error('No se pudo cargar el logo'));
-    img.src = 'assets/logo_lab_chino_PNG.png';
+    img.src = 'assets/logo_lab_chino_PNG.png?v=' + APP_VERSION;
   });
 }
 
@@ -565,7 +618,10 @@ async function handlePhotoCapture(file, latLng) {
     renderPhotoGrid();
     showToast('Foto agregada', 'success');
     openPhotoPreviewByIndex(AppState.pendingPhotos.length - 1);
-  } catch (error) { showToast('Error al procesar foto', 'error'); }
+  } catch (error) {
+    console.error('[handlePhotoCapture] Error al procesar foto:', error);
+    showToast('Error al procesar foto: ' + (error?.message || 'desconocido'), 'error');
+  }
 }
 function getPhotoGridId() { return AppState.pendingMarkerType === 'lsm' ? 'lsm-photo-grid' : 'photo-grid'; }
 function getAddPhotoBtnId() { return AppState.pendingMarkerType === 'lsm' ? 'btn-lsm-add-photo' : 'btn-add-photo'; }
@@ -658,6 +714,7 @@ function initMap() {
   AppState.lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19 });
   AppState.darkTiles.addTo(AppState.map);
   AppState.markersLayer = L.layerGroup().addTo(AppState.map);
+  AppState.tracksLayer = L.layerGroup().addTo(AppState.map);
   AppState.measurementLayer = L.layerGroup().addTo(AppState.map);
   AppState.map.on('click', (e) => {
     if (AppState.isMeasurementMode && !AppState.measurementFinished) {
@@ -1233,6 +1290,423 @@ function hideGpsSnackbar() {
   const snackbar = document.getElementById('gps-snackbar');
   if (snackbar) snackbar.classList.add('hidden');
   _gpsSnackbarCoords = null;
+}
+
+// ============================================
+// TRACKING / RECORRIDOS
+// ============================================
+const TRACK_COLORS = ['#00bcd4', '#ff9800', '#e91e63', '#8bc34a', '#9c27b0', '#ffeb3b'];
+
+function getTrackColor(index) {
+  return TRACK_COLORS[index % TRACK_COLORS.length];
+}
+
+function haversineDistance(p1, p2) {
+  const R = 6371000;
+  const toRad = Math.PI / 180;
+  const dLat = (p2.lat - p1.lat) * toRad;
+  const dLng = (p2.lng - p1.lng) * toRad;
+  const a = Math.pow(Math.sin(dLat / 2), 2) +
+            Math.cos(p1.lat * toRad) * Math.cos(p2.lat * toRad) *
+            Math.pow(Math.sin(dLng / 2), 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds < 0) return '0s';
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  const parts = [];
+  if (hrs > 0) parts.push(hrs + 'h');
+  if (mins > 0) parts.push(mins + 'm');
+  if (secs > 0 || parts.length === 0) parts.push(secs + 's');
+  return parts.join(' ');
+}
+
+function generateTrackName() {
+  const now = new Date();
+  return 'Recorrido ' + now.toISOString().slice(0, 10) + ' ' +
+         String(now.getHours()).padStart(2, '0') + ':' +
+         String(now.getMinutes()).padStart(2, '0');
+}
+
+function openTrackNameModal() {
+  const input = document.getElementById('track-name-input');
+  if (input) input.value = generateTrackName();
+  document.getElementById('track-name-modal')?.classList.remove('hidden');
+  setTimeout(() => input?.focus(), 100);
+}
+
+function closeTrackNameModal() {
+  document.getElementById('track-name-modal')?.classList.add('hidden');
+}
+
+async function confirmStartTrack() {
+  const input = document.getElementById('track-name-input');
+  const name = (input?.value || '').trim();
+  if (!name) { showToast('Ingresa un nombre para el recorrido', 'error'); return; }
+  closeTrackNameModal();
+  startTrack(name);
+}
+
+function startTrack(name) {
+  if (!navigator.geolocation) {
+    showToast('Geolocalizacion no disponible', 'error');
+    return;
+  }
+  if (AppState.isTracking) return;
+
+  // Asegurar capas
+  if (!AppState.tracksLayer) {
+    AppState.tracksLayer = L.layerGroup().addTo(AppState.map);
+  }
+  clearActiveTrack();
+
+  const color = getTrackColor(Date.now() % TRACK_COLORS.length);
+  const now = new Date().toISOString();
+  AppState.currentTrack = {
+    id: 'track_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7),
+    name: name,
+    color: color,
+    createdAt: now,
+    startedAt: now,
+    endedAt: null,
+    distance: 0,
+    duration: 0,
+    points: []
+  };
+  AppState.isTracking = true;
+  AppState.isTrackPaused = false;
+  AppState.trackLastPoint = null;
+
+  AppState.activeTrackLayer = L.layerGroup().addTo(AppState.map);
+
+  AppState.trackWatchId = navigator.geolocation.watchPosition(
+    onTrackPosition,
+    onTrackError,
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+  );
+
+  updateTrackButtonUI();
+  updateTrackStatusText('Grabando recorrido...');
+  showToast('Recorrido iniciado: ' + name, 'success');
+}
+
+function pauseTrack() {
+  if (!AppState.isTracking || AppState.isTrackPaused) return;
+  AppState.isTrackPaused = true;
+  updateTrackButtonUI();
+  updateTrackStatusText('Recorrido pausado');
+  showToast('Recorrido pausado', 'info');
+}
+
+function resumeTrack() {
+  if (!AppState.isTracking || !AppState.isTrackPaused) return;
+  AppState.isTrackPaused = false;
+  updateTrackButtonUI();
+  updateTrackStatusText('Grabando recorrido...');
+  showToast('Recorrido reanudado', 'info');
+}
+
+async function stopTrack() {
+  if (!AppState.isTracking) return;
+
+  if (AppState.trackWatchId !== null) {
+    navigator.geolocation.clearWatch(AppState.trackWatchId);
+    AppState.trackWatchId = null;
+  }
+
+  const track = AppState.currentTrack;
+  if (track) {
+    track.endedAt = new Date().toISOString();
+    track.duration = track.startedAt ? Math.max(0, Math.round((new Date(track.endedAt) - new Date(track.startedAt)) / 1000)) : 0;
+    if (track.points.length > 0) {
+      try {
+        await TrackManager.save(track);
+        showToast('Recorrido guardado', 'success');
+      } catch (e) {
+        showToast('Error al guardar recorrido', 'error');
+      }
+    } else {
+      showToast('Recorrido vacio descartado', 'info');
+    }
+  }
+
+  AppState.isTracking = false;
+  AppState.isTrackPaused = false;
+  AppState.currentTrack = null;
+  AppState.trackLastPoint = null;
+
+  updateTrackButtonUI();
+  updateTrackStatusText('');
+  clearActiveTrack();
+  await renderTracksOnMap();
+  await updateTrackPanelList();
+}
+
+function onTrackPosition(position) {
+  if (!AppState.isTracking || AppState.isTrackPaused) return;
+
+  const { latitude: lat, longitude: lng, accuracy, altitude, speed } = position.coords;
+
+  // Filtrar por precision minima
+  if (accuracy && accuracy > AppState.trackConfig.minAccuracy) {
+    return;
+  }
+
+  const newPoint = {
+    lat, lng, accuracy: accuracy || null,
+    altitude: altitude || null,
+    speed: speed || null,
+    timestamp: new Date().toISOString()
+  };
+
+  const track = AppState.currentTrack;
+  if (!track) return;
+
+  // Filtrar por distancia minima respecto al ultimo punto
+  if (AppState.trackLastPoint) {
+    const d = haversineDistance(AppState.trackLastPoint, newPoint);
+    if (d < AppState.trackConfig.minDistance) return;
+    track.distance += d;
+  }
+
+  track.points.push(newPoint);
+  AppState.trackLastPoint = newPoint;
+
+  renderActiveTrack();
+  updateTrackStatusText('Grabando: ' + track.points.length + ' pts | ' + formatDistance(track.distance));
+}
+
+let _lastTrackErrorToast = 0;
+function onTrackError(error) {
+  console.warn('[onTrackError] Error de geolocalizacion:', error);
+  const now = Date.now();
+  if (now - _lastTrackErrorToast > 10000) {
+    _lastTrackErrorToast = now;
+    showToast('Error GPS: ' + (error?.message || 'desconocido'), 'error');
+  }
+}
+
+function formatDistance(meters) {
+  if (meters >= 1000) return (meters / 1000).toFixed(2) + ' km';
+  return Math.round(meters) + ' m';
+}
+
+function clearActiveTrack() {
+  if (AppState.activeTrackLayer) {
+    AppState.map.removeLayer(AppState.activeTrackLayer);
+    AppState.activeTrackLayer = null;
+  }
+}
+
+function renderActiveTrack() {
+  if (!AppState.activeTrackLayer || !AppState.currentTrack) return;
+  AppState.activeTrackLayer.clearLayers();
+
+  const track = AppState.currentTrack;
+  const points = track.points;
+  if (points.length === 0) return;
+
+  const latlngs = points.map(p => [p.lat, p.lng]);
+
+  AppState.activeTrackLayer.addLayer(L.polyline(latlngs, {
+    color: track.color,
+    weight: 4,
+    opacity: 0.9,
+    lineCap: 'round',
+    lineJoin: 'round'
+  }));
+
+  // Punto de inicio
+  AppState.activeTrackLayer.addLayer(L.circleMarker(latlngs[0], {
+    radius: 5, color: '#ffffff', weight: 2, fillColor: track.color, fillOpacity: 1
+  }));
+
+  // Punto actual
+  AppState.activeTrackLayer.addLayer(L.circleMarker(latlngs[latlngs.length - 1], {
+    radius: 5, color: '#ffffff', weight: 2, fillColor: '#ff5722', fillOpacity: 1
+  }));
+}
+
+async function renderTracksOnMap() {
+  if (!AppState.tracksLayer) return;
+  AppState.tracksLayer.clearLayers();
+
+  const tracks = await TrackManager.getAll();
+  tracks.forEach((track, idx) => {
+    const points = track.points || [];
+    if (points.length < 2) return;
+    const latlngs = points.map(p => [p.lat, p.lng]);
+    const color = track.color || getTrackColor(idx);
+
+    const polyline = L.polyline(latlngs, {
+      color: color,
+      weight: 4,
+      opacity: 0.85,
+      lineCap: 'round',
+      lineJoin: 'round'
+    });
+    polyline.bindPopup(escapeHtml(track.name) + '<br>' + formatDistance(track.distance || 0) + ' | ' + formatDuration(track.duration || 0));
+    AppState.tracksLayer.addLayer(polyline);
+
+    // Inicio
+    AppState.tracksLayer.addLayer(L.circleMarker(latlngs[0], {
+      radius: 5, color: '#ffffff', weight: 2, fillColor: color, fillOpacity: 1
+    }).bindPopup('Inicio: ' + escapeHtml(track.name)));
+
+    // Fin
+    AppState.tracksLayer.addLayer(L.circleMarker(latlngs[latlngs.length - 1], {
+      radius: 5, color: '#ffffff', weight: 2, fillColor: '#ff5722', fillOpacity: 1
+    }).bindPopup('Fin: ' + escapeHtml(track.name)));
+  });
+}
+
+function updateTrackButtonUI() {
+  const btn = document.getElementById('btn-track');
+  if (!btn) return;
+  btn.classList.toggle('tracking', AppState.isTracking);
+  btn.classList.toggle('paused', AppState.isTracking && AppState.isTrackPaused);
+  btn.title = AppState.isTracking ? 'Detener recorrido' : 'Iniciar recorrido';
+}
+
+function updateTrackStatusText(text) {
+  const el = document.getElementById('track-status-text');
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('hidden', !text);
+}
+
+function handleTrackButtonClick() {
+  if (!AppState.isTracking) {
+    openTrackNameModal();
+  } else {
+    if (confirm('Detener el recorrido actual?')) {
+      stopTrack();
+    }
+  }
+}
+
+function openTracksPanel() {
+  const panel = document.getElementById('tracks-panel');
+  if (panel) { panel.classList.remove('hidden'); updateTrackPanelList(); }
+}
+
+function closeTracksPanel() {
+  document.getElementById('tracks-panel')?.classList.add('hidden');
+}
+
+async function updateTrackPanelList() {
+  const container = document.getElementById('tracks-list-container');
+  if (!container) return;
+
+  const tracks = await TrackManager.getAll();
+  if (tracks.length === 0) {
+    container.innerHTML = '<p class="empty-msg">No hay recorridos guardados</p>';
+    return;
+  }
+
+  container.innerHTML = tracks.map(t => {
+    const pts = (t.points || []).length;
+    return '<div class="track-item" data-id="' + t.id + '">' +
+             '<div class="track-item-info">' +
+               '<div class="track-item-name">' + escapeHtml(t.name) + '</div>' +
+               '<div class="track-item-meta">' + formatDistance(t.distance || 0) + ' | ' + formatDuration(t.duration || 0) + ' | ' + pts + ' pts</div>' +
+             '</div>' +
+             '<div class="track-item-actions">' +
+               '<button class="track-btn-view" data-id="' + t.id + '" title="Ver en mapa">Ver</button>' +
+               '<button class="track-btn-export" data-id="' + t.id + '" title="Exportar GeoJSON">GeoJSON</button>' +
+               '<button class="track-btn-delete" data-id="' + t.id + '" title="Eliminar">&times;</button>' +
+             '</div>' +
+           '</div>';
+  }).join('');
+
+  container.querySelectorAll('.track-btn-view').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); zoomToTrack(btn.dataset.id); });
+  });
+  container.querySelectorAll('.track-btn-export').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); downloadTrackGeoJSON(btn.dataset.id); });
+  });
+  container.querySelectorAll('.track-btn-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); deleteTrackById(btn.dataset.id); });
+  });
+}
+
+async function zoomToTrack(id) {
+  const track = await TrackManager.getById(id);
+  if (!track || !track.points || track.points.length === 0) return;
+  const bounds = L.latLngBounds(track.points.map(p => [p.lat, p.lng]));
+  AppState.map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
+  closeTracksPanel();
+}
+
+async function deleteTrackById(id) {
+  if (!confirm('Eliminar este recorrido?')) return;
+  try {
+    await TrackManager.delete(id);
+    await renderTracksOnMap();
+    await updateTrackPanelList();
+    showToast('Recorrido eliminado', 'info');
+  } catch (e) {
+    showToast('Error al eliminar recorrido', 'error');
+  }
+}
+
+function trackToGeoJSON(track) {
+  const points = track.points || [];
+  const coordinates = points.map(p => [p.lng, p.lat]);
+  const start = points[0];
+  const end = points[points.length - 1];
+  const features = [];
+
+  if (coordinates.length > 0) {
+    features.push({
+      type: 'Feature',
+      properties: {
+        name: track.name,
+        type: 'track',
+        distance: track.distance || 0,
+        duration: track.duration || 0,
+        startedAt: track.startedAt,
+        endedAt: track.endedAt
+      },
+      geometry: {
+        type: coordinates.length === 1 ? 'Point' : 'LineString',
+        coordinates: coordinates.length === 1 ? coordinates[0] : coordinates
+      }
+    });
+  }
+
+  if (start) {
+    features.push({
+      type: 'Feature',
+      properties: { name: track.name + ' - Inicio', type: 'start' },
+      geometry: { type: 'Point', coordinates: [start.lng, start.lat] }
+    });
+  }
+  if (end) {
+    features.push({
+      type: 'Feature',
+      properties: { name: track.name + ' - Fin', type: 'end' },
+      geometry: { type: 'Point', coordinates: [end.lng, end.lat] }
+    });
+  }
+
+  return {
+    type: 'FeatureCollection',
+    features: features
+  };
+}
+
+async function downloadTrackGeoJSON(id) {
+  const track = await TrackManager.getById(id);
+  if (!track) return;
+  const geojson = trackToGeoJSON(track);
+  const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/geo+json' });
+  const fileName = (track.name || 'recorrido').replace(/[^a-zA-Z0-9]/g, '_') + '.geojson';
+  saveAs(blob, fileName);
 }
 
 // ============================================
@@ -1884,7 +2358,18 @@ function getExportMarkers() {
 function updateExportSummary() { document.getElementById('export-count').textContent = getExportMarkers().length; }
 async function exportToZIP() {
   const markers = getExportMarkers();
-  if (markers.length === 0) { showToast('No hay marcadores para exportar', 'error'); return; }
+  const tracks = await TrackManager.getAll();
+  const dateType = getExportType();
+  const fromStr = document.getElementById('export-date-from').value || getLocalDateString();
+  const toStr = document.getElementById('export-date-to').value || getLocalDateString();
+  const fromDate = new Date(fromStr + 'T00:00:00');
+  const toDate = new Date(toStr + 'T23:59:59.999');
+
+  const filteredTracks = dateType === 'today'
+    ? tracks.filter(t => t.createdAt && t.createdAt.startsWith(getLocalDateString()))
+    : tracks.filter(t => { if (!t.createdAt) return false; const d = new Date(t.createdAt); return d >= fromDate && d <= toDate; });
+
+  if (markers.length === 0 && filteredTracks.length === 0) { showToast('No hay marcadores ni recorridos para exportar', 'error'); return; }
   showToast('Generando ZIP...', 'info');
   try {
     const zip = new JSZip();
@@ -1961,11 +2446,35 @@ async function exportToZIP() {
       }
       XLSX.utils.book_append_sheet(wb, wsLSM, 'LSM');
     }
+
+    // Recorridos / Tracks
+    if (filteredTracks.length > 0) {
+      const tracksFolder = zip.folder('recorridos');
+      const trackData = [['Nombre', 'Fecha_Inicio', 'Fecha_Fin', 'Distancia_m', 'Distancia_km', 'Duracion_s', 'Duracion', 'Puntos']];
+      for (const t of filteredTracks) {
+        const geojson = trackToGeoJSON(t);
+        const fileName = (t.name || 'recorrido').replace(/[^a-zA-Z0-9]/g, '_') + '.geojson';
+        tracksFolder.file(fileName, JSON.stringify(geojson, null, 2));
+        trackData.push([
+          t.name || '',
+          t.startedAt || '',
+          t.endedAt || '',
+          t.distance || 0,
+          ((t.distance || 0) / 1000).toFixed(3),
+          t.duration || 0,
+          formatDuration(t.duration || 0),
+          (t.points || []).length
+        ]);
+      }
+      const wsTracks = XLSX.utils.aoa_to_sheet(trackData);
+      XLSX.utils.book_append_sheet(wb, wsTracks, 'Recorridos');
+    }
+
     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     zip.file('marcadores.xlsx', excelBuffer);
     const zipBlob = await zip.generateAsync({ type: 'blob' });
     saveAs(zipBlob, 'marcadores_' + new Date().toISOString().slice(0, 10) + '.zip');
-    showToast(markers.length + ' marcadores exportados', 'success');
+    showToast(markers.length + ' marcadores, ' + filteredTracks.length + ' recorridos exportados', 'success');
     closeExportModal();
   } catch (error) { console.error('[exportToZIP]', error); showToast('Error al generar ZIP', 'error'); }
 }
@@ -2173,6 +2682,7 @@ async function openMap(mapId) {
   if (AppState.currentMapType === 'pdf') await loadPDFMap(mapId);
   else await loadGeoTiff(mapId);
   refreshMarkersOnMap();
+  await renderTracksOnMap();
   updateMarkerCountBadge();
 }
 
@@ -2214,7 +2724,22 @@ function loadThemePreference() {
 // ============================================
 function initEventListeners() {
   document.getElementById('map-input').addEventListener('change', (e) => { if (e.target.files.length > 0) handleFileUpload(e.target.files[0]); });
-  document.getElementById('btn-back').addEventListener('click', () => { stopMeasurement(); showScreen('home-screen'); loadMapsList(); updateMarkerCountBadge(); });
+  document.getElementById('btn-back').addEventListener('click', () => {
+    if (AppState.isTracking) {
+      if (!confirm('Hay un recorrido en curso. ¿Salir y guardarlo?')) return;
+      stopTrack().finally(() => {
+        stopMeasurement();
+        showScreen('home-screen');
+        loadMapsList();
+        updateMarkerCountBadge();
+      });
+    } else {
+      stopMeasurement();
+      showScreen('home-screen');
+      loadMapsList();
+      updateMarkerCountBadge();
+    }
+  });
   document.getElementById('btn-theme').addEventListener('click', toggleTheme);
   document.getElementById('btn-location').addEventListener('click', goToMyLocation);
   document.getElementById('btn-center').addEventListener('click', () => { if (AppState.mapOverlay) AppState.map.fitBounds(AppState.mapOverlay.getBounds()); });
@@ -2275,6 +2800,17 @@ function initEventListeners() {
   document.getElementById('btn-markers-panel').addEventListener('click', openMarkersPanel);
   document.getElementById('btn-close-panel').addEventListener('click', closeMarkersPanel);
   document.getElementById('btn-export-panel').addEventListener('click', openExportModal);
+
+  // Tracking / recorridos
+  const btnTrack = document.getElementById('btn-track');
+  if (btnTrack) {
+    btnTrack.addEventListener('click', handleTrackButtonClick);
+  }
+  document.getElementById('btn-tracks-panel')?.addEventListener('click', openTracksPanel);
+  document.getElementById('btn-close-tracks-panel')?.addEventListener('click', closeTracksPanel);
+  document.getElementById('btn-confirm-track-name')?.addEventListener('click', confirmStartTrack);
+  document.getElementById('btn-cancel-track-name')?.addEventListener('click', closeTrackNameModal);
+  document.getElementById('track-name-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmStartTrack(); if (e.key === 'Escape') closeTrackNameModal(); });
   document.getElementById('marker-search').addEventListener('input', (e) => { renderMarkersList(e.target.value); });
   document.getElementById('btn-cancel-export').addEventListener('click', closeExportModal);
   document.getElementById('btn-confirm-export').addEventListener('click', exportToZIP);
@@ -2301,6 +2837,7 @@ function initEventListeners() {
         else if (modal.id === 'go-to-coords-modal') closeGoToCoordsModal();
         else if (modal.id === 'delete-map-modal') { pendingDeleteMapId = null; modal.classList.add('hidden'); }
         else if (modal.id === 'photo-preview-modal') closePhotoPreview();
+        else if (modal.id === 'track-name-modal') closeTrackNameModal();
         else modal.classList.add('hidden');
       }
     });
