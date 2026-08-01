@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.6.0';
+const APP_VERSION = '2.7.0';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -2507,6 +2507,7 @@ async function exportToZIP() {
   try {
     const zip = new JSZip();
     const folder = zip.folder('fotos');
+    const folderCrudas = zip.folder('fotos_crudas');
     const wb = XLSX.utils.book_new();
     const qcMarkers = markers.filter(m => m.markerType === 'qc');
     const lsmMarkers = markers.filter(m => m.markerType === 'lsm');
@@ -2526,6 +2527,10 @@ async function exportToZIP() {
               if (photoRecord && photoRecord.blob) {
                 const fileName = prefix + '_' + safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
                 folder.file(fileName, photoRecord.blob);
+                const original = photoRecord.originalBlob || (await MapStorage.getPhotoOriginal(photoId));
+                if (original) {
+                  folderCrudas.file(fileName.replace('.jpg', '_cruda.jpg'), original);
+                }
                 if (p === 0) foto1 = fileName;
                 if (p === 1) foto2 = fileName;
               }
@@ -2561,6 +2566,10 @@ async function exportToZIP() {
               if (photoRecord && photoRecord.blob) {
                 const fileName = prefix + '_' + safeName + '_' + rowNum + '_foto' + (p + 1) + '.jpg';
                 folder.file(fileName, photoRecord.blob);
+                const original = photoRecord.originalBlob || (await MapStorage.getPhotoOriginal(photoId));
+                if (original) {
+                  folderCrudas.file(fileName.replace('.jpg', '_cruda.jpg'), original);
+                }
                 if (p === 0) foto1 = fileName;
                 if (p === 1) foto2 = fileName;
               }

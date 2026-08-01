@@ -129,6 +129,14 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+### v2.7.0 — Foto cruda en la exportación ZIP
+
+- La exportación ZIP ahora incluye una carpeta `fotos_crudas/` con las fotos originales sin estampar (`originalBlob` de IndexedDB), además de `fotos/` con las estampadas.
+- Nombre derivado del de la foto estampada con sufijo `_cruda.jpg` (ej. `QC_Punto1_001_foto1_cruda.jpg`).
+- Si el registro no tiene `originalBlob` (fotos antiguas), simplemente se omite sin error.
+- El Excel (`marcadores.xlsx`) no cambia: sigue referenciando las fotos estampadas.
+- **Bumps de versión:** `2.6.0` → `2.7.0`.
+
 ### v2.6.0 — Capas diarias y nombre automático por defecto
 
 Novedades en esta versión:
@@ -154,7 +162,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro solo aplica por sesión (`#btn-theme`, clase `light-mode` en `body`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.6.0` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
+- **Versionado:** la versión actual es `2.7.0` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:46` — texto de `#app-version-badge`
@@ -210,7 +218,7 @@ Novedades en esta versión:
   - Fuente del sistema, blanco con contorno negro.
 - Toda foto QC/LSM guardada incluye **metadata EXIF GPS en WGS84** lat/lon, compatible con QGIS.
 - Se conserva el `originalBlob` en IndexedDB.
-- La exportación ZIP usa la foto estampada.
+- La exportación ZIP incluye **ambas fotos**: la estampada/procesada en `fotos/` y la cruda (sin estampar) en `fotos_crudas/` con sufijo `_cruda.jpg`.
 
 ### Recorridos GPS
 
@@ -239,6 +247,7 @@ Novedades en esta versión:
 - Exportación local a **ZIP** que contiene:
   - `marcadores.xlsx` con hojas separadas para QC, LSM y Recorridos.
   - Carpeta `fotos/` con las fotos estampadas (máximo 2 por marcador).
+  - Carpeta `fotos_crudas/` con las fotos originales sin estampar (sufijo `_cruda.jpg`; solo si existe `originalBlob`).
   - Carpeta `recorridos/` con archivos GeoJSON.
 - El panel Admin puede exportar Excel de los registros seleccionados.
 
