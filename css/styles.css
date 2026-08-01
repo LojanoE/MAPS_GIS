@@ -807,6 +807,97 @@ img {
   background: rgba(248, 81, 73, 0.22);
 }
 
+/* --- Capas diarias (grupos por dia en el panel de marcadores) --- */
+.layer-group {
+  margin-bottom: 6px;
+}
+
+.layer-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  position: sticky;
+  top: -8px;
+  z-index: 5;
+}
+
+.layer-group-title {
+  flex: 1;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
+
+.layer-group-count {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.layer-group.layer-disabled .layer-group-items {
+  opacity: 0.45;
+}
+
+.layer-group.layer-disabled .layer-group-title {
+  text-decoration: line-through;
+}
+
+/* Toggle tipo switch para activar/desactivar la capa en el mapa */
+.layer-toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.layer-toggle-input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.layer-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  transition: background var(--transition);
+}
+
+.layer-toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: transform var(--transition), background var(--transition);
+}
+
+.layer-toggle-input:checked + .layer-toggle-slider {
+  background: rgba(88, 166, 255, 0.3);
+  border-color: var(--accent);
+}
+
+.layer-toggle-input:checked + .layer-toggle-slider::before {
+  transform: translate(16px, -50%);
+  background: var(--accent);
+}
+
 /* --- Modals --- */
 .modal {
   position: fixed;

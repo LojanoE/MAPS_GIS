@@ -19,11 +19,11 @@ C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
 ├── sw.js                   # Service Worker con cache-first y versionado (~244 líneas)
 ├── manifest.json           # Manifest PWA
 ├── config.json             # Listas por defecto para selects LSM
-├── css/styles.css          # Estilos mobile-first, tema oscuro por defecto (~2411 líneas)
+├── css/styles.css          # Estilos mobile-first, tema oscuro por defecto (~2502 líneas)
 ├── js/
 │   ├── storage.js          # IndexedDB (mapas, fotos, recorridos)
 │   ├── pdf-processor.js    # Procesamiento y georreferenciación de PDFs
-│   ├── app.js              # Lógica principal de la app, UI, mapa, marcadores (~3272 líneas)
+│   ├── app.js              # Lógica principal de la app, UI, mapa, marcadores (~3344 líneas)
 │   ├── sync-manager.js     # Sincronización unidireccional a Supabase
 │   └── admin-manager.js    # Panel de administración remoto (Supabase)
 ├── assets/
@@ -123,7 +123,30 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 10. Exportar ZIP con Excel + fotos + recorridos GeoJSON.
 11. Sincronizar con Supabase (requiere conexión y credenciales válidas).
 12. Probar el panel Admin con la contraseña correspondiente.
-13. Verificar que la app funcione offline tras la primera carga.
+13. **Capas diarias:** crear marcadores en días distintos, abrir el panel de Marcadores y verificar que se agrupen por fecha. Desactivar una capa con el switch: los marcadores de esa fecha deben desaparecer del mapa pero seguir en la lista y en la exportación ZIP/Excel. Recargar la página: la capa debe seguir desactivada.
+14. **Nombre por defecto automático:** crear un marcador QC nuevo y verificar que el nombre se pre-rellene como `QC-01`, `QC-02`… reiniciando cada día. Lo mismo para LSM (`LSM-01`, `LSM-02`…). Verificar que el campo siga siendo editable.
+15. Verificar que la app funcione offline tras la primera carga.
+
+## Notas de versión
+
+### v2.6.0 — Capas diarias y nombre automático por defecto
+
+Novedades en esta versión:
+
+- **Capas diarias en el panel de marcadores:**
+  - Los marcadores se agrupan automáticamente por día de creación (`YYYY-MM-DD`), derivado de `createdAt`.
+  - El panel de marcadores muestra un encabezado por día con un switch para activar/desactivar la capa en el mapa.
+  - El estado de las capas desactivadas se persiste en `LocalStorage` bajo la clave `maps_gis_hidden_layers`.
+  - Desactivar una capa **solo afecta la visualización en el mapa**: el panel de marcadores y la exportación ZIP/Excel siguen incluyendo todos los marcadores.
+  - Funciones clave en `js/app.js`: `LayerManager`, `getMarkerDayLayer()`, `refreshMarkersOnMap()`, `renderMarkersList()`.
+  - Estilos en `css/styles.css`: `.layer-group`, `.layer-group-header`, `.layer-toggle`, `.layer-disabled`.
+
+- **Nombre por defecto automático:**
+  - Al crear un marcador nuevo (QC o LSM), el campo nombre se pre-llena con un correlativo por día y tipo: `QC-01`, `QC-02`… / `LSM-01`, `LSM-02`….
+  - El contador reinicia cada día y el nombre sigue siendo editable por el usuario.
+  - Función clave en `js/app.js`: `getDefaultMarkerName(type)`.
+
+- **Bumps de versión:** `2.5.3` → `2.6.0` en `sw.js`, `js/app.js` e `index.html` (ver convenciones de versionado más abajo).
 
 ## Convenciones de código
 
@@ -131,7 +154,7 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 - **Tema:** oscuro por defecto. El modo claro solo aplica por sesión (`#btn-theme`, clase `light-mode` en `body`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.5.3` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
+- **Versionado:** la versión actual es `2.6.0` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:46` — texto de `#app-version-badge`
@@ -145,6 +168,7 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 | Datos | Tecnología | Clave |
 |-------|-----------|-------|
 | Marcadores QC/LSM | LocalStorage | `maps_gis_markers_v3` |
+| Capas diarias desactivadas | LocalStorage | `maps_gis_hidden_layers` (array de fechas `YYYY-MM-DD`) |
 | Config LSM | LocalStorage | `maps_gis_config_v2` |
 | Tamaño logo estampado | LocalStorage | `maps_gis_logo_size` (default 25 px) |
 | Tamaño fuente estampado | LocalStorage | `maps_gis_stamp_font_size` (default 30 px) |
@@ -171,6 +195,8 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 ### Marcadores
 
 - Dos tipos: `qc` y `lsm`, cada uno con su propio formulario y modal.
+- **Capas diarias:** los marcadores se agrupan automáticamente por día de creación (capa = `YYYY-MM-DD`, derivada de `createdAt` con `getMarkerDayLayer()`). En el panel de marcadores la lista se agrupa por día con un toggle por grupo para mostrar/ocultar la capa **solo en el mapa** (`LayerManager`, clave `maps_gis_hidden_layers`; el estado se persiste entre sesiones). La lista del panel y la exportación ZIP/Excel siempre incluyen todos los marcadores.
+- **Nombre por defecto automático:** al crear un marcador nuevo el nombre viene pre-llenado con un correlativo por día y tipo (`QC-01`, `QC-02`… / `LSM-01`, `LSM-02`…; `getDefaultMarkerName()`), editable por el usuario.
 - Máximo **2 fotos** por marcador.
 - Autocompletar nombres de marcadores basado en nombres usados previamente (máximo 5 sugerencias, case-insensitive, sin acentos).
 - Login LSM con contraseña hardcodeada (`354` en `app.js`).
@@ -252,11 +278,24 @@ Si se agrega un campo al formulario LSM, actualizar:
 9. Tabla / detalle / edición en `admin-manager.js`.
 10. `autoLearnLSMConfig()` en `app.js` si aplica.
 
+### Cambiar lógica de capas diarias o nombres por defecto
+
+Si se modifica la agrupación por días, la visibilidad de capas o el nombre automático, actualizar:
+
+1. `LayerManager` y `getMarkerDayLayer()` en `js/app.js` para derivar la capa.
+2. `refreshMarkersOnMap()` en `js/app.js` para aplicar el filtro de visibilidad.
+3. `renderMarkersList()` en `js/app.js` para renderizar los encabezados y switches de capa.
+4. `getDefaultMarkerName(type)` en `js/app.js` para el correlativo por día y tipo.
+5. Los puntos de entrada del modal en `openMarkerModal()` (QC) y apertura del modal LSM en `js/app.js`.
+6. Estilos correspondientes en `css/styles.css`.
+7. `AGENTS.md` (sección "Funcionalidades clave → Marcadores" y "Notas de versión").
+
 ### Gotchas técnicos
 
 - **PDF.js consume el ArrayBuffer:** no reutilizar el mismo entre llamadas a `pdfjsLib.getDocument()`. Usar copia fresca (`freshUint8()` en `pdf-processor.js`).
 - **Detectar CRS solo dentro del diccionario geoespacial** (`VP`/`Measure`/`LGIDict`); escanear todo el texto del PDF produce falsos positivos.
 - GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4. GeoTIFF geográficos: `GeoRasterLayer`.
+- **IDs de marcador por timestamp:** actualmente `id = 'm_' + Date.now()`. Dos marcadores creados en el mismo milisegundo colisionarían. En uso manual no es un problema; si se automatiza la creación masiva, considerar agregar un sufijo aleatorio (p. ej. `+ '_' + Math.random().toString(36).slice(2,6)`).
 - **Service Worker nunca cachea Supabase:** `supabase.co` está en `NETWORK_ONLY_DOMAINS`.
 
 ## Licencia

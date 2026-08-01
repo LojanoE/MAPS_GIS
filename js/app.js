@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.5.3';
+const APP_VERSION = '2.6.0';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -124,6 +124,43 @@ const MarkerManager = {
   getById(id) { return this.getAll().find(m => m.id === id) || null; },
   getCount() { return this.getAll().length; }
 };
+
+// ============================================
+// LAYER MANAGER (Capas diarias, LocalStorage)
+// ============================================
+const LayerManager = {
+  STORAGE_KEY: 'maps_gis_hidden_layers',
+  getHidden() {
+    try {
+      const data = JSON.parse(localStorage.getItem(this.STORAGE_KEY));
+      return Array.isArray(data) ? data : [];
+    } catch { return []; }
+  },
+  isActive(day) { return !this.getHidden().includes(day); },
+  setActive(day, active) {
+    let hidden = this.getHidden();
+    if (active) hidden = hidden.filter(d => d !== day);
+    else if (!hidden.includes(day)) hidden.push(day);
+    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(hidden));
+  },
+  toggle(day) { this.setActive(day, !this.isActive(day)); }
+};
+
+// Devuelve la capa diaria (YYYY-MM-DD local) de un marcador segun su fecha de creacion
+function getMarkerDayLayer(marker) {
+  const d = marker.createdAt ? new Date(marker.createdAt) : new Date();
+  return getLocalDateString(d);
+}
+
+// Nombre por defecto automatico: correlativo por dia y tipo (QC-01, LSM-01, ...)
+function getDefaultMarkerName(type) {
+  const today = getLocalDateString(new Date());
+  const prefix = type === 'lsm' ? 'LSM' : 'QC';
+  const count = MarkerManager.getAll().filter(m =>
+    (m.markerType || 'qc') === type && getMarkerDayLayer(m) === today
+  ).length;
+  return prefix + '-' + String(count + 1).padStart(2, '0');
+}
 
 // ============================================
 // TRACK MANAGER (IndexedDB)
@@ -1940,7 +1977,7 @@ async function openLSMMarkerModal(latlng, editId) {
     document.getElementById('lsm-categoria').value = last.categoria || '';
     document.getElementById('lsm-semana-laboratorio').value = getSemanaLaboratorio();
     document.getElementById('lsm-tipo-material').value = last.tipoMaterial || '';
-    document.getElementById('lsm-nombre-muestra').value = '';
+    document.getElementById('lsm-nombre-muestra').value = getDefaultMarkerName('lsm');
     document.getElementById('lsm-proveniencia').value = last.proveniencia || '';
     document.getElementById('lsm-localizacion').value = last.localizacion || '';
     document.getElementById('lsm-fuente').value = last.fuente || '';
@@ -2169,7 +2206,7 @@ async function openMarkerModal(latlng, editId) {
     }
   } else {
     document.getElementById('marker-modal-title').textContent = 'Nuevo Marcador';
-    document.getElementById('marker-name').value = '';
+    document.getElementById('marker-name').value = getDefaultMarkerName('qc');
     document.getElementById('marker-description').value = '';
     AppState.selectedCategory = 'red';
     const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
@@ -2325,7 +2362,9 @@ function addMarkerToMap(marker) {
 function refreshMarkersOnMap() {
   if (!AppState.markersLayer) return;
   AppState.markersLayer.clearLayers();
-  MarkerManager.getAll().forEach(m => addMarkerToMap(m));
+  MarkerManager.getAll()
+    .filter(m => LayerManager.isActive(getMarkerDayLayer(m)))
+    .forEach(m => addMarkerToMap(m));
 }
 
 // ============================================
@@ -2345,11 +2384,44 @@ function renderMarkersList(filter = '') {
     return;
   }
   markers.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  container.innerHTML = markers.map(m => {
-    const color = MARKER_COLORS[m.color]?.hex || MARKER_COLORS.red.hex;
-    const typeLabel = m.markerType === 'lsm' ? 'LSM' : 'QC';
-    return '<div class="marker-item" data-id="' + m.id + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div><div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + (m.altura != null ? ' | Z: ' + m.altura + ' m' : '') + '</div></div><div class="marker-item-actions"><button class="marker-item-btn marker-btn-edit" data-id="' + m.id + '" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button><button class="marker-item-btn marker-btn-delete" data-id="' + m.id + '" title="Eliminar" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"></path><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg></button></div></div>';
+  // Agrupar por capa diaria (fecha de creacion), grupos ordenados por fecha descendente
+  const groups = {};
+  markers.forEach(m => {
+    const day = getMarkerDayLayer(m);
+    if (!groups[day]) groups[day] = [];
+    groups[day].push(m);
+  });
+  const days = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+  container.innerHTML = days.map(day => {
+    const active = LayerManager.isActive(day);
+    const groupMarkers = groups[day];
+    const dateLabel = formatDate(day + 'T12:00:00');
+    const items = groupMarkers.map(m => {
+      const color = MARKER_COLORS[m.color]?.hex || MARKER_COLORS.red.hex;
+      const typeLabel = m.markerType === 'lsm' ? 'LSM' : 'QC';
+      return '<div class="marker-item" data-id="' + m.id + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div><div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + (m.altura != null ? ' | Z: ' + m.altura + ' m' : '') + '</div></div><div class="marker-item-actions"><button class="marker-item-btn marker-btn-edit" data-id="' + m.id + '" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button><button class="marker-item-btn marker-btn-delete" data-id="' + m.id + '" title="Eliminar" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"></path><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg></button></div></div>';
+    }).join('');
+    return '<div class="layer-group' + (active ? '' : ' layer-disabled') + '" data-day="' + day + '">' +
+      '<div class="layer-group-header">' +
+        '<label class="layer-toggle" title="Mostrar/ocultar en el mapa">' +
+          '<input type="checkbox" class="layer-toggle-input" data-day="' + day + '"' + (active ? ' checked' : '') + '>' +
+          '<span class="layer-toggle-slider"></span>' +
+        '</label>' +
+        '<span class="layer-group-title">' + dateLabel + '</span>' +
+        '<span class="layer-group-count">' + groupMarkers.length + '</span>' +
+      '</div>' +
+      '<div class="layer-group-items">' + items + '</div>' +
+    '</div>';
   }).join('');
+  container.querySelectorAll('.layer-toggle-input').forEach(toggle => {
+    toggle.addEventListener('change', () => {
+      const day = toggle.dataset.day;
+      LayerManager.setActive(day, toggle.checked);
+      const group = container.querySelector('.layer-group[data-day="' + day + '"]');
+      if (group) group.classList.toggle('layer-disabled', !toggle.checked);
+      if (AppState.markersLayer) refreshMarkersOnMap();
+    });
+  });
   container.querySelectorAll('.marker-item').forEach(item => {
     item.addEventListener('click', (e) => {
       if (e.target.closest('.marker-item-btn')) return;
