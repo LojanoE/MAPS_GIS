@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.7.0';
+const APP_VERSION = '2.8.0';
 
 const MARKER_COLORS = {
   red:    { hex: '#f85149', label: 'Rojo' },
@@ -239,36 +239,12 @@ const DeviceManager = {
 // ============================================
 const CONFIG_KEY = 'maps_gis_config_v2';
 const CONFIG_KEYS = [
-  'nombre_proyecto', 'solicitante',
-  'estructura_deposito', 'subestructuras', 'categoria',
-  'tipo_material', 'proveniencia', 'localizacion',
+  'tipo_material', 'localizacion',
   'fuente', 'ensayos'
 ];
 
 let DEFAULT_CONFIG = {
-  nombre_proyecto: [
-    '-',
-    'Ingenieria Detallada para los Crecimientos El.945 m, El.970 m del DRT',
-    'Servicio de Diseno Detallado para la Ampliacion de la Escombrera Sur de la Mina Mirador',
-    'Caracterizacion de Relaves del DRT',
-    'Ingenieria Detallada de Cierre para la Estabilidad Fisica e Hidrologica del Deposito de Relaves Quimi',
-    'Departamento de Gestion de Relaves (GDR)',
-    'Coronamiento C980',
-    'Coronamiento C990'
-  ],
-  solicitante: [
-    '-',
-    'Control de Calidad de la Construccion (CQC)',
-    'Klon Crippen Berger (KCB)',
-    'Departamento de Produccion y Tecnologia (PyT)',
-    'Unidad de Monitoreo y Vigilancia (U_MV)',
-    'Jefaturas del Departamento de Depositos de Relaves'
-  ],
-  estructura_deposito: ['-','DRT','DRQ','TMS','ESS','TMN'],
-  subestructuras: ['-','C990','C980','Fase I-II','Fase III'],
-  categoria: ['-','EETT','GDR','PPT4','ESAN','PPP1','IMPC970','PPT6','EETQ'],
   tipo_material: ['-','Zona 1 - Relleno','Zona 2 - Filtro Fino','Zona 3 - Filtro Grueso','Zona 6 - Drenante','Fundacion','Zona 1 Seleccionado - Relleno','Relaves','Arcilla','Zona 1 - Zona 6'],
-  proveniencia: ['-','Banda 4','Mina Maricela','Visconticorp','Mina Samaniego','Mina Castillo','Mina Guzman','Mina Blanca Cajamarca','Mina Pablo','El Ideal Amazonico','Banda 6'],
   localizacion: ['-','P 980-S3','P 965-S2','P 950-S2','P 925-S2','P 920-S2','P 905-S2','P 895-S1','P 890-S1','P 865-S3','P 835-S3','P 833-S3','P 805-S3','P 795-S3','Dren Basal','Dren D-8B','Dren D-11','Dren D-08','Dren Inclinado','Banco de Tajo de Mina','Dren-D-8B'],
   fuente: ['-','Tajo de Mina','Proveedores','Fundacion','Escombrera','Relavera'],
   ensayos: ['-','HUM','GEP','GTM','GFI','GHD','ELA','EDL','COM','ABF','ABG','ICP','SLF','PRA','TIS','VDC','DCP','DCA','PMF','PET','CLS','PPF','PPR','DPS','DMI','DMA','GEG','CUS','TCU','TCD','TUU','CUR','TXR','RTI','PGF','ABA','DNU','LEO','CFR','CST','GTA','CMO','COS']
@@ -315,13 +291,7 @@ const ConfigManager = {
 // ============================================
 function autoLearnLSMConfig(lsmData) {
   const fieldMap = {
-    nombreProyecto: 'nombre_proyecto',
-    solicitante: 'solicitante',
-    estructuraDeposito: 'estructura_deposito',
-    subestructuras: 'subestructuras',
-    categoria: 'categoria',
     tipoMaterial: 'tipo_material',
-    proveniencia: 'proveniencia',
     localizacion: 'localizacion',
     fuente: 'fuente'
   };
@@ -1923,13 +1893,7 @@ async function openLSMMarkerModal(latlng, editId) {
   AppState.editingMarkerId = editId || null;
   AppState.pendingMarkerType = 'lsm';
   clearPendingPhotos();
-  populateLsmSelect('lsm-nombre-proyecto', 'nombre_proyecto');
-  populateLsmSelect('lsm-solicitante', 'solicitante');
-  populateLsmSelect('lsm-estructura-deposito', 'estructura_deposito');
-  populateLsmSelect('lsm-subestructuras', 'subestructuras');
-  populateLsmSelect('lsm-categoria', 'categoria');
   populateLsmSelect('lsm-tipo-material', 'tipo_material');
-  populateLsmSelect('lsm-proveniencia', 'proveniencia');
   populateLsmSelect('lsm-localizacion', 'localizacion');
   populateLsmSelect('lsm-fuente', 'fuente');
   populateLsmEnsayos();
@@ -1941,15 +1905,9 @@ async function openLSMMarkerModal(latlng, editId) {
     if (!marker || marker.markerType !== 'lsm') return;
     document.getElementById('lsm-modal-title').textContent = 'Editar Muestra LSM';
     const d = marker.lsmData || {};
-    document.getElementById('lsm-nombre-proyecto').value = d.nombreProyecto || '';
-    document.getElementById('lsm-solicitante').value = d.solicitante || '';
-    document.getElementById('lsm-estructura-deposito').value = d.estructuraDeposito || '';
-    document.getElementById('lsm-subestructuras').value = d.subestructuras || '';
-    document.getElementById('lsm-categoria').value = d.categoria || '';
     document.getElementById('lsm-semana-laboratorio').value = d.semanaLaboratorio || '';
     document.getElementById('lsm-tipo-material').value = d.tipoMaterial || '';
     document.getElementById('lsm-nombre-muestra').value = marker.name || '';
-    document.getElementById('lsm-proveniencia').value = d.proveniencia || '';
     document.getElementById('lsm-localizacion').value = d.localizacion || '';
     document.getElementById('lsm-fuente').value = d.fuente || '';
     const ensayos = d.ensayos || [];
@@ -1970,15 +1928,9 @@ async function openLSMMarkerModal(latlng, editId) {
   } else {
     document.getElementById('lsm-modal-title').textContent = 'Nueva Muestra LSM';
     const last = getLastLSMForm();
-    document.getElementById('lsm-nombre-proyecto').value = last.nombreProyecto || '';
-    document.getElementById('lsm-solicitante').value = last.solicitante || '';
-    document.getElementById('lsm-estructura-deposito').value = last.estructuraDeposito || '';
-    document.getElementById('lsm-subestructuras').value = last.subestructuras || '';
-    document.getElementById('lsm-categoria').value = last.categoria || '';
     document.getElementById('lsm-semana-laboratorio').value = getSemanaLaboratorio();
     document.getElementById('lsm-tipo-material').value = last.tipoMaterial || '';
     document.getElementById('lsm-nombre-muestra').value = getDefaultMarkerName('lsm');
-    document.getElementById('lsm-proveniencia').value = last.proveniencia || '';
     document.getElementById('lsm-localizacion').value = last.localizacion || '';
     document.getElementById('lsm-fuente').value = last.fuente || '';
     document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]').forEach(cb => cb.checked = false);
@@ -2115,15 +2067,9 @@ async function saveLSMMarker() {
   const nombreMuestra = document.getElementById('lsm-nombre-muestra').value.trim();
   if (!nombreMuestra) { showToast('Ingresa el Nombre de Muestra', 'error'); return; }
   const lsmData = {
-    nombreProyecto: document.getElementById('lsm-nombre-proyecto').value.trim(),
-    solicitante: document.getElementById('lsm-solicitante').value.trim(),
-    estructuraDeposito: document.getElementById('lsm-estructura-deposito').value.trim(),
-    subestructuras: document.getElementById('lsm-subestructuras').value.trim(),
-    categoria: document.getElementById('lsm-categoria').value.trim(),
     semanaLaboratorio: document.getElementById('lsm-semana-laboratorio').value.trim(),
     tipoMaterial: document.getElementById('lsm-tipo-material').value.trim(),
     nombreMuestra: nombreMuestra,
-    proveniencia: document.getElementById('lsm-proveniencia').value.trim(),
     localizacion: document.getElementById('lsm-localizacion').value.trim(),
     fuente: document.getElementById('lsm-fuente').value.trim(),
     ensayos: Array.from(document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]:checked')).map(cb => cb.value)
@@ -2296,7 +2242,7 @@ async function openMarkerDetail(id) {
   if (marker.markerType === 'lsm') {
     const d = marker.lsmData || {};
     const ensayosStr = (d.ensayos || []).join(', ');
-    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">LSM</span></div><div class="detail-row"><span class="detail-label">Proyecto</span><span class="detail-value">' + escapeHtml(d.nombreProyecto || '-') + '</span></div><div class="detail-row"><span class="detail-label">Solicitante</span><span class="detail-value">' + escapeHtml(d.solicitante || '-') + '</span></div><div class="detail-row"><span class="detail-label">Estructura/Deposito</span><span class="detail-value">' + escapeHtml(d.estructuraDeposito || '-') + '</span></div><div class="detail-row"><span class="detail-label">Subestructuras</span><span class="detail-value">' + escapeHtml(d.subestructuras || '-') + '</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + escapeHtml(d.categoria || '-') + '</span></div><div class="detail-row"><span class="detail-label">Semana Laboratorio</span><span class="detail-value">' + escapeHtml(d.semanaLaboratorio || '-') + '</span></div><div class="detail-row"><span class="detail-label">Tipo de Material</span><span class="detail-value">' + escapeHtml(d.tipoMaterial || '-') + '</span></div><div class="detail-row"><span class="detail-label">Proveniencia</span><span class="detail-value">' + escapeHtml(d.proveniencia || '-') + '</span></div><div class="detail-row"><span class="detail-label">Localizacion</span><span class="detail-value">' + escapeHtml(d.localizacion || '-') + '</span></div><div class="detail-row"><span class="detail-label">Fuente</span><span class="detail-value">' + escapeHtml(d.fuente || '-') + '</span></div><div class="detail-row"><span class="detail-label">Ensayos</span><span class="detail-value">' + escapeHtml(ensayosStr || '-') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Altura</span><span class="detail-value">' + (marker.altura != null ? marker.altura + ' m' : '-') + '</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
+    detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">LSM</span></div><div class="detail-row"><span class="detail-label">Semana Laboratorio</span><span class="detail-value">' + escapeHtml(d.semanaLaboratorio || '-') + '</span></div><div class="detail-row"><span class="detail-label">Tipo de Material</span><span class="detail-value">' + escapeHtml(d.tipoMaterial || '-') + '</span></div><div class="detail-row"><span class="detail-label">Localizacion</span><span class="detail-value">' + escapeHtml(d.localizacion || '-') + '</span></div><div class="detail-row"><span class="detail-label">Fuente</span><span class="detail-value">' + escapeHtml(d.fuente || '-') + '</span></div><div class="detail-row"><span class="detail-label">Ensayos</span><span class="detail-value">' + escapeHtml(ensayosStr || '-') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Altura</span><span class="detail-value">' + (marker.altura != null ? marker.altura + ' m' : '-') + '</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
   } else {
     detailBody.innerHTML = '<div class="detail-row"><span class="detail-label">Tipo</span><span class="detail-value">QC</span></div><div class="detail-row"><span class="detail-label">Categoria</span><span class="detail-value">' + (MARKER_COLORS[marker.color]?.label || 'Rojo') + '</span></div><div class="detail-row"><span class="detail-label">Norte (PSAD56)</span><span class="detail-value">' + marker.norte + ' m</span></div><div class="detail-row"><span class="detail-label">Este (PSAD56)</span><span class="detail-value">' + marker.este + ' m</span></div><div class="detail-row"><span class="detail-label">Altura</span><span class="detail-value">' + (marker.altura != null ? marker.altura + ' m' : '-') + '</span></div><div class="detail-row"><span class="detail-label">Latitud (WGS84)</span><span class="detail-value">' + marker.lat.toFixed(8) + '</span></div><div class="detail-row"><span class="detail-label">Longitud (WGS84)</span><span class="detail-value">' + marker.lng.toFixed(8) + '</span></div><div id="detail-description-row" class="detail-row detail-description"><span class="detail-label">Descripcion</span><p id="detail-marker-description"></p></div><div id="detail-photos-row" class="detail-row detail-photos"><span class="detail-label">Fotos</span><div id="detail-marker-photos" class="detail-photo-grid"></div></div>';
     const descRow = document.getElementById('detail-description-row');
@@ -2550,7 +2496,7 @@ async function exportToZIP() {
       XLSX.utils.book_append_sheet(wb, wsQC, 'QC');
     }
     if (lsmMarkers.length > 0) {
-      const lsmData = [['Proyecto', 'Solicitante', 'Estructura', 'Subestructuras', 'Categoria', 'Semana_Laboratorio', 'Fecha_Hora', 'Tipo_Material', 'Nombre_Muestra', 'Proveniencia', 'Localizacion', 'Fuente', 'Este', 'Norte', 'Altura (m)', 'Ensayos', 'Latitud', 'Longitud', 'Foto_1', 'Foto_2']];
+      const lsmData = [['Semana_Laboratorio', 'Fecha_Hora', 'Tipo_Material', 'Nombre_Muestra', 'Localizacion', 'Fuente', 'Este', 'Norte', 'Altura (m)', 'Ensayos', 'Latitud', 'Longitud', 'Foto_1', 'Foto_2']];
       for (let i = 0; i < lsmMarkers.length; i++) {
         const m = lsmMarkers[i];
         const d = m.lsmData || {};
@@ -2576,11 +2522,11 @@ async function exportToZIP() {
             } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-        lsmData.push([d.nombreProyecto || '', d.solicitante || '', d.estructuraDeposito || '', d.subestructuras || '', d.categoria || '', d.semanaLaboratorio || '', new Date(m.createdAt), d.tipoMaterial || '', m.name || '', d.proveniencia || '', d.localizacion || '', d.fuente || '', m.este, m.norte, m.altura != null ? m.altura : '', (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
+        lsmData.push([d.semanaLaboratorio || '', new Date(m.createdAt), d.tipoMaterial || '', m.name || '', d.localizacion || '', d.fuente || '', m.este, m.norte, m.altura != null ? m.altura : '', (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
       }
       const wsLSM = XLSX.utils.aoa_to_sheet(lsmData, { cellDates: true });
       for (let r = 1; r < lsmData.length; r++) {
-        const addr = XLSX.utils.encode_col(6) + (r + 1);
+        const addr = XLSX.utils.encode_col(1) + (r + 1);
         if (wsLSM[addr] && wsLSM[addr].v instanceof Date) {
           wsLSM[addr].z = 'DD/MM/YYYY';
           wsLSM[addr].t = 'd';
@@ -3193,9 +3139,7 @@ function closeConfigModal() {
 function renderConfigSections() {
   const container = document.getElementById('config-sections');
   const labels = {
-    nombre_proyecto: 'Nombre del Proyecto', solicitante: 'Solicitante',
-    estructura_deposito: 'Estructura / Deposito', subestructuras: 'Subestructuras', categoria: 'Categoria',
-    tipo_material: 'Tipo de Material', proveniencia: 'Proveniencia', localizacion: 'Localizacion',
+    tipo_material: 'Tipo de Material', localizacion: 'Localizacion',
     fuente: 'Fuente', ensayos: 'Ensayos'
   };
 

@@ -7,7 +7,7 @@ MAPS GIS es una **Progressive Web App (PWA) offline-first** en español para vis
 La aplicación está orientada a dos perfiles de marcador:
 
 - **QC (Control de Calidad):** marcadores simples con nombre, descripción, color, fotos y altura GPS.
-- **LSM (Laboratorio de Suelos y Materiales):** marcadores con ~15 campos de laboratorio (proyecto, solicitante, estructura, subestructuras, categoría, semana laboratorio, tipo de material, nombre de muestra, proveniencia, localización, fuente, ensayos, etc.).
+- **LSM (Laboratorio de Suelos y Materiales):** marcadores con 6 campos de laboratorio (semana laboratorio, tipo de material, nombre de muestra, localización, fuente, ensayos) más color y fotos.
 
 Además, la app incluye **recorridos GPS** (tracks), **herramientas de medición** de distancia y área, y un **panel de administración remoto** que lee los datos sincronizados en Supabase.
 
@@ -129,6 +129,26 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+### v2.8.0 — Formulario LSM simplificado
+
+- Se redujo el formulario LSM a 6 campos esenciales:
+  - Semana Laboratorio
+  - Tipo de Material
+  - Nombre de Muestra
+  - Localización
+  - Fuente
+  - Ensayos
+- Se eliminaron del formulario, exportación ZIP/Excel, sincronización a Supabase y panel Admin los campos:
+  - Nombre del Proyecto
+  - Solicitante
+  - Estructura / Depósito
+  - Subestructuras
+  - Categoría (select de datos; se conserva el selector de color visual del marcador)
+  - Proveniencia
+- Se actualizó `config.json` y `ConfigManager` para reflejar solo las listas de campos vigentes.
+- Los marcadores existentes conservan los datos antiguos en `LocalStorage`, pero al editarlos se reescriben solo con los campos activos.
+- **Bumps de versión:** `2.7.0` → `2.8.0`.
+
 ### v2.7.0 — Foto cruda en la exportación ZIP
 
 - La exportación ZIP ahora incluye una carpeta `fotos_crudas/` con las fotos originales sin estampar (`originalBlob` de IndexedDB), además de `fotos/` con las estampadas.
@@ -162,7 +182,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro solo aplica por sesión (`#btn-theme`, clase `light-mode` en `body`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.7.0` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
+- **Versionado:** la versión actual es `2.8.0` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:46` — texto de `#app-version-badge`

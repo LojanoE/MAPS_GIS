@@ -551,14 +551,8 @@ const AdminManager = {
     const lsmData = markers.filter(m => m._type === 'lsm').map(m => ({
       ID: m.local_marker_id,
       Nombre_Muestra: m.nombre_muestra || '',
-      Proyecto: m.nombre_proyecto || '',
-      Solicitante: m.solicitante || '',
-      Estructura: m.estructura_deposito || '',
-      Subestructuras: m.subestructuras || '',
-      Categoria: m.categoria || '',
       Semana_Laboratorio: m.semana_laboratorio || '',
       Tipo_Material: m.tipo_material || '',
-      Proveniencia: m.proveniencia || '',
       Localizacion: m.localizacion || '',
       Fuente: m.fuente || '',
       Ensayos: (m.ensayos || []).join(', '),
@@ -634,13 +628,8 @@ const AdminManager = {
     fieldsHtml += this.detailField('Creado', formatDateTime(marker.created_at));
 
     if (isLSM) {
-      fieldsHtml += this.detailField('Proyecto', marker.nombre_proyecto);
-      fieldsHtml += this.detailField('Solicitante', marker.solicitante);
-      fieldsHtml += this.detailField('Estructura', marker.estructura_deposito);
-      fieldsHtml += this.detailField('Subestructuras', marker.subestructuras);
-      fieldsHtml += this.detailField('Categoria', marker.categoria);
+      fieldsHtml += this.detailField('Semana Laboratorio', marker.semana_laboratorio);
       fieldsHtml += this.detailField('Tipo Material', marker.tipo_material);
-      fieldsHtml += this.detailField('Proveniencia', marker.proveniencia);
       fieldsHtml += this.detailField('Localizacion', marker.localizacion);
       fieldsHtml += this.detailField('Fuente', marker.fuente);
       fieldsHtml += this.detailField('Ensayos', (marker.ensayos || []).join(', '));
@@ -694,13 +683,8 @@ const AdminManager = {
     let inputsHtml = '';
     inputsHtml += this.editInput('name', 'Nombre', marker.name || marker.nombre_muestra || '');
     if (isLSM) {
-      inputsHtml += this.editInput('nombre_proyecto', 'Proyecto', marker.nombre_proyecto || '');
-      inputsHtml += this.editInput('solicitante', 'Solicitante', marker.solicitante || '');
-      inputsHtml += this.editInput('estructura_deposito', 'Estructura', marker.estructura_deposito || '');
-      inputsHtml += this.editInput('subestructuras', 'Subestructuras', marker.subestructuras || '');
-      inputsHtml += this.editInput('categoria', 'Categoria', marker.categoria || '');
+      inputsHtml += this.editInput('semana_laboratorio', 'Semana Laboratorio', marker.semana_laboratorio || '');
       inputsHtml += this.editInput('tipo_material', 'Tipo Material', marker.tipo_material || '');
-      inputsHtml += this.editInput('proveniencia', 'Proveniencia', marker.proveniencia || '');
       inputsHtml += this.editInput('localizacion', 'Localizacion', marker.localizacion || '');
       inputsHtml += this.editInput('fuente', 'Fuente', marker.fuente || '');
       inputsHtml += this.editInput('ensayos', 'Ensayos (separados por coma)', (marker.ensayos || []).join(', '));
@@ -739,13 +723,8 @@ const AdminManager = {
 
     if (isLSM) {
       updates.nombre_muestra = getVal('name');
-      updates.nombre_proyecto = getVal('nombre_proyecto');
-      updates.solicitante = getVal('solicitante');
-      updates.estructura_deposito = getVal('estructura_deposito');
-      updates.subestructuras = getVal('subestructuras');
-      updates.categoria = getVal('categoria');
+      updates.semana_laboratorio = getVal('semana_laboratorio');
       updates.tipo_material = getVal('tipo_material');
-      updates.proveniencia = getVal('proveniencia');
       updates.localizacion = getVal('localizacion');
       updates.fuente = getVal('fuente');
       const ensStr = getVal('ensayos');
