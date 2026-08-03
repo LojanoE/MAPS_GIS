@@ -543,6 +543,12 @@ img {
   will-change: transform; /* Ayuda al compositor durante rotación/zoom, se limpia si hay problemas de memoria */
 }
 
+/* Mejoras de fluidez para rotación (complementan leaflet-rotate-patches.js) */
+.leaflet-tile-container {
+  image-rendering: auto;
+  image-rendering: -webkit-optimize-contrast;
+}
+
 /* Indicador de rotación en el header */
 .rotation-indicator {
   font-size: 0.75rem;

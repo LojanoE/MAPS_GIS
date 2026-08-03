@@ -24,6 +24,7 @@ C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
 │   ├── storage.js          # IndexedDB: mapas, fotos, recorridos (~548 líneas)
 │   ├── pdf-processor.js    # Procesamiento y georreferenciación de PDFs (~803 líneas)
 │   ├── leaflet-rotate.js   # Plugin de rotación para Leaflet (Raruto/leaflet-rotate)
+│   ├── leaflet-rotate-patches.js # Parches de fluidez sobre leaflet-rotate
 │   ├── app.js              # Lógica principal: UI, mapa, marcadores (~3297 líneas)
 │   ├── sync-manager.js     # Sincronización unidireccional a Supabase (~266 líneas)
 │   └── admin-manager.js    # Panel de administración remoto (Supabase) (~924 líneas)
@@ -49,21 +50,21 @@ C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
 
 1. Leaflet JS
 2. `js/leaflet-rotate.js` (plugin de rotación; debe cargarse inmediatamente después de Leaflet)
-3. Proj4js
-3. GeoTIFF.js
-4. GeoRaster
-5. GeoRaster Layer for Leaflet
-6. PDF.js
-7. SheetJS (xlsx)
-8. JSZip
-9. FileSaver
-10. Piexif
-11. `js/storage.js`
-12. `js/pdf-processor.js`
-13. `js/leaflet-rotate.js`
-14. `js/app.js`
-15. `js/sync-manager.js`
-16. `js/admin-manager.js`
+3. `js/leaflet-rotate-patches.js` (parches de fluidez; inmediatamente después del plugin)
+4. Proj4js
+5. GeoTIFF.js
+6. GeoRaster
+7. GeoRaster Layer for Leaflet
+8. PDF.js
+9. SheetJS (xlsx)
+10. JSZip
+11. FileSaver
+12. Piexif
+13. `js/storage.js`
+14. `js/pdf-processor.js`
+15. `js/app.js`
+16. `js/sync-manager.js`
+17. `js/admin-manager.js`
 
 ## Stack tecnológico
 
@@ -73,6 +74,7 @@ Todas las dependencias se cargan por CDN en `index.html` y deben coincidir exact
 |----------|---------|-----|
 | Leaflet | 1.9.4 | Mapa interactivo base |
 | leaflet-rotate (Raruto) | master/dist | Rotación visual del mapa con gestos táctiles/desktop |
+| leaflet-rotate-patches | local | Parches de fluidez para rotación/zoom móvil |
 | Proj4js | 2.9.2 | Transformación de coordenadas |
 | GeoTIFF.js | 2.1.3 | Lectura de archivos GeoTIFF |
 | GeoRaster | 1.6.0 | Procesamiento de rasters geográficos |
@@ -139,6 +141,18 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 21. Verificar que la app funcione offline tras la primera carga.
 
 ## Notas de versión
+
+### v2.9.7 — Rotación/zoom ultra fluido (parches sobre leaflet-rotate)
+
+- Se añade `js/leaflet-rotate-patches.js` (cargado inmediatamente después del plugin) para eliminar los saltos de marcadores, overlay y tiles al rotar/hacer zoom en móvil.
+- **Parches aplicados:**
+  - `_onTouchEnd` ya no llama a `_resetView` ni `_animateZoom`; solo confirma la posición final con `_move` sin animación → desaparece el *snap* al soltar.
+  - `GridLayer` deja de recalcular tiles en cada evento `rotate`; los tiles rotan con el `rotatePane` y se actualizan solo en `moveend`/`zoomend`.
+  - `setBearing` agrupa la emisión del evento `rotate` dentro de `requestAnimationFrame`.
+  - `Renderer` (vectores/recorridos) y `Marker` dejan de actualizarse en cada frame de rotación; los marcadores se actualizan con RAF.
+  - Se fuerza composición GPU (`backface-visibility: hidden`, `transform-style: preserve-3d`, `will-change`) en panes y tiles rotados.
+- Se mantiene la decisión de v2.9.6: animaciones de zoom desactivadas y `touchZoom` nativo deshabilitado.
+- **Bumps de versión:** `2.9.6` → `2.9.7`.
 
 ### v2.9.6 — Fluidez en rotación y zoom móvil
 
@@ -265,7 +279,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.9.6` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son de la v2.9.5 y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.9.7` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son de la v2.9.5 y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
@@ -305,7 +319,7 @@ Nota: las claves `maps_gis_admin` y `maps_gis_app_version` solo existen en `js/a
 - GeoTIFF geográficos (EPSG:4326): `GeoRasterLayer`.
 - PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF, viewport bounds o anotaciones PDF.js; se guardan las esquinas en UTM PSAD56. El overlay se renderiza a escala 4 (~0.55 m/px) y soporta páginas con `/Rotate` y marcos rotados geográficamente (ver gotchas).
 - Zoom máximo del mapa: **22** (tiles CartoDB con `maxNativeZoom: 19`, re-escalados en 20–22).
-- **Rotación visual del mapa:** rotación puramente visual de todo el mapa con gestos de dos dedos (touch) o `Shift` + scroll (desktop). Usa el plugin local `js/leaflet-rotate.js`. Botón "Volver al norte" e indicador de ángulo en el header. Desde v2.9.6 se desactivan animaciones de zoom y el handler táctil nativo de Leaflet para evitar el *snap* final en móvil. No afecta coordenadas ni georreferenciación; no persiste entre sesiones.
+- **Rotación visual del mapa:** rotación puramente visual de todo el mapa con gestos de dos dedos (touch) o `Shift` + scroll (desktop). Usa el plugin local `js/leaflet-rotate.js` y parches locales `js/leaflet-rotate-patches.js` para eliminar el *snap* final y reducir el trabajo por frame. Botón "Volver al norte" e indicador de ángulo en el header. No afecta coordenadas ni georreferenciación; no persiste entre sesiones.
 - **Calibración de mapa:** offset en metros (este/norte) por mapa, editable en pantalla (`maps_gis_offset_<mapId>`).
 
 ### Marcadores
@@ -409,6 +423,7 @@ Si se agrega un campo al formulario LSM, actualizar:
 Si se modifica la rotación gestual del mapa, actualizar:
 
 1. Opciones del mapa en `initMap()` en `js/app.js` (`rotate`, `touchRotate`, `bearing`, `rotateControl`, `zoomAnimation`, `fadeAnimation`, `markerZoomAnimation`, `bounceAtZoomLimits`, `trackContainerMutation`) y deshabilitación del handler nativo `touchZoom`.
+2. `js/leaflet-rotate-patches.js` si se actualiza `js/leaflet-rotate.js` (los parches deben revisarse/reaplicarse).
 2. `getMapVisualRotation()`, `setMapVisualRotation()` y `resetMapVisualRotation()` en `js/app.js`.
 3. Listener del evento `rotate` del mapa y `updateRotationIndicator()` para reflejar el ángulo en el header.
 4. Botón `#btn-reset-rotation` y `#rotation-indicator` en `index.html` y sus estilos en `css/styles.css`.
