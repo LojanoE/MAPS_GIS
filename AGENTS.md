@@ -15,17 +15,17 @@ Además, la app incluye **recorridos GPS** (tracks), **herramientas de medición
 
 ```
 C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
-├── index.html              # UI única, carga todos los scripts y CSS (~1075 líneas)
-├── sw.js                   # Service Worker con cache-first y versionado (~244 líneas)
+├── index.html              # UI única, carga todos los scripts y CSS (~1050 líneas)
+├── sw.js                   # Service Worker con cache-first y versionado (245 líneas)
 ├── manifest.json           # Manifest PWA
 ├── config.json             # Listas por defecto para selects LSM
-├── css/styles.css          # Estilos mobile-first, tema oscuro por defecto (~2502 líneas)
+├── css/styles.css          # Estilos mobile-first, tema oscuro por defecto (~2507 líneas)
 ├── js/
-│   ├── storage.js          # IndexedDB (mapas, fotos, recorridos)
-│   ├── pdf-processor.js    # Procesamiento y georreferenciación de PDFs
-│   ├── app.js              # Lógica principal de la app, UI, mapa, marcadores (~3344 líneas)
-│   ├── sync-manager.js     # Sincronización unidireccional a Supabase
-│   └── admin-manager.js    # Panel de administración remoto (Supabase)
+│   ├── storage.js          # IndexedDB: mapas, fotos, recorridos (~548 líneas)
+│   ├── pdf-processor.js    # Procesamiento y georreferenciación de PDFs (~803 líneas)
+│   ├── app.js              # Lógica principal: UI, mapa, marcadores (~3297 líneas)
+│   ├── sync-manager.js     # Sincronización unidireccional a Supabase (~266 líneas)
+│   └── admin-manager.js    # Panel de administración remoto (Supabase) (~924 líneas)
 ├── assets/
 │   └── logo_lab_chino_PNG.png   # Logo usado en el estampado de fotos LSM
 ├── js/app.js.backup.v161   # Backup antiguo, no usado en producción
@@ -34,7 +34,7 @@ C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
 
 ### Módulos principales
 
-- **`index.html`**: contiene toda la estructura de pantallas (`home-screen`, `map-screen`), modales y la carga de scripts. **El orden de carga de scripts es crítico** y no debe cambiarse.
+- **`index.html`**: contiene toda la estructura de pantallas (`home-screen`, `map-screen`), modales y la carga de scripts. **El orden de carga de scripts es crítico** y no debe cambiarse. En el `<head>` también se cargan los links de Google Fonts (Inter).
 - **`sw.js`**: implementa estrategia cache-first para assets locales y CDN, stale-while-revalidate para tiles de mapa, y network-only para Supabase. Limpia caches antiguos al activarse. El versionado se controla centralmente mediante `APP_VERSION`.
 - **`js/storage.js`**: abstracción sobre IndexedDB (`MapsGISDB` v4) con stores `maps`, `photos` y `tracks`. Soporta guardar/recuperar mapas TIFF/PDF, fotos originales/procesadas y recorridos GPS.
 - **`js/pdf-processor.js`**: extrae metadatos geoespaciales de GeoPDFs (ISO 32000-2, OGC GeoPDF, viewport bounds, anotaciones PDF.js) y crea overlays georreferenciados sobre Leaflet. Soporta páginas con `/Rotate` 90/180/270 mediante `applyPageRotation()` (permuta esquinas del espacio sin rotar al de display y decide la rotación de render con verificación "norte-arriba"), y planos con contenido rotado geográficamente (marco a 45°, etc.) mediante `rectifyCanvasToNorthUp()` (warp afín del canvas a norte-arriba usando las esquinas GPTS).
@@ -83,8 +83,8 @@ Todas las dependencias se cargan por CDN en `index.html` y deben coincidir exact
 Almacenamiento:
 
 - **IndexedDB** (`MapsGISDB` v4): mapas (`maps`), fotos (`photos`) y recorridos (`tracks`).
-- **LocalStorage**: marcadores QC/LSM, configuración LSM, offsets de calibración por mapa, nombre/id del dispositivo, usuario LSM, modo de marcador y preferencias de tema.
-- **Supabase**: backend para sincronización y panel admin (conexión directa vía REST, credenciales hardcodeadas).
+- **LocalStorage**: marcadores QC/LSM, configuración LSM, offsets de calibración por mapa, nombre/id del dispositivo, usuario LSM, modo de marcador y preferencia de tema.
+- **Supabase**: backend para sincronización y panel admin (conexión directa vía REST, credenciales hardcodeadas). URL: `https://dzmhhlsttqygjvfabdxx.supabase.co/rest/v1`; tablas `qc_markers` y `lsm_markers`.
 
 ## Comandos de build y ejecución
 
@@ -114,26 +114,48 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 1. Cargar un GeoTIFF y un PDF georreferenciado.
 2. Verificar que el mapa se posicione correctamente y se muestre el overlay.
-3. Aplicar y persistir offsets de calibración (este/norte) por mapa.
-4. Crear/editar marcadores QC y LSM.
-5. Tomar fotos (QC y LSM) y verificar el modal de vista previa.
-6. Verificar el estampado LSM en las fotos (logo, fecha, localización, nombre de muestra).
-7. Comprobar que las fotos exportadas incluyen metadata EXIF GPS en WGS84.
-8. Grabar un recorrido GPS y verificar que se guarda en IndexedDB.
-9. Usar las herramientas de medición de distancia y área.
-10. Exportar ZIP con Excel + fotos + recorridos GeoJSON.
-11. Sincronizar con Supabase (requiere conexión y credenciales válidas).
-12. Probar el panel Admin con la contraseña correspondiente.
-13. **Capas diarias:** crear marcadores en días distintos, abrir el panel de Marcadores y verificar que se agrupen por fecha. Desactivar una capa con el switch: los marcadores de esa fecha deben desaparecer del mapa pero seguir en la lista y en la exportación ZIP/Excel. Recargar la página: la capa debe seguir desactivada.
-14. **Nombre por defecto automático:** crear un marcador QC nuevo y verificar que el nombre se pre-rellene como `QC-01`, `QC-02`… reiniciando cada día. Lo mismo para LSM (`LSM-01`, `LSM-02`…). Verificar que el campo siga siendo editable.
-15. Verificar que la app funcione offline tras la primera carga.
+3. Cargar un GeoPDF con página rotada (`/Rotate` 90/180/270) y un plano con marco rotado geográficamente (45°): el overlay debe quedar norte-arriba y bien posicionado, incluso tras recargar.
+4. Aplicar y persistir offsets de calibración (este/norte) por mapa.
+5. Crear/editar marcadores QC y LSM.
+6. Tomar fotos (QC y LSM) y verificar el modal de vista previa.
+7. Verificar el estampado LSM en las fotos (logo, fecha, localización, nombre de muestra).
+8. Comprobar que las fotos exportadas incluyen metadata EXIF GPS en WGS84.
+9. Verificar la **altura GPS**: debe mostrarse en el panel de coordenadas (`#coord-altura`), en el detalle del marcador y en la columna `Altura (m)` del Excel exportado. (No se sincroniza a Supabase.)
+10. Grabar un recorrido GPS y verificar que se guarda en IndexedDB y se exporta como GeoJSON con coordenadas `[lng, lat, altura]`.
+11. Usar las herramientas de medición de distancia y área.
+12. Exportar ZIP con Excel + fotos (`fotos/` y `fotos_crudas/`) + recorridos GeoJSON.
+13. Sincronizar con Supabase (requiere conexión y credenciales válidas).
+14. Probar el panel Admin con la contraseña correspondiente.
+15. **Capas diarias:** crear marcadores en días distintos, abrir el panel de Marcadores y verificar que se agrupen por fecha. Desactivar una capa con el switch: los marcadores de esa fecha deben desaparecer del mapa pero seguir en la lista y en la exportación ZIP/Excel. Recargar la página: la capa debe seguir desactivada.
+16. **Nombre por defecto automático:** crear un marcador QC nuevo y verificar que el nombre se pre-rellene como `QC-01`, `QC-02`… reiniciando cada día. Lo mismo para LSM (`LSM-01`, `LSM-02`…). Verificar que el campo siga siendo editable.
+17. **Semana Laboratorio:** al abrir el modal LSM, el campo debe venir pre-llenado en formato `YYWW` (auto-calculado) y es de solo lectura.
+18. Alternar el tema claro/oscuro y recargar: la preferencia debe persistir.
+19. Verificar zoom hasta nivel 22 sobre un overlay PDF (nítido hasta ~20, suave en 21–22).
+20. Verificar que la app funcione offline tras la primera carga.
 
 ## Notas de versión
 
+### v2.9.5 — Rotación visual del mapa con gestos (leaflet-rotate)
+
+- Se reemplaza la rotación persistente del overlay PDF por una **rotación puramente visual de todo el mapa**, similar a los gestos de mapas móviles.
+- **Gestos soportados:**
+  - **Dos dedos (touch):** colocar dos dedos y girarlos para rotar el mapa.
+  - **Shift + scroll:** rotar la rueda del mouse manteniendo `Shift`.
+  - **Botón "Volver al norte":** en los controles flotantes del mapa, resetea la rotación a `0°`.
+- **Implementación:** plugin local `js/leaflet-rotate.js` (Raruto/leaflet-rotate). El mapa se inicializa con `rotate: true`, `touchRotate: true`, `bearing: 0`. La interacción (pan, zoom, clics, marcadores) se mantiene correcta gracias a las transformaciones inversas del plugin.
+- **Limitación conocida:** al rotar, las esquinas del viewport quedan vacías (fondo negro) porque Leaflet no re-proyecta tiles para llenar el rectángulo rotado; el usuario puede hacer zoom para compensar.
+- **No persiste** entre sesiones ni entre aperturas de mapa; es una ayuda visual temporal.
+- Indicador de ángulo (`#rotation-indicator`) en el header, visible solo cuando la rotación es distinta de `0°`.
+- **Bumps de versión:** `2.9.4` → `2.9.5`.
+
+### v2.9.4 — (Retirada) Rotación del overlay PDF por mapa
+
+- Funcionalidad revertida. La rotación del overlay individual persistía por mapa y desplazaba la interacción táctil; se reemplazó por la rotación visual global de v2.9.5.
+
 ### v2.9.3 — Zoom máximo 22 y overlay PDF más nítido
 
-- **Zoom máximo 19 → 22:** capas CartoDB con `maxZoom: 22` + `maxNativeZoom: 19` (los tiles z19 se re-escalan en 20–22) y `maxZoom: 22` en el mapa.
-- **Render del PDF a escala 4** (antes 2) en `processPDF()`, `loadPDFMap()` y `reloadMapWithOffset()`: el overlay pasa de ~1.1 m/px a ~0.55 m/px — legible hasta ~zoom 20 (demarcación vial, vehículos); en 21–22 se ve suave, inherente a overlays raster.
+- **Zoom máximo 19 → 22:** capas CartoDB con `maxZoom: 22` + `maxNativeZoom: 19` (los tiles z19 se re-escalan en 20–22) y `maxZoom: 22` en el mapa (`initMap()` en `app.js`).
+- **Render del PDF a escala 4** (antes 2) en `loadPDFMap()` y `reloadMapWithOffset()`: el overlay pasa de ~1.1 m/px a ~0.55 m/px — legible hasta ~zoom 20 (demarcación vial, vehículos); en 21–22 se ve suave, inherente a overlays raster.
 - El tope del canvas rectificado (`rectifyCanvasToNorthUp`) se mantiene en 4096 px/lado por memoria.
 - **Bumps de versión:** `2.9.2` → `2.9.3`.
 
@@ -144,7 +166,6 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
   - Nueva función `rectifyCanvasToNorthUp(canvas, gM)`: aplica la transformación afín inversa (derivada de 3 esquinas GPTS) al canvas renderizado para dejar la **geografía norte-arriba**. El marco del plano queda como rombo sobre el bbox real y el exterior queda transparente.
   - `createGeoOverlay()` detecta la rotación midiendo el rumbo del eje `tl→tr` en metros locales; si `|ángulo| ≥ 0.5°` rectifica el canvas antes de crear el overlay. Umbrales y límites: resolución destino ≈ fuente, tope 4096 px por lado.
 - No requiere cambios de persistencia: la rectificación se calcula al cargar (sirve para mapas ya guardados con esquinas correctas).
-- Verificado con `DRQ_ROTADA45.pdf` (rotación ~49°): overlay idéntico en orientación y posición al DRQ sin rotar, tras recarga incluida.
 - **Bumps de versión:** `2.9.1` → `2.9.2`.
 
 ### v2.9.1 — Fix: GeoPDFs con `/Rotate ≠ 0`
@@ -222,17 +243,18 @@ Novedades en esta versión:
 ## Convenciones de código
 
 - **Idioma:** código y UI en **español**. Los comentarios principales también están en español.
-- **Tema:** oscuro por defecto. El modo claro solo aplica por sesión (`#btn-theme`, clase `light-mode` en `body`).
+- **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.9.3` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
+- **Versionado:** la versión actual es `2.9.5` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son de la v2.9.5 y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
-  - `index.html:46` — texto de `#app-version-badge`
-  - `index.html:15,20` — query strings `?v=X.Y.Z` en `<link>` y `<preload>` locales
-  - `index.html:1000,1003,1006,1009,1012` — query strings `?v=X.Y.Z` en `<script>` locales
-  - `sw.js:21-28` — query strings `?v=X.Y.Z` en `CORE_ASSETS`
-  - `app.js:563` — URL del logo con versión
+  - `index.html:51` — texto de `#app-version-badge`
+  - `index.html:20,25` — query strings `?v=X.Y.Z` en `<link>` de `css/styles.css` y `<preload>` del logo
+  - `index.html:975,978,981,984,987` — query strings `?v=X.Y.Z` en los `<script>` locales
+  - `sw.js:21-26,28` — query strings `?v=X.Y.Z` en `CORE_ASSETS` (línea 27 es `manifest.json` y 29 `config.json`, sin query)
+  - `app.js:570` — URL del logo con versión (`assets/logo_lab_chino_PNG.png?v=` + `APP_VERSION`)
+  - Los links de Google Fonts en `index.html:15-17` no llevan query string de versión.
 
 ## Almacenamiento local (referencia rápida)
 
@@ -245,12 +267,14 @@ Novedades en esta versión:
 | Tamaño fuente estampado | LocalStorage | `maps_gis_stamp_font_size` (default 30 px) |
 | Mapas / fotos / recorridos | IndexedDB | `MapsGISDB` v4 (`maps`, `photos`, `tracks`) |
 | Offset por mapa | LocalStorage | `maps_gis_offset_<mapId>` |
-| Device name / id | LocalStorage | `maps_gis_device_name` / `maps_gis_device_id` |
+| Device name / id | LocalStorage | `maps_gis_device_name` / `maps_gis_device_id` (formato `dev_<timestamp>_<random>`) |
 | Usuario LSM | LocalStorage | `maps_gis_lsm_user` |
-| Último formulario LSM | LocalStorage | `maps_gis_last_lsm_form` |
+| Último formulario LSM | LocalStorage | `maps_gis_last_lsm_form` (excluye `nombreMuestra` y `ensayos`) |
 | Modo marcador | LocalStorage | `maps_gis_marker_mode` (`qc` o `lsm`) |
 | Tema | LocalStorage | `maps_gis_theme` (`light` o `dark`) |
 | Versión config | LocalStorage | `maps_gis_config_version` |
+
+Nota: las claves `maps_gis_admin` y `maps_gis_app_version` solo existen en `js/app.js.backup.v161`; no las usa el código de producción.
 
 ## Funcionalidades clave a conocer
 
@@ -260,7 +284,9 @@ Novedades en esta versión:
 - Soporta **GeoTIFF** y **PDF georreferenciado**.
 - GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4.
 - GeoTIFF geográficos (EPSG:4326): `GeoRasterLayer`.
-- PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF, viewport bounds o anotaciones PDF.js; se guardan las esquinas en UTM PSAD56.
+- PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF, viewport bounds o anotaciones PDF.js; se guardan las esquinas en UTM PSAD56. El overlay se renderiza a escala 4 (~0.55 m/px) y soporta páginas con `/Rotate` y marcos rotados geográficamente (ver gotchas).
+- Zoom máximo del mapa: **22** (tiles CartoDB con `maxNativeZoom: 19`, re-escalados en 20–22).
+- **Rotación visual del mapa:** rotación puramente visual de todo el mapa con gestos de dos dedos (touch) o `Shift` + scroll (desktop). Usa el plugin local `js/leaflet-rotate.js`. Botón "Volver al norte" e indicador de ángulo en el header. No afecta coordenadas ni georreferenciación; no persiste entre sesiones.
 - **Calibración de mapa:** offset en metros (este/norte) por mapa, editable en pantalla (`maps_gis_offset_<mapId>`).
 
 ### Marcadores
@@ -270,7 +296,15 @@ Novedades en esta versión:
 - **Nombre por defecto automático:** al crear un marcador nuevo el nombre viene pre-llenado con un correlativo por día y tipo (`QC-01`, `QC-02`… / `LSM-01`, `LSM-02`…; `getDefaultMarkerName()`), editable por el usuario.
 - Máximo **2 fotos** por marcador.
 - Autocompletar nombres de marcadores basado en nombres usados previamente (máximo 5 sugerencias, case-insensitive, sin acentos).
-- Login LSM con contraseña hardcodeada (`354` en `app.js`).
+- Login LSM con contraseña hardcodeada (`354` en `app.js`, constante `LSM_PASS`).
+- **Semana Laboratorio auto-calculada:** el campo `#semana-laboratorio` del modal LSM es `readonly` y se rellena al abrir el modal con `getSemanaLaboratorio()` en formato `YYWW` (semana ISO contada desde el primer lunes del año).
+
+### Altura GPS
+
+- Cada marcador guarda `altura` (metros redondeados, de `GeolocationCoordinates.altitude`).
+- Se muestra en el panel de coordenadas (`#coord-altura`), en el detalle de ambos tipos de marcador y se exporta como columna `Altura (m)` en el Excel (hojas QC y LSM).
+- Los recorridos GeoJSON incluyen la altura como tercer elemento de cada coordenada: `[lng, lat, altura]`.
+- **No se sincroniza a Supabase** (los payloads de `uploadQC`/`uploadLSM` no la incluyen), por lo que el panel Admin no la ve.
 
 ### Fotos y estampado LSM
 
@@ -288,7 +322,7 @@ Novedades en esta versión:
 - Los recorridos se graban con la API de geolocalización del navegador.
 - Se almacenan en IndexedDB (`tracks`) con puntos WGS84 y sus equivalentes UTM PSAD56.
 - Configuración de filtros: `minDistance` (5 m por defecto) y `minAccuracy` (50 m por defecto).
-- Los recorridos se exportan como GeoJSON dentro del ZIP, pero **no se sincronizan a Supabase**.
+- Los recorridos se exportan como GeoJSON dentro del ZIP (con altura por punto), pero **no se sincronizan a Supabase**.
 
 ### Medición
 
@@ -302,13 +336,14 @@ Novedades en esta versión:
 - Identificación de registros por combinación `local_marker_id` + `device_id`.
 - `POST` para crear, `PATCH` para actualizar.
 - Auto-sync solo bajo WiFi/4G y con límite de 10 marcadores por ciclo; el sync manual fuerza todos los pendientes.
-- Panel Admin con contraseña hardcodeada (`LSMQC$` en `admin-manager.js`).
+- La **altura GPS no se sincroniza** (ver sección "Altura GPS").
+- Panel Admin con contraseña hardcodeada (`LSMQC$` en `admin-manager.js`, constante `ADMIN_PASS`).
 - El panel admin lee directamente de Supabase; no afecta datos locales. Soporta edición y soft-delete.
 
 ### Exportación
 
 - Exportación local a **ZIP** que contiene:
-  - `marcadores.xlsx` con hojas separadas para QC, LSM y Recorridos.
+  - `marcadores.xlsx` con hojas separadas para QC, LSM y Recorridos (incluye columna `Altura (m)`).
   - Carpeta `fotos/` con las fotos estampadas (máximo 2 por marcador).
   - Carpeta `fotos_crudas/` con las fotos originales sin estampar (sufijo `_cruda.jpg`; solo si existe `originalBlob`).
   - Carpeta `recorridos/` con archivos GeoJSON.
@@ -318,7 +353,7 @@ Novedades en esta versión:
 
 > **Importante:** este proyecto tiene decisiones de seguridad deliberadas pero sensibles. Conócelas antes de tocar cualquier cosa relacionada.
 
-- **Credenciales hardcodeadas:** las contraseñas de Admin (`LSMQC$`) y LSM (`354`) están directamente en el código fuente (`admin-manager.js` y `app.js`).
+- **Credenciales hardcodeadas:** las contraseñas de Admin (`LSMQC$`) y LSM (`354`) están directamente en el código fuente (`admin-manager.js` y `app.js`). Además, la contraseña LSM viene **pre-llenada en el HTML** (`<input id="lsm-password" value="354">` en `index.html`).
 - **Claves de Supabase expuestas:** tanto la URL como la `anon key` de Supabase están en texto plano en `sync-manager.js` y `admin-manager.js`.
 - **RLS desactivado:** el backend se asume con Row Level Security desactivado; cualquier cliente con la key puede leer/escribir.
 - **No hay autenticación real:** el "login" LSM y Admin se basan únicamente en contraseñas locales.
@@ -344,7 +379,7 @@ Si se agrega un campo al formulario LSM, actualizar:
 3. `saveLSMMarker()` en `app.js`.
 4. `stampImage()` en `app.js` si el campo debe aparecer en la foto.
 5. `renderStampPreview()` si debe mostrarse en la previsualización.
-6. Esquema de Supabase (`supabase_schema_v2.sql`).
+6. Esquema de las tablas de Supabase (`qc_markers` / `lsm_markers`). **El SQL del esquema no vive en este repositorio**: se administra directamente en el proyecto de Supabase.
 7. `uploadLSM` en `sync-manager.js`.
 8. Exportación ZIP en `app.js`.
 9. Tabla / detalle / edición en `admin-manager.js`.
@@ -367,7 +402,7 @@ Si se modifica la agrupación por días, la visibilidad de capas o el nombre aut
 - **PDF.js consume el ArrayBuffer:** no reutilizar el mismo entre llamadas a `pdfjsLib.getDocument()`. Usar copia fresca (`freshUint8()` en `pdf-processor.js`).
 - **Detectar CRS solo dentro del diccionario geoespacial** (`VP`/`Measure`/`LGIDict`); escanear todo el texto del PDF produce falsos positivos.
 - GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4. GeoTIFF geográficos: `GeoRasterLayer`.
-- **IDs de marcador por timestamp:** actualmente `id = 'm_' + Date.now()`. Dos marcadores creados en el mismo milisegundo colisionarían. En uso manual no es un problema; si se automatiza la creación masiva, considerar agregar un sufijo aleatorio (p. ej. `+ '_' + Math.random().toString(36).slice(2,6)`).
+- **IDs de marcador por timestamp:** actualmente `id = 'm_' + Date.now()`. Dos marcadores creados en el mismo milisegundo colisionarían. En uso manual no es un problema; si se automatiza la creación masiva, considerar agregar un sufijo aleatorio (p. ej. `+ '_' + Math.random().toString(36).slice(2,6)`). Los IDs de mapas/fotos/recorridos sí llevan sufijo aleatorio.
 - **Planos con marco rotado (45°, etc.):** `L.imageOverlay` no soporta rotación; `createGeoOverlay()` rectifica el canvas con `rectifyCanvasToNorthUp()` (afín inversa desde las esquinas). En el mapa, el plano rectificado se ve como rombo con esquinas transparentes: es lo esperado, la geografía interna queda norte-arriba.
 - **PDFs con `/Rotate ≠ 0`:** la extracción GPTS/LPTS trabaja en el espacio de usuario **sin rotar**; PDF.js renderiza con `page.rotate` aplicado. `applyPageRotation()` en `pdf-processor.js` reconcilia ambos (permutación de esquinas + `renderRotation` persistido en `georef`). PDFs rotados guardados antes de v2.9.1 deben re-subirse.
 - **Service Worker nunca cachea Supabase:** `supabase.co` está en `NETWORK_ONLY_DOMAINS`.

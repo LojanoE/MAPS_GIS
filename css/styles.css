@@ -533,9 +533,62 @@ img {
 }
 
 #map {
+  position: absolute;
   width: 100%;
   height: 100%;
+  left: 0;
+  top: 0;
   background-color: var(--bg-primary); /* Fondo de respaldo cuando tiles no cargan */
+}
+
+/* Indicador de rotación en el header */
+.rotation-indicator {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--bg-secondary);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin-right: 6px;
+  min-width: 40px;
+  text-align: center;
+  user-select: none;
+}
+
+.rotation-indicator.hidden {
+  display: none;
+}
+
+#btn-reset-rotation {
+  transition: transform 0.3s ease;
+}
+
+#btn-reset-rotation:hover {
+  transform: scale(1.05);
+}
+
+/* Ajustes para el control de rotación de leaflet-rotate */
+.leaflet-control-rotate {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.leaflet-control-rotate a {
+  color: var(--text-primary);
+  background: var(--bg-card);
+  width: 32px;
+  height: 32px;
+}
+
+.leaflet-control-rotate a:hover {
+  background: var(--btn-secondary-hover);
+}
+
+.leaflet-control-rotate-arrow {
+  transition: transform 0.2s ease;
 }
 
 /* --- Coords Panel --- */

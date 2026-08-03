@@ -17,12 +17,12 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
 
   <!-- App CSS -->
-  <link rel="stylesheet" href="css/styles.css?v=2.9.3">
+  <link rel="stylesheet" href="css/styles.css?v=2.9.5">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.9.3">
+  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.9.5">
 </head>
 <body>
 
@@ -48,7 +48,7 @@
               <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:999px;">v2.9.3</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:999px;">v2.9.5</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -143,6 +143,7 @@
         </svg>
         <span id="marker-count-badge" class="badge hidden">0</span>
       </button>
+      <span id="rotation-indicator" class="rotation-indicator hidden" title="Rotación actual">0°</span>
       <button id="btn-theme" class="icon-btn" title="Cambiar tema">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
@@ -261,6 +262,14 @@
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"/>
             <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/>
+          </svg>
+        </button>
+
+        <!-- Resetear rotación visual -->
+        <button id="btn-reset-rotation" class="map-btn" title="Volver al norte (0°)">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L12 12M12 2L8 6M12 2L16 6" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="12" r="9"/>
           </svg>
         </button>
       </div>
@@ -943,6 +952,7 @@
 
   <!-- Leaflet JS -->
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script defer src="js/leaflet-rotate.js?v=2.9.5"></script>
 
   <!-- Proj4js -->
   <script defer src="https://unpkg.com/proj4@2.9.2/dist/proj4.js"></script>
@@ -972,19 +982,19 @@
   <script defer src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
 
   <!-- Storage Module (IndexedDB) -->
-  <script defer src="js/storage.js?v=2.9.3"></script>
+  <script defer src="js/storage.js?v=2.9.5"></script>
 
   <!-- PDF Processor -->
-  <script defer src="js/pdf-processor.js?v=2.9.3"></script>
+  <script defer src="js/pdf-processor.js?v=2.9.5"></script>
 
   <!-- App Main Logic -->
-  <script defer src="js/app.js?v=2.9.3"></script>
+  <script defer src="js/app.js?v=2.9.5"></script>
 
   <!-- Sync Manager (Offline-first Supabase sync) -->
-  <script defer src="js/sync-manager.js?v=2.9.3"></script>
+  <script defer src="js/sync-manager.js?v=2.9.5"></script>
 
   <!-- Admin Manager (Remote admin panel) -->
-  <script defer src="js/admin-manager.js?v=2.9.3"></script>
+  <script defer src="js/admin-manager.js?v=2.9.5"></script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>

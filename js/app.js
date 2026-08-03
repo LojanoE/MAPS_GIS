@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.9.3';
+const APP_VERSION = '2.9.5';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -723,7 +723,16 @@ function showScreen(screenId) {
 // ============================================
 function initMap() {
   if (AppState.map) { AppState.map.invalidateSize(); return; }
-  AppState.map = L.map('map', { center: [-0.1807, -78.4678], zoom: 13, zoomControl: false, maxZoom: 22 });
+  AppState.map = L.map('map', {
+    center: [-0.1807, -78.4678],
+    zoom: 13,
+    zoomControl: false,
+    maxZoom: 22,
+    rotate: true,
+    touchRotate: true,
+    bearing: 0,
+    rotateControl: false
+  });
   L.control.zoom({ position: 'topleft' }).addTo(AppState.map);
   AppState.darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19 });
   AppState.lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19 });
@@ -748,7 +757,44 @@ function initMap() {
     }
   });
   AppState.map.on('mousemove', (e) => updateCoordsDisplay(e.latlng));
+  initMapVisualRotation();
 }
+
+// ============================================
+// MAP VISUAL ROTATION (leaflet-rotate plugin)
+// Rota TODO el mapa con gestos de dos dedos, Shift+scroll o arrastre del control.
+// No modifica coordenadas geográficas ni la georreferenciación de los overlays.
+// ============================================
+function getMapVisualRotation() {
+  if (!AppState.map || typeof AppState.map.getBearing !== 'function') return 0;
+  return AppState.map.getBearing();
+}
+function setMapVisualRotation(angle) {
+  if (!AppState.map || typeof AppState.map.setBearing !== 'function') return;
+  AppState.map.setBearing(angle);
+}
+function resetMapVisualRotation() {
+  setMapVisualRotation(0);
+}
+function updateRotationIndicator(angle) {
+  const indicator = document.getElementById('rotation-indicator');
+  if (indicator) {
+    indicator.textContent = Math.round(angle) + '°';
+    indicator.classList.toggle('hidden', Math.abs(angle) < 0.5);
+  }
+}
+function initMapVisualRotation() {
+  if (!AppState.map || typeof AppState.map.setBearing !== 'function') return;
+
+  // Escuchar cambios de rotación para actualizar el indicador
+  AppState.map.on('rotate', () => {
+    updateRotationIndicator(getMapVisualRotation());
+  });
+
+  // Botón para volver al norte
+  document.getElementById('btn-reset-rotation')?.addEventListener('click', resetMapVisualRotation);
+}
+
 function updateCoordsDisplay(latlng) {
   if (!latlng) return;
   const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
@@ -2759,6 +2805,7 @@ function updateModeToggleButton() {
   else { label.textContent = 'QC'; btn.classList.remove('mode-lsm'); }
 }
 async function openMap(mapId) {
+  resetMapVisualRotation(); // cada mapa se abre sin rotación visual previa
   AppState.currentMapId = mapId;
   const maps = await MapStorage.getAllMaps();
   const map = maps.find(m => m.id === mapId);
@@ -2817,6 +2864,7 @@ function loadThemePreference() {
 function initEventListeners() {
   document.getElementById('map-input').addEventListener('change', (e) => { if (e.target.files.length > 0) handleFileUpload(e.target.files[0]); });
   document.getElementById('btn-back').addEventListener('click', () => {
+    resetMapVisualRotation(); // al salir del mapa se limpia la rotación visual
     if (AppState.isTracking) {
       if (!confirm('Hay un recorrido en curso. ¿Salir y guardarlo?')) return;
       stopTrack().finally(() => {
