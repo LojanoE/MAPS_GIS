@@ -1,49 +1,49 @@
 /* ============================================
-   MAPS GIS - Styles v2.0
-   Avenza-like professional GIS viewer
+   MAPS GIS - Styles v2.9.0
+   FO Maps-inspired friendly dark UI (navy + orange)
    Mobile-first, dark mode default, responsive
    ============================================ */
 
 /* --- CSS Variables (Dark Mode Default) --- */
 :root {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
-  --bg-card: #1c2128;
-  --bg-input: #0d1117;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
-  --accent: #58a6ff;
-  --accent-hover: #79b8ff;
-  --accent-active: #1f6feb;
-  --danger: #f85149;
-  --danger-hover: #ff6b6b;
-  --success: #3fb950;
-  --warning: #d29922;
-  --border: #30363d;
-  --shadow: rgba(0, 0, 0, 0.4);
-  --modal-bg: rgba(0, 0, 0, 0.75);
-  --header-bg: #0d1117ee;
-  --coords-bg: #161b22ee;
-  --toast-bg: #21262d;
-  --progress-bg: #30363d;
-  --progress-fill: #58a6ff;
-  --btn-secondary-bg: #21262d;
-  --btn-secondary-hover: #30363d;
-  --panel-bg: #161b22;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --transition: 0.2s ease;
+  --bg-primary: #0a0f1a;
+  --bg-secondary: #101828;
+  --bg-tertiary: #1a2540;
+  --bg-card: #161b27;
+  --bg-input: #0a0f1a;
+  --text-primary: #e8ecf4;
+  --text-secondary: #9aa4b8;
+  --text-muted: #6b7686;
+  --accent: #f97316;
+  --accent-hover: #fb923c;
+  --accent-active: #ea580c;
+  --danger: #ef4444;
+  --danger-hover: #f87171;
+  --success: #4caf50;
+  --warning: #f59e0b;
+  --border: #233048;
+  --shadow: rgba(0, 0, 0, 0.45);
+  --modal-bg: rgba(4, 8, 16, 0.75);
+  --header-bg: #0a0f1acc;
+  --coords-bg: #101828e6;
+  --toast-bg: #1a2540;
+  --progress-bg: #233048;
+  --progress-fill: #f97316;
+  --btn-secondary-bg: #1a2540;
+  --btn-secondary-hover: #233048;
+  --panel-bg: #101828;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --transition: 0.25s ease;
 
   /* Marker colors */
-  --marker-red: #f85149;
-  --marker-blue: #58a6ff;
-  --marker-green: #3fb950;
-  --marker-yellow: #d29922;
-  --marker-orange: #db6d28;
-  --marker-purple: #a371f7;
+  --marker-red: #ef4444;
+  --marker-blue: #3b82f6;
+  --marker-green: #4caf50;
+  --marker-yellow: #f59e0b;
+  --marker-orange: #f97316;
+  --marker-purple: #a78bfa;
 }
 
 input[readonly] {
@@ -54,32 +54,32 @@ input[readonly] {
 
 /* --- Light Mode Variables --- */
 body.light-mode {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f6f8fa;
-  --bg-tertiary: #e1e4e8;
-  --bg-card: #f0f0f0;
+  --bg-primary: #f6f8fb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #eef1f6;
+  --bg-card: #ffffff;
   --bg-input: #ffffff;
-  --text-primary: #1f2328;
-  --text-secondary: #656d76;
-  --text-muted: #8b949e;
-  --accent: #0969da;
-  --accent-hover: #0550ae;
-  --accent-active: #0969da;
-  --danger: #cf222e;
-  --danger-hover: #a40e26;
-  --success: #1a7f37;
-  --warning: #9a6700;
-  --border: #d0d7de;
-  --shadow: rgba(0, 0, 0, 0.15);
-  --modal-bg: rgba(0, 0, 0, 0.5);
-  --header-bg: #ffffffee;
-  --coords-bg: #f6f8faee;
-  --toast-bg: #f6f8fa;
-  --progress-bg: #d0d7de;
-  --progress-fill: #0969da;
-  --btn-secondary-bg: #e1e4e8;
-  --btn-secondary-hover: #d0d7de;
-  --panel-bg: #f6f8fa;
+  --text-primary: #101828;
+  --text-secondary: #475467;
+  --text-muted: #98a2b3;
+  --accent: #ea580c;
+  --accent-hover: #f97316;
+  --accent-active: #c2410c;
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --success: #2e7d32;
+  --warning: #b45309;
+  --border: #e2e8f0;
+  --shadow: rgba(16, 24, 40, 0.12);
+  --modal-bg: rgba(16, 24, 40, 0.5);
+  --header-bg: #fffffff2;
+  --coords-bg: #fffffff2;
+  --toast-bg: #ffffff;
+  --progress-bg: #e2e8f0;
+  --progress-fill: #ea580c;
+  --btn-secondary-bg: #eef1f6;
+  --btn-secondary-hover: #e2e8f0;
+  --panel-bg: #ffffff;
 }
 
 /* --- Base Reset & Typography --- */
@@ -95,7 +95,7 @@ html {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
@@ -181,13 +181,13 @@ img {
 
 .icon-btn {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
-  transition: background var(--transition);
+  border-radius: 50%;
+  transition: all var(--transition);
 }
 
 .icon-btn:hover {
@@ -241,10 +241,10 @@ img {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 24px 16px;
+  padding: 28px 16px;
   background: var(--bg-secondary);
   border: 2px dashed var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: all var(--transition);
   color: var(--text-secondary);
@@ -253,7 +253,7 @@ img {
 .upload-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: var(--bg-tertiary);
+  background: rgba(249, 115, 22, 0.08);
 }
 
 .upload-btn:active {
@@ -312,11 +312,12 @@ img {
 }
 
 .count-badge {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--accent);
   font-size: 0.75rem;
-  padding: 2px 8px;
-  border-radius: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
 }
 
 .maps-list {
@@ -510,8 +511,8 @@ img {
 .mode-toggle {
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 4px 12px;
+  border-radius: 999px;
+  padding: 4px 14px;
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--accent);
@@ -520,7 +521,7 @@ img {
 }
 
 .mode-toggle.lsm {
-  background: rgba(88, 166, 255, 0.15);
+  background: rgba(249, 115, 22, 0.15);
   border-color: var(--accent);
 }
 
@@ -534,7 +535,7 @@ img {
 #map {
   width: 100%;
   height: 100%;
-  background-color: #1a1d23; /* Fondo de respaldo cuando tiles no cargan */
+  background-color: var(--bg-primary); /* Fondo de respaldo cuando tiles no cargan */
 }
 
 /* --- Coords Panel --- */
@@ -592,17 +593,17 @@ img {
 }
 
 .map-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
   transition: all var(--transition);
-  box-shadow: 0 2px 8px var(--shadow);
+  box-shadow: 0 4px 14px var(--shadow);
 }
 
 .map-btn svg {
@@ -622,6 +623,8 @@ img {
 .map-btn-primary {
   background: var(--accent);
   color: white;
+  border-color: var(--accent);
+  box-shadow: 0 4px 16px rgba(249, 115, 22, 0.45);
 }
 
 .map-btn-primary:hover {
@@ -754,12 +757,12 @@ img {
 }
 
 .marker-item-type.qc {
-  background: rgba(63, 185, 80, 0.15);
+  background: rgba(76, 175, 80, 0.15);
   color: var(--success);
 }
 
 .marker-item-type.lsm {
-  background: rgba(88, 166, 255, 0.15);
+  background: rgba(249, 115, 22, 0.15);
   color: var(--accent);
 }
 
@@ -790,21 +793,21 @@ img {
 }
 
 .marker-btn-edit {
-  background: rgba(88, 166, 255, 0.12);
+  background: rgba(249, 115, 22, 0.12);
   color: var(--accent);
 }
 
 .marker-btn-edit:hover {
-  background: rgba(88, 166, 255, 0.22);
+  background: rgba(249, 115, 22, 0.22);
 }
 
 .marker-btn-delete {
-  background: rgba(248, 81, 73, 0.12);
+  background: rgba(239, 68, 68, 0.12);
   color: var(--danger);
 }
 
 .marker-btn-delete:hover {
-  background: rgba(248, 81, 73, 0.22);
+  background: rgba(239, 68, 68, 0.22);
 }
 
 /* --- Capas diarias (grupos por dia en el panel de marcadores) --- */
@@ -889,7 +892,7 @@ img {
 }
 
 .layer-toggle-input:checked + .layer-toggle-slider {
-  background: rgba(88, 166, 255, 0.3);
+  background: rgba(249, 115, 22, 0.3);
   border-color: var(--accent);
 }
 
@@ -917,12 +920,12 @@ img {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 22px;
   width: 100%;
   max-width: 420px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 8px 32px var(--shadow);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 
 .modal-georef {
@@ -1092,16 +1095,18 @@ img {
   background: var(--accent);
   color: white;
   border: none;
-  border-radius: var(--radius-sm);
-  padding: 10px 20px;
+  border-radius: 999px;
+  padding: 11px 22px;
   font-weight: 600;
   font-size: 0.85rem;
   flex: 1;
-  transition: background var(--transition);
+  transition: all var(--transition);
+  box-shadow: 0 4px 14px rgba(249, 115, 22, 0.35);
 }
 
 .btn-primary:hover {
   background: var(--accent-hover);
+  box-shadow: 0 6px 18px rgba(249, 115, 22, 0.45);
 }
 
 .btn-primary:active {
@@ -1117,12 +1122,12 @@ img {
   background: var(--btn-secondary-bg);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 20px;
+  border-radius: 999px;
+  padding: 11px 22px;
   font-weight: 600;
   font-size: 0.85rem;
   flex: 1;
-  transition: background var(--transition);
+  transition: all var(--transition);
 }
 
 .btn-secondary:hover {
@@ -1837,12 +1842,12 @@ img {
 }
 
 .admin-badge.qc {
-  background: rgba(63, 185, 80, 0.2);
+  background: rgba(76, 175, 80, 0.2);
   color: var(--success);
 }
 
 .admin-badge.lsm {
-  background: rgba(88, 166, 255, 0.2);
+  background: rgba(249, 115, 22, 0.2);
   color: var(--accent);
 }
 
@@ -2390,13 +2395,13 @@ img {
 }
 
 .map-btn.paused:hover {
-  background: #e6b800;
+  background: #d97706;
 }
 
 @keyframes pulse-track {
-  0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.5); }
-  70% { box-shadow: 0 0 0 10px rgba(248, 81, 73, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 
 /* Texto de estado del recorrido */
@@ -2467,31 +2472,31 @@ img {
 }
 
 .track-btn-view {
-  background: rgba(88, 166, 255, 0.12);
+  background: rgba(249, 115, 22, 0.12);
   color: var(--accent);
 }
 
 .track-btn-view:hover {
-  background: rgba(88, 166, 255, 0.22);
+  background: rgba(249, 115, 22, 0.22);
 }
 
 .track-btn-export {
-  background: rgba(63, 185, 80, 0.12);
+  background: rgba(76, 175, 80, 0.12);
   color: var(--success);
 }
 
 .track-btn-export:hover {
-  background: rgba(63, 185, 80, 0.22);
+  background: rgba(76, 175, 80, 0.22);
 }
 
 .track-btn-delete {
-  background: rgba(248, 81, 73, 0.12);
+  background: rgba(239, 68, 68, 0.12);
   color: var(--danger);
   font-weight: 700;
 }
 
 .track-btn-delete:hover {
-  background: rgba(248, 81, 73, 0.22);
+  background: rgba(239, 68, 68, 0.22);
 }
 
 .track-hint {

@@ -37,7 +37,7 @@ C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
 - **`index.html`**: contiene toda la estructura de pantallas (`home-screen`, `map-screen`), modales y la carga de scripts. **El orden de carga de scripts es crítico** y no debe cambiarse.
 - **`sw.js`**: implementa estrategia cache-first para assets locales y CDN, stale-while-revalidate para tiles de mapa, y network-only para Supabase. Limpia caches antiguos al activarse. El versionado se controla centralmente mediante `APP_VERSION`.
 - **`js/storage.js`**: abstracción sobre IndexedDB (`MapsGISDB` v4) con stores `maps`, `photos` y `tracks`. Soporta guardar/recuperar mapas TIFF/PDF, fotos originales/procesadas y recorridos GPS.
-- **`js/pdf-processor.js`**: extrae metadatos geoespaciales de GeoPDFs (ISO 32000-2, OGC GeoPDF, viewport bounds, anotaciones PDF.js) y crea overlays georreferenciados sobre Leaflet.
+- **`js/pdf-processor.js`**: extrae metadatos geoespaciales de GeoPDFs (ISO 32000-2, OGC GeoPDF, viewport bounds, anotaciones PDF.js) y crea overlays georreferenciados sobre Leaflet. Soporta páginas con `/Rotate` 90/180/270 mediante `applyPageRotation()` (permuta esquinas del espacio sin rotar al de display y decide la rotación de render con verificación "norte-arriba"), y planos con contenido rotado geográficamente (marco a 45°, etc.) mediante `rectifyCanvasToNorthUp()` (warp afín del canvas a norte-arriba usando las esquinas GPTS).
 - **`js/app.js`**: módulo monolítico principal. Inicializa el mapa (Leaflet), gestiona marcadores QC/LSM, fotos, estampado LSM, exportación ZIP/Excel, configuración local, calibración de mapas, recorridos GPS, medición de distancia/área y coordinación de UI.
 - **`js/sync-manager.js`**: sincroniza marcadores pendientes (`pendingUpload: true`) hacia Supabase vía REST. Es unidireccional: dispositivo → Supabase.
 - **`js/admin-manager.js`**: panel de administración que lee los datos sincronizados en Supabase, con filtros, tabla, mapa, edición, soft-delete y exportación Excel.
@@ -78,6 +78,7 @@ Todas las dependencias se cargan por CDN en `index.html` y deben coincidir exact
 | JSZip | 3.10.1 | Generación de ZIPs de exportación |
 | FileSaver.js | 2.0.5 | Descarga de archivos |
 | Piexif.js | 1.0.6 | Lectura/escritura de metadatos EXIF/GPS en fotos |
+| Inter (Google Fonts) | css2 (300–800) | Tipografía de la UI (cacheada por el SW) |
 
 Almacenamiento:
 
@@ -128,6 +129,48 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 15. Verificar que la app funcione offline tras la primera carga.
 
 ## Notas de versión
+
+### v2.9.3 — Zoom máximo 22 y overlay PDF más nítido
+
+- **Zoom máximo 19 → 22:** capas CartoDB con `maxZoom: 22` + `maxNativeZoom: 19` (los tiles z19 se re-escalan en 20–22) y `maxZoom: 22` en el mapa.
+- **Render del PDF a escala 4** (antes 2) en `processPDF()`, `loadPDFMap()` y `reloadMapWithOffset()`: el overlay pasa de ~1.1 m/px a ~0.55 m/px — legible hasta ~zoom 20 (demarcación vial, vehículos); en 21–22 se ve suave, inherente a overlays raster.
+- El tope del canvas rectificado (`rectifyCanvasToNorthUp`) se mantiene en 4096 px/lado por memoria.
+- **Bumps de versión:** `2.9.2` → `2.9.3`.
+
+### v2.9.2 — Fix: GeoPDFs con contenido rotado geográficamente (planos a 45°)
+
+- Planos cuyo marco está rotado respecto al norte (ej. alineado al eje de un depósito, sin `/Rotate` en el PDF) se proyectaban deformados: `L.imageOverlay` solo soporta bboxes axis-aligned.
+- **`js/pdf-processor.js`:**
+  - Nueva función `rectifyCanvasToNorthUp(canvas, gM)`: aplica la transformación afín inversa (derivada de 3 esquinas GPTS) al canvas renderizado para dejar la **geografía norte-arriba**. El marco del plano queda como rombo sobre el bbox real y el exterior queda transparente.
+  - `createGeoOverlay()` detecta la rotación midiendo el rumbo del eje `tl→tr` en metros locales; si `|ángulo| ≥ 0.5°` rectifica el canvas antes de crear el overlay. Umbrales y límites: resolución destino ≈ fuente, tope 4096 px por lado.
+- No requiere cambios de persistencia: la rectificación se calcula al cargar (sirve para mapas ya guardados con esquinas correctas).
+- Verificado con `DRQ_ROTADA45.pdf` (rotación ~49°): overlay idéntico en orientación y posición al DRQ sin rotar, tras recarga incluida.
+- **Bumps de versión:** `2.9.1` → `2.9.2`.
+
+### v2.9.1 — Fix: GeoPDFs con `/Rotate ≠ 0`
+
+- Los PDFs con rotación de página (`/Rotate` 90/180/270) se cargaban girados/deformados: la extracción de esquinas etiquetaba en el **espacio de usuario sin rotar**, pero PDF.js renderiza con la rotación aplicada.
+- **`js/pdf-processor.js`:**
+  - Nuevas funciones `applyPageRotation(geoData, rotate)`, `permuteCorners()`, `isNorthUp()` (con margen ≥50% del span por eje, para evitar falsos positivos en mapas casi cuadrados) y `normalizeRotation()`.
+  - `renderPage(pdf, scale, rotation)` acepta rotación explícita para `page.getViewport()`.
+  - `processPDF()` decide el candidato correcto (permutadas+rotado → originales+sin-rotación → originales+rotado) verificando "norte-arriba" con los propios GPTS, y devuelve `renderRotation`.
+- **`js/app.js`:** `georef.renderRotation` se persiste en IndexedDB (`applyGeoref`) y se usa al recargar (`loadPDFMap`, `reloadMapWithOffset`). Registros antiguos sin el campo usan el comportamiento previo.
+- **PDFs rotados guardados antes del fix deben re-subirse** (sus esquinas quedaron en espacio sin rotar).
+- **Bumps de versión:** `2.9.0` → `2.9.1`.
+
+### v2.9.0 — Rediseño visual estilo FO Maps
+
+Cambio **solo de imagen** (sin tocar funcionalidad), inspirado en FO Maps – FaenaOffline GIS:
+
+- **Nueva paleta oscura (default):** fondos azul-noche (`#0a0f1a`, `#101828`, `#1a2540`) con acento **naranja cálido** (`#f97316`, hover `#fb923c`, active `#ea580c`).
+- **Tema claro rediseñado** en coherencia (`#f6f8fb`/`#ffffff`, acento `#ea580c`).
+- **Tipografía Inter** (Google Fonts, pesos 300–800) con fallback al stack del sistema; agregada a `CDN_ASSETS` en `sw.js` para funcionar offline tras la primera carga (los `.woff2` de `fonts.gstatic.com` se cachean en runtime por la estrategia cache-first).
+- **Formas más amigables:** radios más generosos (`--radius-sm/md/lg` = 10/14/20 px), botones `.btn-primary`/`.btn-secondary` tipo pill (`999px`) con sombra naranja suave, FABs del mapa (`.map-btn`) circulares de 44 px, `.icon-btn` redondos, `.mode-toggle` y `.count-badge` tipo pill, dropzone de carga con tinte naranja al hover.
+- **Colores de marcadores** actualizados a tonos armónicos (rojo `#ef4444`, azul `#3b82f6`, verde `#4caf50`, amarillo `#f59e0b`, naranja `#f97316`, morado `#a78bfa`).
+- Se limpiaron los rgba teñidos hardcodeados (azul GitHub → naranja) y hex sueltos (`#1a1d23` → variable).
+- `manifest.json` e íconos SVG actualizados a la nueva paleta; `theme-color` en `index.html` → `#0a0f1a`.
+- **No se modificó ningún ID, clase usada por JS, orden de scripts ni lógica.**
+- **Bumps de versión:** `2.8.0` → `2.9.0`.
 
 ### v2.8.0 — Formulario LSM simplificado
 
@@ -182,7 +225,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro solo aplica por sesión (`#btn-theme`, clase `light-mode` en `body`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.8.0` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
+- **Versionado:** la versión actual es `2.9.3` y debe sincronizarse en todos estos lugares al subir cambios funcionales:
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:46` — texto de `#app-version-badge`
@@ -325,6 +368,8 @@ Si se modifica la agrupación por días, la visibilidad de capas o el nombre aut
 - **Detectar CRS solo dentro del diccionario geoespacial** (`VP`/`Measure`/`LGIDict`); escanear todo el texto del PDF produce falsos positivos.
 - GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4. GeoTIFF geográficos: `GeoRasterLayer`.
 - **IDs de marcador por timestamp:** actualmente `id = 'm_' + Date.now()`. Dos marcadores creados en el mismo milisegundo colisionarían. En uso manual no es un problema; si se automatiza la creación masiva, considerar agregar un sufijo aleatorio (p. ej. `+ '_' + Math.random().toString(36).slice(2,6)`).
+- **Planos con marco rotado (45°, etc.):** `L.imageOverlay` no soporta rotación; `createGeoOverlay()` rectifica el canvas con `rectifyCanvasToNorthUp()` (afín inversa desde las esquinas). En el mapa, el plano rectificado se ve como rombo con esquinas transparentes: es lo esperado, la geografía interna queda norte-arriba.
+- **PDFs con `/Rotate ≠ 0`:** la extracción GPTS/LPTS trabaja en el espacio de usuario **sin rotar**; PDF.js renderiza con `page.rotate` aplicado. `applyPageRotation()` en `pdf-processor.js` reconcilia ambos (permutación de esquinas + `renderRotation` persistido en `georef`). PDFs rotados guardados antes de v2.9.1 deben re-subirse.
 - **Service Worker nunca cachea Supabase:** `supabase.co` está en `NETWORK_ONLY_DOMAINS`.
 
 ## Licencia

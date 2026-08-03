@@ -8,7 +8,7 @@
 // ============================================
 // VERSION CONTROL - BUMP THIS TO FORCE UPDATE
 // ============================================
-const APP_VERSION = '2.8.0'; // Bump to force cache refresh on all devices
+const APP_VERSION = '2.9.3'; // Bump to force cache refresh on all devices
 
 const CACHE_NAME = 'maps-gis-v' + APP_VERSION;
 const STATIC_CACHE = 'maps-gis-static-v' + APP_VERSION;
@@ -18,14 +18,14 @@ const DYNAMIC_CACHE = 'maps-gis-dynamic-v' + APP_VERSION;
 const CORE_ASSETS = [
   './',
   './index.html',
-  './css/styles.css?v=2.8.0',
-  './js/app.js?v=2.8.0',
-  './js/storage.js?v=2.8.0',
-  './js/pdf-processor.js?v=2.8.0',
-  './js/sync-manager.js?v=2.8.0',
-  './js/admin-manager.js?v=2.8.0',
+  './css/styles.css?v=2.9.3',
+  './js/app.js?v=2.9.3',
+  './js/storage.js?v=2.9.3',
+  './js/pdf-processor.js?v=2.9.3',
+  './js/sync-manager.js?v=2.9.3',
+  './js/admin-manager.js?v=2.9.3',
   './manifest.json',
-  './assets/logo_lab_chino_PNG.png?v=2.8.0',
+  './assets/logo_lab_chino_PNG.png?v=2.9.3',
   './config.json'
 ];
 
@@ -42,7 +42,8 @@ const CDN_ASSETS = [
   'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js',
-  'https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js'
+  'https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap'
 ];
 
 // Tile URL patterns to handle separately (stale-while-revalidate for speed)

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#0d1117">
+  <meta name="theme-color" content="#0a0f1a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>MAPS GIS - Visor de Mapas</title>
@@ -11,13 +11,18 @@
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+
   <!-- App CSS -->
-  <link rel="stylesheet" href="css/styles.css?v=2.8.0">
+  <link rel="stylesheet" href="css/styles.css?v=2.9.3">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.8.0">
+  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.9.3">
 </head>
 <body>
 
@@ -43,7 +48,7 @@
               <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:8px;">v2.8.0</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:999px;">v2.9.3</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -339,22 +344,22 @@
         <label>Categoria</label>
         <div id="category-selector" class="category-selector">
           <button class="category-btn active" data-color="red" title="Rojo">
-            <span class="cat-dot" style="background:#f85149;"></span>
+            <span class="cat-dot" style="background:#ef4444;"></span>
           </button>
           <button class="category-btn" data-color="blue" title="Azul">
-            <span class="cat-dot" style="background:#58a6ff;"></span>
+            <span class="cat-dot" style="background:#3b82f6;"></span>
           </button>
           <button class="category-btn" data-color="green" title="Verde">
-            <span class="cat-dot" style="background:#3fb950;"></span>
+            <span class="cat-dot" style="background:#4caf50;"></span>
           </button>
           <button class="category-btn" data-color="yellow" title="Amarillo">
-            <span class="cat-dot" style="background:#d29922;"></span>
+            <span class="cat-dot" style="background:#f59e0b;"></span>
           </button>
           <button class="category-btn" data-color="orange" title="Naranja">
-            <span class="cat-dot" style="background:#db6d28;"></span>
+            <span class="cat-dot" style="background:#f97316;"></span>
           </button>
           <button class="category-btn" data-color="purple" title="Morado">
-            <span class="cat-dot" style="background:#a371f7;"></span>
+            <span class="cat-dot" style="background:#a78bfa;"></span>
           </button>
         </div>
       </div>
@@ -686,22 +691,22 @@
         <label>Categoria</label>
         <div id="lsm-category-selector" class="category-selector">
           <button class="category-btn active" data-color="red" title="Rojo">
-            <span class="cat-dot" style="background:#f85149;"></span>
+            <span class="cat-dot" style="background:#ef4444;"></span>
           </button>
           <button class="category-btn" data-color="blue" title="Azul">
-            <span class="cat-dot" style="background:#58a6ff;"></span>
+            <span class="cat-dot" style="background:#3b82f6;"></span>
           </button>
           <button class="category-btn" data-color="green" title="Verde">
-            <span class="cat-dot" style="background:#3fb950;"></span>
+            <span class="cat-dot" style="background:#4caf50;"></span>
           </button>
           <button class="category-btn" data-color="yellow" title="Amarillo">
-            <span class="cat-dot" style="background:#d29922;"></span>
+            <span class="cat-dot" style="background:#f59e0b;"></span>
           </button>
           <button class="category-btn" data-color="orange" title="Naranja">
-            <span class="cat-dot" style="background:#db6d28;"></span>
+            <span class="cat-dot" style="background:#f97316;"></span>
           </button>
           <button class="category-btn" data-color="purple" title="Morado">
-            <span class="cat-dot" style="background:#a371f7;"></span>
+            <span class="cat-dot" style="background:#a78bfa;"></span>
           </button>
         </div>
       </div>
@@ -791,7 +796,7 @@
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
             </svg>
           </button>
-          <button id="btn-admin-reset" class="icon-btn" title="Vaciar base de datos" style="color:#f85149;">
+          <button id="btn-admin-reset" class="icon-btn" title="Vaciar base de datos" style="color:#ef4444;">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
             </svg>
@@ -967,19 +972,19 @@
   <script defer src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
 
   <!-- Storage Module (IndexedDB) -->
-  <script defer src="js/storage.js?v=2.8.0"></script>
+  <script defer src="js/storage.js?v=2.9.3"></script>
 
   <!-- PDF Processor -->
-  <script defer src="js/pdf-processor.js?v=2.8.0"></script>
+  <script defer src="js/pdf-processor.js?v=2.9.3"></script>
 
   <!-- App Main Logic -->
-  <script defer src="js/app.js?v=2.8.0"></script>
+  <script defer src="js/app.js?v=2.9.3"></script>
 
   <!-- Sync Manager (Offline-first Supabase sync) -->
-  <script defer src="js/sync-manager.js?v=2.8.0"></script>
+  <script defer src="js/sync-manager.js?v=2.9.3"></script>
 
   <!-- Admin Manager (Remote admin panel) -->
-  <script defer src="js/admin-manager.js?v=2.8.0"></script>
+  <script defer src="js/admin-manager.js?v=2.9.3"></script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>

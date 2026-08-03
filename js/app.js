@@ -20,15 +20,15 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.8.0';
+const APP_VERSION = '2.9.3';
 
 const MARKER_COLORS = {
-  red:    { hex: '#f85149', label: 'Rojo' },
-  blue:   { hex: '#58a6ff', label: 'Azul' },
-  green:  { hex: '#3fb950', label: 'Verde' },
-  yellow: { hex: '#d29922', label: 'Amarillo' },
-  orange: { hex: '#db6d28', label: 'Naranja' },
-  purple: { hex: '#a371f7', label: 'Morado' }
+  red:    { hex: '#ef4444', label: 'Rojo' },
+  blue:   { hex: '#3b82f6', label: 'Azul' },
+  green:  { hex: '#4caf50', label: 'Verde' },
+  yellow: { hex: '#f59e0b', label: 'Amarillo' },
+  orange: { hex: '#f97316', label: 'Naranja' },
+  purple: { hex: '#a78bfa', label: 'Morado' }
 };
 
 const AppState = {
@@ -723,10 +723,10 @@ function showScreen(screenId) {
 // ============================================
 function initMap() {
   if (AppState.map) { AppState.map.invalidateSize(); return; }
-  AppState.map = L.map('map', { center: [-0.1807, -78.4678], zoom: 13, zoomControl: false });
+  AppState.map = L.map('map', { center: [-0.1807, -78.4678], zoom: 13, zoomControl: false, maxZoom: 22 });
   L.control.zoom({ position: 'topleft' }).addTo(AppState.map);
-  AppState.darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19 });
-  AppState.lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 19 });
+  AppState.darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19 });
+  AppState.lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19 });
   AppState.darkTiles.addTo(AppState.map);
   AppState.markersLayer = L.layerGroup().addTo(AppState.map);
   AppState.tracksLayer = L.layerGroup().addTo(AppState.map);
@@ -1098,7 +1098,7 @@ async function loadPDFMap(mapId) {
     const record = await MapStorage.getMapRecord(mapId);
     if (!record.georef || !record.georef.corners) { showToast('PDF sin georreferenciacion', 'error'); return; }
     const pdf = await PDFProcessor.loadPDF(record.data);
-    const { canvas } = await PDFProcessor.renderPage(pdf, 2);
+    const { canvas } = await PDFProcessor.renderPage(pdf, 4, record.georef.renderRotation);
     if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
     const offset = getMapOffset(mapId);
     AppState.currentMapOffset = offset;
@@ -1197,7 +1197,7 @@ async function reloadMapWithOffset() {
   const record = await MapStorage.getMapRecord(AppState.currentMapId);
   if (!record || !record.georef) return;
   const pdf = await PDFProcessor.loadPDF(record.data);
-  const { canvas } = await PDFProcessor.renderPage(pdf, 2);
+  const { canvas } = await PDFProcessor.renderPage(pdf, 4, record.georef.renderRotation);
   if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
   AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, AppState.currentMapOffset);
   AppState.mapOverlay.addTo(AppState.map);
@@ -1263,7 +1263,7 @@ function goToMyLocation() {
     }
     if (AppState.userLocationLayer) AppState.map.removeLayer(AppState.userLocationLayer);
     AppState.userLocationLayer = L.layerGroup([
-      L.circle([lat, lng], { radius: accuracy, color: '#58a6ff', fillColor: '#58a6ff', fillOpacity: 0.08, weight: 1 }),
+      L.circle([lat, lng], { radius: accuracy, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.08, weight: 1 }),
       L.circleMarker([lat, lng], { radius: 7, fillColor: '#1a73e8', fillOpacity: 1, color: '#ffffff', weight: 2.5 })
     ]);
     AppState.userLocationLayer.addTo(AppState.map);
@@ -2663,7 +2663,7 @@ async function handlePDFUpload(file) {
     previewCanvas.width = processed.canvas.width;
     previewCanvas.height = processed.canvas.height;
     ctx.drawImage(processed.canvas, 0, 0);
-    AppState.pendingPDF = { name: file.name, arrayBuffer: arrayBufferForStorage, size: file.size, isGeoPDF: processed.isGeoPDF, geoData: processed.geoData || null };
+    AppState.pendingPDF = { name: file.name, arrayBuffer: arrayBufferForStorage, size: file.size, isGeoPDF: processed.isGeoPDF, geoData: processed.geoData || null, renderRotation: processed.renderRotation };
     const geoData = processed.geoData;
     if (geoData && geoData.corners) {
       progressText.textContent = 'Coordenadas detectadas!';
@@ -2738,7 +2738,7 @@ async function applyGeoref() {
   thumbCanvas.height = previewCanvas.height * scale;
   thumbCanvas.getContext('2d').drawImage(previewCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
   const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.5);
-  const georef = { corners: { tl: [tlE, tlN], tr: [trE, trN], bl: [blE, blN], br: [brE, brN] }, crs: crs };
+  const georef = { corners: { tl: [tlE, tlN], tr: [trE, trN], bl: [blE, blN], br: [brE, brN] }, crs: crs, renderRotation: pending.renderRotation };
   try {
     await MapStorage.savePDFMap(pending.name, pending.arrayBuffer, pending.size, georef, thumbnail);
     showToast('PDF guardado', 'success');
@@ -3081,7 +3081,7 @@ async function renderStampPreview(canvas, logoSize, fontSize) {
   const isLight = document.body.classList.contains('light-mode');
 
   // Fondo
-  ctx.fillStyle = isLight ? '#f6f8fa' : '#0d1117';
+  ctx.fillStyle = isLight ? '#f6f8fb' : '#0a0f1a';
   ctx.fillRect(0, 0, width, height);
 
   // Simular ancho de foto para escala proporcional de fuente
@@ -3120,7 +3120,7 @@ async function renderStampPreview(canvas, logoSize, fontSize) {
     ctx.drawImage(logo, logoX, logoY, drawWidth, drawHeight);
   } catch (e) {
     // Fallback: rectangulo con etiqueta
-    ctx.fillStyle = '#58a6ff';
+    ctx.fillStyle = '#f97316';
     ctx.fillRect(width - 50, height - 30, 40, 20);
     ctx.fillStyle = 'white';
     ctx.font = '10px sans-serif';

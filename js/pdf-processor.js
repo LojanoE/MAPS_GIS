@@ -453,6 +453,91 @@ const PDFProcessor = (() => {
     return new Uint8Array(ab);
   }
 
+  // ============================================
+  // PAGE ROTATION HANDLING (/Rotate)
+  // ============================================
+
+  function normalizeRotation(rotate) {
+    const r = Number(rotate) || 0;
+    return ((r % 360) + 360) % 360;
+  }
+
+  /**
+   * Permuta las etiquetas de esquinas del espacio de usuario PDF (sin rotar)
+   * al espacio de display, para una rotacion horaria r (/Rotate de la pagina).
+   */
+  function permuteCorners(corners, rotate) {
+    const { tl, tr, bl, br } = corners;
+    switch (rotate) {
+      case 90:  return { tl: bl, tr: tl, br: tr, bl: br };
+      case 180: return { tl: br, tr: bl, br: tl, bl: tr };
+      case 270: return { tl: tr, tr: br, br: bl, bl: tl };
+      default:  return { tl, tr, bl, br };
+    }
+  }
+
+  /**
+   * Verificacion de cordura: las esquinas candidatas deben quedar
+   * "norte-arriba" (borde superior al norte, borde izquierdo al oeste).
+   * Funciona en lat/lon, PSAD56 geografico y UTM (x=easting, y=northing).
+   *
+   * Se exige un MARGEN (>=50% del span total de cada eje) y no solo una
+   * desigualdad estricta: en mapas casi cuadrados, una permutacion
+   * incorrecta puede ganar por diferencias minusculas de redondeo.
+   */
+  function isNorthUp(corners) {
+    const pts = [corners.tl, corners.tr, corners.bl, corners.br];
+    const xs = pts.map(c => c[0]);
+    const ys = pts.map(c => c[1]);
+    const spanX = Math.max.apply(null, xs) - Math.min.apply(null, xs);
+    const spanY = Math.max.apply(null, ys) - Math.min.apply(null, ys);
+    const deltaY = (corners.tl[1] + corners.tr[1] - corners.bl[1] - corners.br[1]) / 2;
+    const deltaX = (corners.tr[0] + corners.br[0] - corners.tl[0] - corners.bl[0]) / 2;
+    return deltaY > 0.5 * spanY && deltaX > 0.5 * spanX;
+  }
+
+  /**
+   * Ajusta las esquinas extraidas (espacio de usuario PDF, SIN rotar) a la
+   * orientacion con la que se renderizara la pagina, y decide que rotacion
+   * debe usar el render. Devuelve { geoData, renderRotation } con las
+   * esquinas ya en espacio de display y la rotacion para page.getViewport().
+   *
+   * Contexto: PDF.js renderiza aplicando page.rotate por defecto, pero las
+   * estrategias de extraccion etiquetan esquinas en el espacio sin rotar.
+   * Con /Rotate != 0 hay que permutar las etiquetas (o cambiar la rotacion
+   * del render) para que imagen y esquinas coincidan.
+   */
+  function applyPageRotation(geoData, rotate) {
+    const r = normalizeRotation(rotate);
+    if (!geoData || !geoData.corners) {
+      // Sin georreferencia detectada (georreferenciacion manual en el modal):
+      // el preview/overlay se renderiza en orientacion de visor (como antes).
+      return { geoData, renderRotation: r };
+    }
+    if (r === 0) {
+      return { geoData, renderRotation: 0 };
+    }
+    // viewport-bounds entrega un bbox en coordenadas geo: invariante a permutacion
+    if (geoData.source === 'viewport-bounds') {
+      return { geoData, renderRotation: r };
+    }
+
+    const candidates = [
+      { corners: permuteCorners(geoData.corners, r), renderRotation: r, label: 'permutadas+rotado' },
+      { corners: geoData.corners,                    renderRotation: 0, label: 'originales+sin-rotacion' },
+      { corners: geoData.corners,                    renderRotation: r, label: 'originales+rotado' }
+    ];
+    for (const c of candidates) {
+      if (isNorthUp(c.corners)) {
+        console.log('[applyPageRotation] /Rotate=' + r + ' -> candidato ganador: ' + c.label);
+        return { geoData: Object.assign({}, geoData, { corners: c.corners }), renderRotation: c.renderRotation };
+      }
+    }
+    // Ningun candidato paso la verificacion: mantener comportamiento anterior
+    console.warn('[applyPageRotation] Ningun candidato paso isNorthUp; se usa render rotado con esquinas originales');
+    return { geoData, renderRotation: r };
+  }
+
   /**
    * Load a PDF from ArrayBuffer
    */
@@ -467,10 +552,18 @@ const PDFProcessor = (() => {
 
   /**
    * Render first page of PDF to canvas
+   * @param {object} pdf - PDF.js document
+   * @param {number} scale - Escala de render
+   * @param {number} [rotation] - Rotacion explicita para getViewport.
+   *   Si es undefined, PDF.js usa page.rotate (orientacion de visor).
    */
-  async function renderPage(pdf, scale = 2) {
+  async function renderPage(pdf, scale = 2, rotation = undefined) {
     const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: scale });
+    const viewportOptions = { scale: scale };
+    if (rotation !== undefined && rotation !== null) {
+      viewportOptions.rotation = rotation;
+    }
+    const viewport = page.getViewport(viewportOptions);
 
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
@@ -510,6 +603,47 @@ const PDFProcessor = (() => {
     }
 
     return false;
+  }
+
+  /**
+   * Rectifica (endereza a norte-arriba) el canvas de una pagina PDF cuyo
+   * contenido esta rotado geograficamente (ej. planos con el marco a 45°).
+   * g = esquinas {tl,tr,bl,br} en metros locales (x este, y norte),
+   * correspondientes a los pixeles (0,0), (W,0), (0,H), (W,H) del canvas.
+   * Devuelve un canvas nuevo axis-aligned que cubre el bbox de las esquinas
+   * (las zonas fuera del plano quedan transparentes).
+   */
+  function rectifyCanvasToNorthUp(canvas, g) {
+    const W = canvas.width, H = canvas.height;
+    // Afin fuente: geo = M*(x,y) + t  (con esquinas tl, tr, bl)
+    const M11 = (g.tr[0] - g.tl[0]) / W, M21 = (g.tr[1] - g.tl[1]) / W;
+    const M12 = (g.bl[0] - g.tl[0]) / H, M22 = (g.bl[1] - g.tl[1]) / H;
+    // Bbox en metros de las 4 esquinas
+    const xs = [g.tl[0], g.tr[0], g.bl[0], g.br[0]];
+    const ys = [g.tl[1], g.tr[1], g.bl[1], g.br[1]];
+    const minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+    const minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+    const spanX = maxX - minX, spanY = maxY - minY;
+    // Resolucion destino ~ igual a la fuente (con tope de memoria)
+    const mppX = Math.hypot(g.tr[0] - g.tl[0], g.tr[1] - g.tl[1]) / W;
+    const mppY = Math.hypot(g.bl[0] - g.tl[0], g.bl[1] - g.tl[1]) / H;
+    const newW = Math.max(1, Math.min(4096, Math.round(spanX / mppX)));
+    const newH = Math.max(1, Math.min(4096, Math.round(spanY / mppY)));
+    // D: pixel destino -> geo (norte-arriba sobre el bbox)
+    const D11 = spanX / newW, D22 = -spanY / newH;
+    // Transformacion canvas-fuente -> canvas-destino: T = D^-1 * M
+    const out = document.createElement('canvas');
+    out.width = newW;
+    out.height = newH;
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.setTransform(
+      M11 / D11, M21 / D22,
+      M12 / D11, M22 / D22,
+      (g.tl[0] - minX) / D11, (g.tl[1] - maxY) / D22
+    );
+    ctx.drawImage(canvas, 0, 0);
+    return out;
   }
 
   /**
@@ -559,13 +693,29 @@ const PDFProcessor = (() => {
       br = [br[0] + dLat, br[1] + dLng];
     }
 
+    // Detectar contenido rotado geograficamente (plano no norte-arriba):
+    // el eje X de la imagen (tl->tr) debe apuntar al este. Si no, se
+    // rectifica el canvas con una transformacion afin inversa.
+    const refLatC = (tl[0] + tr[0] + bl[0] + br[0]) / 4;
+    const refLngC = (tl[1] + tr[1] + bl[1] + br[1]) / 4;
+    const mPerDegLatC = 111000;
+    const mPerDegLngC = 111000 * Math.cos(refLatC * Math.PI / 180);
+    const toMeters = (p) => [(p[1] - refLngC) * mPerDegLngC, (p[0] - refLatC) * mPerDegLatC];
+    const gM = { tl: toMeters(tl), tr: toMeters(tr), bl: toMeters(bl), br: toMeters(br) };
+    const anguloDeg = Math.atan2(gM.tr[1] - gM.tl[1], gM.tr[0] - gM.tl[0]) * 180 / Math.PI;
+    let finalCanvas = canvas;
+    if (Math.abs(anguloDeg) >= 0.5) {
+      console.log('[createGeoOverlay] Contenido rotado ' + anguloDeg.toFixed(2) + ' grados -> rectificando a norte-arriba');
+      finalCanvas = rectifyCanvasToNorthUp(canvas, gM);
+    }
+
     const minLat = Math.min(tl[0], tr[0], bl[0], br[0]);
     const maxLat = Math.max(tl[0], tr[0], bl[0], br[0]);
     const minLng = Math.min(tl[1], tr[1], bl[1], br[1]);
     const maxLng = Math.max(tl[1], tr[1], bl[1], br[1]);
 
     const bounds = [[minLat, minLng], [maxLat, maxLng]];
-    const dataUrl = canvas.toDataURL('image/png');
+    const dataUrl = finalCanvas.toDataURL('image/png');
 
     return L.imageOverlay(dataUrl, bounds, {
       opacity: 0.9,
@@ -611,9 +761,14 @@ const PDFProcessor = (() => {
     //    copia fresca internamente.
     const geoData = await extractGeoData(bufForMeta);
 
-    // 2. Render con PDF.js (su propia copia fresca)
+    // 2. Render con PDF.js (su propia copia fresca).
+    //    Se ajusta la rotacion de pagina (/Rotate) ANTES de renderizar para
+    //    que las esquinas (espacio de display) coincidan con la imagen.
     const pdf = await loadPDF(bufForRender);
-    const { canvas, width, height } = await renderPage(pdf, 2);
+    const firstPage = await pdf.getPage(1);
+    const pageRotate = normalizeRotation(firstPage.rotate);
+    const adjusted = applyPageRotation(geoData, pageRotate);
+    const { canvas, width, height } = await renderPage(pdf, 4, adjusted.renderRotation);
 
     // 3. Deteccion GeoPDF. Si requiere getDocument, recibira copia fresca y
     //    no afectara a nada mas.
@@ -625,7 +780,8 @@ const PDFProcessor = (() => {
       width,
       height,
       isGeoPDF: geoPDF,
-      geoData: geoData
+      geoData: adjusted.geoData,
+      renderRotation: adjusted.renderRotation
     };
   }
 
@@ -640,6 +796,8 @@ const PDFProcessor = (() => {
     createGeoOverlay,
     getThumbnail,
     processPDF,
-    detectCRS
+    detectCRS,
+    applyPageRotation,
+    normalizeRotation
   };
 })();

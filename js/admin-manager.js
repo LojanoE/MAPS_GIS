@@ -340,7 +340,7 @@ const AdminManager = {
       if (isNaN(lat) || isNaN(lng)) return;
       bounds.push([lat, lng]);
 
-      const color = m._type === 'lsm' ? '#58a6ff' : '#3fb950';
+      const color = m._type === 'lsm' ? '#3b82f6' : '#4caf50';
       const label = m._type === 'lsm' ? 'LSM' : 'QC';
 
       const circle = L.circleMarker([lat, lng], {
@@ -638,7 +638,7 @@ const AdminManager = {
     }
 
     if (marker.is_deleted) {
-      fieldsHtml += `<div class="detail-row" style="color:#f85149;margin-top:12px;"><strong>Eliminado por:</strong> ${escapeHtml(marker.deleted_by || 'admin')} el ${formatDateTime(marker.deleted_at)}</div>`;
+      fieldsHtml += `<div class="detail-row" style="color:#ef4444;margin-top:12px;"><strong>Eliminado por:</strong> ${escapeHtml(marker.deleted_by || 'admin')} el ${formatDateTime(marker.deleted_at)}</div>`;
     }
 
     panel.innerHTML = `
