@@ -530,6 +530,7 @@ img {
   flex: 1;
   position: relative;
   overflow: hidden;
+  touch-action: none; /* Evita que el navegador intercepte pinch/scroll durante gestos de rotación */
 }
 
 #map {
@@ -539,6 +540,7 @@ img {
   left: 0;
   top: 0;
   background-color: var(--bg-primary); /* Fondo de respaldo cuando tiles no cargan */
+  will-change: transform; /* Ayuda al compositor durante rotación/zoom, se limpia si hay problemas de memoria */
 }
 
 /* Indicador de rotación en el header */

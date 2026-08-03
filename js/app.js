@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.9.5';
+const APP_VERSION = '2.9.6';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -728,11 +728,20 @@ function initMap() {
     zoom: 13,
     zoomControl: false,
     maxZoom: 22,
+    // Optimizaciones de fluidez para rotación + zoom en móvil
+    zoomAnimation: false,
+    fadeAnimation: false,
+    markerZoomAnimation: false,
+    bounceAtZoomLimits: false,
+    trackContainerMutation: false,
     rotate: true,
     touchRotate: true,
     bearing: 0,
     rotateControl: false
   });
+  // El plugin leaflet-rotate añade su propio handler unificado (touchGestures).
+  // Deshabilitamos touchZoom nativo de Leaflet para evitar que compita y cause snap final.
+  if (AppState.map.touchZoom) AppState.map.touchZoom.disable();
   L.control.zoom({ position: 'topleft' }).addTo(AppState.map);
   AppState.darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19 });
   AppState.lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19 });
@@ -786,9 +795,15 @@ function updateRotationIndicator(angle) {
 function initMapVisualRotation() {
   if (!AppState.map || typeof AppState.map.setBearing !== 'function') return;
 
-  // Escuchar cambios de rotación para actualizar el indicador
+  // Escuchar cambios de rotación para actualizar el indicador.
+  // Usamos requestAnimationFrame para no forzar reflujo en cada evento rotate.
+  let pendingIndicatorFrame = null;
   AppState.map.on('rotate', () => {
-    updateRotationIndicator(getMapVisualRotation());
+    if (pendingIndicatorFrame) return;
+    pendingIndicatorFrame = requestAnimationFrame(() => {
+      pendingIndicatorFrame = null;
+      updateRotationIndicator(getMapVisualRotation());
+    });
   });
 
   // Botón para volver al norte
