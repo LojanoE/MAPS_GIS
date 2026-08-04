@@ -2574,3 +2574,24 @@ img {
   text-align: center;
   margin: 0;
 }
+
+/* --- GPS Location Indicator --- */
+.gps-location-dot-container {
+  background: transparent !important;
+  border: none !important;
+}
+
+.gps-location-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #1a73e8;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.35);
+  transition: transform 0.35s ease-out;
+  will-change: transform;
+}
+
+.gps-location-accuracy {
+  transition: d 0.35s ease-out, cx 0.35s ease-out, cy 0.35s ease-out, r 0.35s ease-out;
+}

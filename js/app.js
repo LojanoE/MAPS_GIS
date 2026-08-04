@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.9.8';
+const APP_VERSION = '2.9.9';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -57,7 +57,13 @@ const AppState = {
   trackLastPoint: null,
   trackConfig: { minDistance: 5, minAccuracy: 50 },
   // Altitud GPS actual (para panel N/E/Z y marcadores)
-  currentAltitude: null
+  currentAltitude: null,
+  // Seguimiento continuo de ubicacion
+  locationWatchId: null,
+  currentLocation: null,
+  smoothedLocation: null,
+  locationAccuracy: null,
+  isFollowingLocation: false
 };
 
 // ============================================
@@ -868,6 +874,10 @@ function updateCoordsDisplay(latlng) {
   if (altEl) {
     altEl.textContent = 'Z: ' + (AppState.currentAltitude != null ? Math.round(AppState.currentAltitude) + ' m' : '---');
   }
+  const accEl = document.getElementById('coord-accuracy');
+  if (accEl) {
+    accEl.textContent = 'Prec: ' + (AppState.locationAccuracy != null ? '±' + Math.round(AppState.locationAccuracy) + ' m' : '---');
+  }
 }
 
 // ============================================
@@ -1251,7 +1261,7 @@ function showCalibrationPanel() {
         <button class="calib-btn" data-dir="s">▼</button>
       </div>
       <div class="calib-step">
-        <label>Paso: <input type="number" id="calib-step" value="5" min="1" max="100" style="width:50px;"> m</label>
+        <label>Paso: <input type="number" id="calib-step" value="0.5" min="0.1" max="100" step="0.1" style="width:60px;"> m</label>
       </div>
       <div class="calib-actions">
         <button id="calib-save" class="btn-primary btn-sm">Guardar</button>
@@ -1280,7 +1290,7 @@ function showCalibrationPanel() {
 
 function applyCalibrationDelta(dir) {
   if (!AppState.currentMapId) return;
-  const step = parseInt(document.getElementById('calib-step').value) || 5;
+  const step = parseFloat(document.getElementById('calib-step').value) || 0.5;
   const offset = AppState.currentMapOffset || { east: 0, north: 0 };
   if (dir === 'n') offset.north += step;
   if (dir === 's') offset.north -= step;
@@ -1361,39 +1371,130 @@ function confirmGoToCoords() {
 // ============================================
 // GPS / LOCATION
 // ============================================
-function goToMyLocation() {
-  if (!navigator.geolocation) { showToast('Geolocalizacion no disponible', 'error'); return; }
-  showToast('Obteniendo ubicacion...', 'info');
-  navigator.geolocation.getCurrentPosition((position) => {
-    const { latitude: lat, longitude: lng, accuracy, altitude } = position.coords;
-    if (altitude !== null && altitude !== undefined && !isNaN(altitude)) {
-      AppState.currentAltitude = altitude;
-    }
-    if (AppState.userLocationLayer) AppState.map.removeLayer(AppState.userLocationLayer);
-    AppState.userLocationLayer = L.layerGroup([
-      L.circle([lat, lng], { radius: accuracy, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.08, weight: 1 }),
-      L.circleMarker([lat, lng], { radius: 7, fillColor: '#1a73e8', fillOpacity: 1, color: '#ffffff', weight: 2.5 })
-    ]);
-    AppState.userLocationLayer.addTo(AppState.map);
-    AppState.map.setView([lat, lng], 16);
-    updateCoordsDisplay({ lat, lng });
-    showToast('Ubicacion obtenida', 'success');
-  }, (error) => {
+const LOCATION_SMOOTHING_ALPHA = 0.35; // 0= muy suave/lento, 1=sin suavizado
+const LOCATION_MAX_AGE_MS = 10000;
+
+function ensureUserLocationLayer() {
+  if (!AppState.userLocationLayer) {
+    const accuracyCircle = L.circle([0, 0], {
+      radius: 1,
+      color: '#3b82f6',
+      fillColor: '#3b82f6',
+      fillOpacity: 0.08,
+      weight: 1,
+      className: 'gps-location-accuracy'
+    });
+    const dotMarker = L.marker([0, 0], {
+      icon: L.divIcon({
+        className: 'gps-location-dot-container',
+        html: '<div class="gps-location-dot"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      }),
+      zIndexOffset: 1000
+    });
+    AppState.userLocationLayer = L.layerGroup([accuracyCircle, dotMarker]);
+    AppState.userLocationLayer._accuracyCircle = accuracyCircle;
+    AppState.userLocationLayer._dotMarker = dotMarker;
+  }
+  return AppState.userLocationLayer;
+}
+
+function smoothLocation(lat, lng) {
+  if (!AppState.smoothedLocation) {
+    AppState.smoothedLocation = { lat, lng };
+    return AppState.smoothedLocation;
+  }
+  const s = AppState.smoothedLocation;
+  s.lat = LOCATION_SMOOTHING_ALPHA * lat + (1 - LOCATION_SMOOTHING_ALPHA) * s.lat;
+  s.lng = LOCATION_SMOOTHING_ALPHA * lng + (1 - LOCATION_SMOOTHING_ALPHA) * s.lng;
+  return s;
+}
+
+function updateUserLocationOnMap(lat, lng, accuracy) {
+  const layer = ensureUserLocationLayer();
+  if (!AppState.map.hasLayer(layer)) layer.addTo(AppState.map);
+  const latlng = [lat, lng];
+  layer._accuracyCircle.setLatLng(latlng);
+  layer._accuracyCircle.setRadius(accuracy || 1);
+  layer._dotMarker.setLatLng(latlng);
+}
+
+function onLocationUpdate(position) {
+  const { latitude: lat, longitude: lng, accuracy, altitude } = position.coords;
+  AppState.currentLocation = { lat, lng, accuracy, timestamp: Date.now() };
+  if (altitude !== null && altitude !== undefined && !isNaN(altitude)) {
+    AppState.currentAltitude = altitude;
+  }
+  AppState.locationAccuracy = accuracy;
+  const smoothed = smoothLocation(lat, lng);
+  updateUserLocationOnMap(smoothed.lat, smoothed.lng, accuracy);
+  updateCoordsDisplay({ lat: smoothed.lat, lng: smoothed.lng });
+  if (AppState.isFollowingLocation && AppState.map) {
+    AppState.map.panTo([smoothed.lat, smoothed.lng], { animate: true, duration: 0.25 });
+  }
+}
+
+let _lastLocationErrorToast = 0;
+function onLocationError(error) {
+  console.warn('[onLocationError] Error de geolocalizacion:', error);
+  const now = Date.now();
+  if (now - _lastLocationErrorToast > 15000) {
+    _lastLocationErrorToast = now;
     const msgs = { 1: 'Permiso denegado', 2: 'No disponible', 3: 'Tiempo agotado' };
-    showToast('Error: ' + (msgs[error.code] || 'Desconocido'), 'error');
-  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    showToast('Error GPS: ' + (msgs[error.code] || 'Desconocido'), 'error');
+  }
+}
+
+function startLocationTracking() {
+  if (!navigator.geolocation) { showToast('Geolocalizacion no disponible', 'error'); return false; }
+  if (AppState.locationWatchId !== null) return true;
+  AppState.locationWatchId = navigator.geolocation.watchPosition(
+    onLocationUpdate,
+    onLocationError,
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+  );
+  return true;
+}
+
+function stopLocationTracking() {
+  if (AppState.locationWatchId !== null) {
+    navigator.geolocation.clearWatch(AppState.locationWatchId);
+    AppState.locationWatchId = null;
+  }
+}
+
+function goToMyLocation() {
+  if (!startLocationTracking()) return;
+  AppState.isFollowingLocation = true;
+  showToast('Siguiendo ubicacion GPS...', 'info');
+  if (AppState.currentLocation) {
+    AppState.map.setView([AppState.smoothedLocation.lat, AppState.smoothedLocation.lng], 18);
+  }
 }
 
 let _gpsSnackbarCoords = null;
 let _gpsSnackbarWatchId = null;
 
 function requestGpsForMarker() {
-  if (!navigator.geolocation) return;
   const snackbar = document.getElementById('gps-snackbar');
   const textEl = document.getElementById('gps-snackbar-text');
-  if (!snackbar) return;
+  if (!snackbar || !textEl) return;
   snackbar.classList.add('hidden');
   _gpsSnackbarCoords = null;
+
+  // Si ya hay seguimiento continuo con una lectura reciente, usarla.
+  if (AppState.smoothedLocation && AppState.currentLocation &&
+      (Date.now() - AppState.currentLocation.timestamp) < LOCATION_MAX_AGE_MS) {
+    const { lat, lng } = AppState.smoothedLocation;
+    const accuracy = AppState.locationAccuracy;
+    _gpsSnackbarCoords = { lat, lng, accuracy };
+    textEl.textContent = 'Ubicacion detectada (' + Math.round(accuracy || 0) + 'm)';
+    snackbar.classList.remove('hidden');
+    return;
+  }
+
+  if (!navigator.geolocation) return;
   navigator.geolocation.getCurrentPosition((position) => {
     const { latitude: lat, longitude: lng, accuracy, altitude } = position.coords;
     if (altitude !== null && altitude !== undefined && !isNaN(altitude)) {
@@ -2939,6 +3040,8 @@ function initEventListeners() {
   document.getElementById('map-input').addEventListener('change', (e) => { if (e.target.files.length > 0) handleFileUpload(e.target.files[0]); });
   document.getElementById('btn-back').addEventListener('click', () => {
     resetMapVisualRotation(); // al salir del mapa se limpia la rotación visual
+    stopLocationTracking();   // y se detiene el seguimiento GPS continuo
+    AppState.isFollowingLocation = false;
     if (AppState.isTracking) {
       if (!confirm('Hay un recorrido en curso. ¿Salir y guardarlo?')) return;
       stopTrack().finally(() => {

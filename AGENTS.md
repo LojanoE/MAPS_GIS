@@ -142,6 +142,20 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+### v2.9.9 — GPS continuo, suavizado y calibración precisa
+
+- Se reemplaza la lectura única de GPS en `goToMyLocation()` por un seguimiento continuo con `navigator.geolocation.watchPosition`.
+- Se mantiene un solo marcador de ubicación y se actualiza con `setLatLng` para evitar parpadeos.
+- Se añade suavizado exponencial de la posición GPS (`LOCATION_SMOOTHING_ALPHA`) para reducir saltos.
+- El punto de ubicación ahora usa transiciones CSS para moverse progresivamente.
+- Se muestra la **precisión GPS (accuracy)** en el panel de coordenadas (`#coord-accuracy`).
+- Se corrige la calibración del mapa:
+  - `applyCalibrationDelta` usa `parseFloat` en lugar de `parseInt`.
+  - Paso por defecto de 0.5 m con incrementos de 0.1 m.
+  - Conversión metros→grados en `createGeoOverlay` usa fórmulas geodésicas del elipsoide WGS84 en lugar de `111000` fijo.
+- El seguimiento GPS se detiene automáticamente al salir de la pantalla del mapa.
+- **Bumps de versión:** `2.9.8` → `2.9.9`.
+
 ### v2.9.8 — Fix: desfase en GeoPDFs por datum de coordenadas geográficas
 
 - Se mejora la detección de CRS en `js/pdf-processor.js`:
@@ -291,7 +305,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.9.8` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son de la v2.9.5 y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.9.9` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son de la v2.9.5 y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
@@ -332,7 +346,8 @@ Nota: las claves `maps_gis_admin` y `maps_gis_app_version` solo existen en `js/a
 - PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF, viewport bounds o anotaciones PDF.js; se guardan las esquinas en UTM PSAD56. El overlay se renderiza a escala 4 (~0.55 m/px) y soporta páginas con `/Rotate` y marcos rotados geográficamente (ver gotchas). Desde v2.9.8, el modal de georreferenciación permite elegir el **datum de origen** (WGS84 / PSAD56 / automático) para corregir desfases contra otros visores como Avenza Maps.
 - Zoom máximo del mapa: **22** (tiles CartoDB con `maxNativeZoom: 19`, re-escalados en 20–22).
 - **Rotación visual del mapa:** rotación puramente visual de todo el mapa con gestos de dos dedos (touch) o `Shift` + scroll (desktop). Usa el plugin local `js/leaflet-rotate.js` y parches locales `js/leaflet-rotate-patches.js` para eliminar el *snap* final y reducir el trabajo por frame. Botón "Volver al norte" e indicador de ángulo en el header. No afecta coordenadas ni georreferenciación; no persiste entre sesiones.
-- **Calibración de mapa:** offset en metros (este/norte) por mapa, editable en pantalla (`maps_gis_offset_<mapId>`).
+- **Calibración de mapa:** offset en metros (este/norte) por mapa, editable en pantalla con pasos de 0.1 m (`maps_gis_offset_<mapId>`). Desde v2.9.9 la conversión metros→grados usa fórmulas geodésicas del elipsoide WGS84 para mayor precisión.
+- **Seguimiento GPS continuo:** el botón de ubicación activa `watchPosition`, muestra el punto con suavizado exponencial y transiciones suaves, y muestra la precisión (`accuracy`) en el panel de coordenadas. Se detiene al salir del mapa.
 
 ### Marcadores
 

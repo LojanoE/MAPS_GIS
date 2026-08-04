@@ -709,8 +709,15 @@ const PDFProcessor = (() => {
     // Aplicar offset de calibracion manual (en metros)
     if (offset && (offset.north || offset.east)) {
       const refLat = (tl[0] + tr[0] + bl[0] + br[0]) / 4;
-      const mPerDegLat = 111000;
-      const mPerDegLng = 111000 * Math.cos(refLat * Math.PI / 180);
+      const refLng = (tl[1] + tr[1] + bl[1] + br[1]) / 4;
+      // Conversion metros -> grados usando aproximacion del elipsoide WGS84.
+      // Mucho mas precisa que 111000 fijo, especialmente para longitud.
+      const rad = Math.PI / 180;
+      const latRad = refLat * rad;
+      const sin2 = Math.sin(2 * latRad);
+      const sin4 = Math.sin(4 * latRad);
+      const mPerDegLat = 111132.92 - 559.82 * sin2 + 1.175 * sin4;
+      const mPerDegLng = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad);
       const dLat = (offset.north || 0) / mPerDegLat;
       const dLng = (offset.east || 0) / mPerDegLng;
       tl = [tl[0] + dLat, tl[1] + dLng];
