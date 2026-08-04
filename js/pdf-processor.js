@@ -127,7 +127,8 @@ const PDFProcessor = (() => {
         br: [br.lon, br.lat]
       },
       crs: detectedCrs,
-      source: 'ISO-32000-2 (GeoPDF)'
+      source: 'ISO-32000-2 (GeoPDF)',
+      _vpContext: vpContext
     };
   }
 
@@ -161,6 +162,12 @@ const PDFProcessor = (() => {
     }
     if (/GEOGCS\s*\[?\s*"PSAD56"/i.test(ctx) || /DATUM\s*\[?\s*"PSAD56/i.test(ctx)) {
       // PSAD56 geografico (lat/lon) -> las GPTS siguen siendo lat/lon PSAD56 (datum Intl 1924)
+      return 'PSAD56GEO';
+    }
+    // Si el contexto declara explicitamente un sistema proyectado PSAD56 UTM 17S,
+    // las coordenadas son este/norte UTM (no lat/lon).
+    if (/PROJCS\s*\[?\s*"[^"]*PSAD56[^"]*UTM[^"]*17S/i.test(ctx) ||
+        /EPSG[":\s]*["']?24877/i.test(ctx)) {
       return 'EPSG:24877';
     }
 
@@ -652,16 +659,35 @@ const PDFProcessor = (() => {
    * @param {object} corners - { tl: [e,n], tr: [e,n], bl: [e,n], br: [e,n] }
    * @param {string} crs - Input CRS
    */
-  function createGeoOverlay(canvas, corners, crs, offset) {
+  function createGeoOverlay(canvas, corners, crs, offset, sourceDatum) {
     // Convert corners to WGS84 (Leaflet's native CRS)
+    sourceDatum = sourceDatum || 'auto';
     const toWGS84 = (e, n) => {
       if (crs === 'EPSG:4326') {
+        // Por defecto ISO 32000-2 asume WGS84, pero muchos GeoPDFs locales usan
+        // coordenadas geográficas PSAD56 sin declararlo bien. sourceDatum permite
+        // forzar la interpretacion correcta.
+        if (sourceDatum === 'PSAD56' && typeof proj4 !== 'undefined') {
+          const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [e, n]);
+          return [lat, lng];
+        }
         return [n, e]; // lat, lng (input is [lon, lat])
       }
-      // Si el PDF declara EPSG:24877 (PSAD56) pero las coordenadas son geográficas (<180),
-      // el GPTS está en lat/lon PSAD56 (datum International 1924).
+      if (crs === 'PSAD56GEO') {
+        // Coordenadas geograficas en datum PSAD56 (International 1924).
+        if (typeof proj4 !== 'undefined') {
+          const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [e, n]);
+          return [lat, lng];
+        }
+        return [n, e];
+      }
+      // Si el PDF declara EPSG:24877 (PSAD56 UTM 17S) pero las coordenadas son geográficas (<180),
+      // probablemente el GPTS está en lat/lon PSAD56 (datum International 1924).
       if (crs === 'EPSG:24877' && typeof proj4 !== 'undefined') {
         if (Math.abs(e) < 180 && Math.abs(n) < 90) {
+          if (sourceDatum === 'WGS84') {
+            return [n, e];
+          }
           const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [e, n]);
           return [lat, lng];
         }
@@ -760,6 +786,12 @@ const PDFProcessor = (() => {
     //    Strategy 4 (annotations) si llama a getDocument, pero recibe su propia
     //    copia fresca internamente.
     const geoData = await extractGeoData(bufForMeta);
+    if (geoData) {
+      console.log('[processPDF] Estrategia:', geoData.source, '| CRS detectado:', geoData.crs);
+      console.log('[processPDF] Esquinas (entrada):', geoData.corners);
+    } else {
+      console.log('[processPDF] No se detectaron coordenadas geoespaciales.');
+    }
 
     // 2. Render con PDF.js (su propia copia fresca).
     //    Se ajusta la rotacion de pagina (/Rotate) ANTES de renderizar para

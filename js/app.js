@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.9.7';
+const APP_VERSION = '2.9.8';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -377,6 +377,53 @@ function forceAppUpdate() {
   } else {
     location.reload(true);
   }
+}
+
+// ============================================
+// GEOREFERENCE CONVERSION HELPERS
+// ============================================
+
+/**
+ * Convierte una esquina desde su CRS/datum de origen a UTM PSAD56 17S.
+ * corner = [x, y] donde x=lon/e y y=lat/n segun sourceCrs.
+ * sourceDatum: 'WGS84', 'PSAD56' o 'auto'.
+ */
+function convertCornerToUTMPSAD56(corner, sourceCrs, sourceDatum) {
+  const [x, y] = corner;
+  if (sourceCrs === 'EPSG:4326') {
+    if (sourceDatum === 'PSAD56') {
+      const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [x, y]);
+      return proj4('EPSG:4326', 'EPSG:24877', [lng, lat]);
+    }
+    return proj4('EPSG:4326', 'EPSG:24877', [x, y]);
+  }
+  if (sourceCrs === 'PSAD56GEO') {
+    const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [x, y]);
+    return proj4('EPSG:4326', 'EPSG:24877', [lng, lat]);
+  }
+  if (sourceCrs === 'EPSG:24877') {
+    if (Math.abs(x) < 180 && Math.abs(y) < 90) {
+      if (sourceDatum === 'WGS84') {
+        return proj4('EPSG:4326', 'EPSG:24877', [x, y]);
+      }
+      const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [x, y]);
+      return proj4('EPSG:4326', 'EPSG:24877', [lng, lat]);
+    }
+    return [x, y];
+  }
+  return proj4(sourceCrs, 'EPSG:24877', [x, y]);
+}
+
+/**
+ * Determina el datum mas probable para coordenadas geograficas de un GeoPDF.
+ */
+function inferSourceDatum(sourceCrs, geoData) {
+  if (sourceCrs === 'PSAD56GEO' || sourceCrs === 'EPSG:24877') return 'PSAD56';
+  if (sourceCrs !== 'EPSG:4326') return 'auto';
+  // Para EPSG:4326, miramos si el contexto del PDF menciona PSAD56.
+  const ctx = (geoData && geoData._vpContext) || '';
+  if (/PSAD56/i.test(ctx)) return 'PSAD56';
+  return 'WGS84';
 }
 
 // ============================================
@@ -1163,7 +1210,7 @@ async function loadPDFMap(mapId) {
     if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
     const offset = getMapOffset(mapId);
     AppState.currentMapOffset = offset;
-    AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, offset);
+    AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, offset, record.georef.sourceDatum);
     AppState.mapOverlay.addTo(AppState.map);
     AppState.map.fitBounds(AppState.mapOverlay.getBounds());
     showToast('PDF cargado', 'success');
@@ -1260,7 +1307,7 @@ async function reloadMapWithOffset() {
   const pdf = await PDFProcessor.loadPDF(record.data);
   const { canvas } = await PDFProcessor.renderPage(pdf, 4, record.georef.renderRotation);
   if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
-  AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, AppState.currentMapOffset);
+  AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, AppState.currentMapOffset, record.georef.sourceDatum);
   AppState.mapOverlay.addTo(AppState.map);
 }
 
@@ -2730,28 +2777,18 @@ async function handlePDFUpload(file) {
       progressText.textContent = 'Coordenadas detectadas!';
       const crs = geoData.crs || 'EPSG:4326';
       const c = geoData.corners;
-      // Normalizar SIEMPRE a UTM PSAD56 (EPSG:24877) para el modal, replicando
-      // exactamente la misma logica que createGeoOverlay usara al renderizar.
-      // Esto garantiza que lo que ve el usuario y lo que se guarda coincide
-      // con el overlay final. corner = [lon_or_e, lat_or_n] segun crs.
-      const toUTM = (corner) => {
-        const [x, y] = corner; // x=lon/e, y=lat/n
-        if (crs === 'EPSG:4326') {
-          return proj4('EPSG:4326', 'EPSG:24877', [x, y]);
-        }
-        if (crs === 'EPSG:24877') {
-          // Puede ser geograficas PSAD56 (lat/lon) o UTM PSAD56 ya proyectadas.
-          if (Math.abs(x) < 180 && Math.abs(y) < 90) {
-            // lat/lon PSAD56 (datum Intl 1924) -> UTM PSAD56 17S
-            return proj4('PSAD56GEO', 'EPSG:24877', [x, y]);
-          }
-          return [x, y]; // ya son UTM
-        }
-        // Otro CRS proyectado/lat-lon conocido por proj4
-        return proj4(crs, 'EPSG:24877', [x, y]);
-      };
+      // Guardamos coordenadas originales para poder recalcular si el usuario
+      // cambia el datum de origen en el modal.
+      AppState.pendingPDF.sourceCrs = crs;
+      AppState.pendingPDF.sourceCorners = { tl: c.tl.slice(), tr: c.tr.slice(), bl: c.bl.slice(), br: c.br.slice() };
+      const sourceDatum = inferSourceDatum(crs, geoData);
+      AppState.pendingPDF.sourceDatum = sourceDatum;
+
+      // Normalizar a UTM PSAD56 (EPSG:24877) para el modal.
       const cornersUTM = {};
-      for (const key of ['tl', 'tr', 'bl', 'br']) { cornersUTM[key] = toUTM(c[key]); }
+      for (const key of ['tl', 'tr', 'bl', 'br']) {
+        cornersUTM[key] = convertCornerToUTMPSAD56(c[key], crs, sourceDatum);
+      }
       document.getElementById('georef-tl-e').value = cornersUTM.tl[0].toFixed(2);
       document.getElementById('georef-tl-n').value = cornersUTM.tl[1].toFixed(2);
       document.getElementById('georef-tr-e').value = cornersUTM.tr[0].toFixed(2);
@@ -2761,7 +2798,8 @@ async function handlePDFUpload(file) {
       document.getElementById('georef-br-e').value = cornersUTM.br[0].toFixed(2);
       document.getElementById('georef-br-n').value = cornersUTM.br[1].toFixed(2);
       document.getElementById('georef-crs').value = 'EPSG:24877';
-      console.log('[handlePDFUpload] CRS entrada:', crs, '| corners UTM guardadas:', cornersUTM);
+      document.getElementById('georef-datum').value = sourceDatum;
+      console.log('[handlePDFUpload] CRS entrada:', crs, '| datum inferido:', sourceDatum, '| corners UTM:', cornersUTM);
       showToast('Coordenadas detectadas!', 'success');
     } else {
       progressText.textContent = 'Ingresa coordenadas';
@@ -2779,8 +2817,28 @@ function closeGeorefModal() {
   document.getElementById('georef-modal').classList.add('hidden');
   AppState.pendingPDF = null;
 }
+function recalcGeorefFromDatum() {
+  const pending = AppState.pendingPDF;
+  if (!pending || !pending.sourceCorners) return;
+  const sourceDatum = document.getElementById('georef-datum').value;
+  AppState.pendingPDF.sourceDatum = sourceDatum;
+  const cornersUTM = {};
+  for (const key of ['tl', 'tr', 'bl', 'br']) {
+    cornersUTM[key] = convertCornerToUTMPSAD56(pending.sourceCorners[key], pending.sourceCrs, sourceDatum);
+  }
+  document.getElementById('georef-tl-e').value = cornersUTM.tl[0].toFixed(2);
+  document.getElementById('georef-tl-n').value = cornersUTM.tl[1].toFixed(2);
+  document.getElementById('georef-tr-e').value = cornersUTM.tr[0].toFixed(2);
+  document.getElementById('georef-tr-n').value = cornersUTM.tr[1].toFixed(2);
+  document.getElementById('georef-bl-e').value = cornersUTM.bl[0].toFixed(2);
+  document.getElementById('georef-bl-n').value = cornersUTM.bl[1].toFixed(2);
+  document.getElementById('georef-br-e').value = cornersUTM.br[0].toFixed(2);
+  document.getElementById('georef-br-n').value = cornersUTM.br[1].toFixed(2);
+}
+
 async function applyGeoref() {
   const crs = document.getElementById('georef-crs').value;
+  const sourceDatum = document.getElementById('georef-datum').value;
   const tlE = parseFloat(document.getElementById('georef-tl-e').value);
   const tlN = parseFloat(document.getElementById('georef-tl-n').value);
   const trE = parseFloat(document.getElementById('georef-tr-e').value);
@@ -2799,7 +2857,8 @@ async function applyGeoref() {
   thumbCanvas.height = previewCanvas.height * scale;
   thumbCanvas.getContext('2d').drawImage(previewCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
   const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.5);
-  const georef = { corners: { tl: [tlE, tlN], tr: [trE, trN], bl: [blE, blN], br: [brE, brN] }, crs: crs, renderRotation: pending.renderRotation };
+  const georef = { corners: { tl: [tlE, tlN], tr: [trE, trN], bl: [blE, blN], br: [brE, brN] }, crs: crs, renderRotation: pending.renderRotation, sourceDatum: sourceDatum };
+  if (pending.sourceCrs) georef.sourceCrs = pending.sourceCrs;
   try {
     await MapStorage.savePDFMap(pending.name, pending.arrayBuffer, pending.size, georef, thumbnail);
     showToast('PDF guardado', 'success');
@@ -2978,6 +3037,7 @@ function initEventListeners() {
   document.getElementById('btn-cancel-delete').addEventListener('click', () => { pendingDeleteMapId = null; document.getElementById('delete-map-modal').classList.add('hidden'); });
   document.getElementById('btn-apply-georef').addEventListener('click', applyGeoref);
   document.getElementById('btn-cancel-georef').addEventListener('click', closeGeorefModal);
+  document.getElementById('georef-datum').addEventListener('change', recalcGeorefFromDatum);
   document.querySelectorAll('.modal').forEach(modal => {
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {

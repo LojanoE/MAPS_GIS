@@ -142,6 +142,18 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+### v2.9.8 — Fix: desfase en GeoPDFs por datum de coordenadas geográficas
+
+- Se mejora la detección de CRS en `js/pdf-processor.js`:
+  - Las coordenadas geográficas en datum PSAD56 ahora se detectan como `PSAD56GEO` en lugar de `EPSG:24877`.
+  - Se distingue entre PSAD56 geográfico y PSAD56 UTM 17S proyectado.
+- Se añade un selector de **datum de origen** en el modal de georreferenciación de PDF (`index.html`):
+  - Opciones: Automático / WGS84 / PSAD56 (geográfico).
+  - Si el PDF parece desfasado respecto a Avenza Maps, el usuario puede forzar la interpretación como PSAD56.
+- Se guarda `sourceDatum` en el objeto `georef` del mapa y se usa al renderizar el overlay (`js/app.js` y `js/pdf-processor.js`).
+- Se añaden logs de diagnóstico en `processPDF` para ver estrategia, CRS detectado y esquinas.
+- **Bumps de versión:** `2.9.7` → `2.9.8`.
+
 ### v2.9.7 — Rotación/zoom ultra fluido (parches sobre leaflet-rotate)
 
 - Se añade `js/leaflet-rotate-patches.js` (cargado inmediatamente después del plugin) para eliminar los saltos de marcadores, overlay y tiles al rotar/hacer zoom en móvil.
@@ -279,7 +291,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.9.7` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son de la v2.9.5 y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.9.8` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son de la v2.9.5 y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
@@ -317,7 +329,7 @@ Nota: las claves `maps_gis_admin` y `maps_gis_app_version` solo existen en `js/a
 - Soporta **GeoTIFF** y **PDF georreferenciado**.
 - GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4.
 - GeoTIFF geográficos (EPSG:4326): `GeoRasterLayer`.
-- PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF, viewport bounds o anotaciones PDF.js; se guardan las esquinas en UTM PSAD56. El overlay se renderiza a escala 4 (~0.55 m/px) y soporta páginas con `/Rotate` y marcos rotados geográficamente (ver gotchas).
+- PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF, viewport bounds o anotaciones PDF.js; se guardan las esquinas en UTM PSAD56. El overlay se renderiza a escala 4 (~0.55 m/px) y soporta páginas con `/Rotate` y marcos rotados geográficamente (ver gotchas). Desde v2.9.8, el modal de georreferenciación permite elegir el **datum de origen** (WGS84 / PSAD56 / automático) para corregir desfases contra otros visores como Avenza Maps.
 - Zoom máximo del mapa: **22** (tiles CartoDB con `maxNativeZoom: 19`, re-escalados en 20–22).
 - **Rotación visual del mapa:** rotación puramente visual de todo el mapa con gestos de dos dedos (touch) o `Shift` + scroll (desktop). Usa el plugin local `js/leaflet-rotate.js` y parches locales `js/leaflet-rotate-patches.js` para eliminar el *snap* final y reducir el trabajo por frame. Botón "Volver al norte" e indicador de ángulo en el header. No afecta coordenadas ni georreferenciación; no persiste entre sesiones.
 - **Calibración de mapa:** offset en metros (este/norte) por mapa, editable en pantalla (`maps_gis_offset_<mapId>`).
