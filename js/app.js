@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.9.10';
+const APP_VERSION = '2.10.0';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -48,7 +48,10 @@ const AppState = {
   measurementMarkers: [],
   measurementLine: null,
   measurementPolygon: null,
+  measurementRubberLine: null,
   measurementFinished: false,
+  measurementIsDragging: false,
+  measurementPreviewText: '',
   // Tracking / recorridos
   isTracking: false,
   isTrackPaused: false,
@@ -354,6 +357,9 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+function isTouchDevice() {
+  return window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 }
 
 function forceAppUpdate() {
@@ -803,7 +809,7 @@ function initMap() {
   AppState.tracksLayer = L.layerGroup().addTo(AppState.map);
   AppState.measurementLayer = L.layerGroup().addTo(AppState.map);
   AppState.map.on('click', (e) => {
-    if (AppState.isMeasurementMode && !AppState.measurementFinished) {
+    if (AppState.isMeasurementMode && !AppState.measurementFinished && !AppState.measurementIsDragging) {
       addMeasurementPoint(e.latlng);
       return;
     }
@@ -818,7 +824,17 @@ function initMap() {
       finishMeasurement();
     }
   });
-  AppState.map.on('mousemove', (e) => updateCoordsDisplay(e.latlng));
+  AppState.map.on('mousemove', (e) => {
+    updateCoordsDisplay(e.latlng);
+    if (AppState.isMeasurementMode && !AppState.measurementFinished && AppState.measurementLatLngs.length > 0) {
+      updateMeasurementRubberLine(e.latlng);
+    }
+  });
+  AppState.map.on('move', () => {
+    if (AppState.isMeasurementMode && !AppState.measurementFinished && AppState.measurementLatLngs.length > 0 && isTouchDevice()) {
+      updateMeasurementRubberLine(AppState.map.getCenter());
+    }
+  });
   initMapVisualRotation();
 }
 
@@ -887,8 +903,10 @@ function toggleMeasurementMode() {
   AppState.isMeasurementMode = !AppState.isMeasurementMode;
   const btn = document.getElementById('btn-measure');
   const panel = document.getElementById('measurement-panel');
+  const crosshair = document.getElementById('measurement-crosshair');
   btn.classList.toggle('active', AppState.isMeasurementMode);
   panel.classList.toggle('hidden', !AppState.isMeasurementMode);
+  if (crosshair) crosshair.classList.toggle('hidden', !AppState.isMeasurementMode);
   if (AppState.isMeasurementMode) {
     if (AppState.isAddMarkerMode) {
       AppState.isAddMarkerMode = false;
@@ -919,17 +937,78 @@ function setMeasurementType(type) {
   document.querySelectorAll('.measurement-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === type));
   clearMeasurement();
   updateMeasurementPanel();
+  renderMeasurementPointsList();
+}
+
+function createMeasurementVertexIcon() {
+  return L.divIcon({
+    className: 'measurement-vertex',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    html: '<div class="measurement-vertex-dot"></div>'
+  });
 }
 
 function addMeasurementPoint(latlng) {
   if (!latlng || AppState.measurementFinished) return;
   const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
+  const index = AppState.measurementLatLngs.length;
   AppState.measurementLatLngs.push(latlng);
   AppState.measurementUtmPoints.push({ east, north });
-  const marker = L.circleMarker(latlng, { radius: 5, className: 'measurement-vertex' }).addTo(AppState.measurementLayer);
+  const marker = L.marker(latlng, {
+    icon: createMeasurementVertexIcon(),
+    draggable: !AppState.measurementFinished,
+    zIndexOffset: 1000
+  }).addTo(AppState.measurementLayer);
+  marker._measurementIndex = index;
+  marker.on('dragstart', () => {
+    AppState.measurementIsDragging = true;
+    marker.getElement()?.classList.add('dragging');
+  });
+  marker.on('drag', (e) => {
+    onMeasurementVertexDrag(marker._measurementIndex, e.latlng);
+  });
+  marker.on('dragend', () => {
+    AppState.measurementIsDragging = false;
+    marker.getElement()?.classList.remove('dragging');
+    renderMeasurementPointsList();
+  });
   AppState.measurementMarkers.push(marker);
   renderMeasurementGeometry();
   updateMeasurementPanel();
+  renderMeasurementPointsList();
+}
+
+function onMeasurementVertexDrag(index, latlng) {
+  if (index < 0 || index >= AppState.measurementLatLngs.length) return;
+  const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
+  AppState.measurementLatLngs[index] = latlng;
+  AppState.measurementUtmPoints[index] = { east, north };
+  renderMeasurementGeometry();
+  updateMeasurementPanel();
+}
+
+function removeMeasurementPoint(index) {
+  if (index < 0 || index >= AppState.measurementLatLngs.length) return;
+  AppState.measurementLatLngs.splice(index, 1);
+  AppState.measurementUtmPoints.splice(index, 1);
+  const marker = AppState.measurementMarkers.splice(index, 1)[0];
+  if (marker && AppState.measurementLayer) AppState.measurementLayer.removeLayer(marker);
+  AppState.measurementMarkers.forEach((m, i) => { m._measurementIndex = i; });
+  AppState.measurementFinished = false;
+  if (AppState.measurementLatLngs.length === 0 && AppState.measurementRubberLine && AppState.measurementLayer) {
+    AppState.measurementLayer.removeLayer(AppState.measurementRubberLine);
+    AppState.measurementRubberLine = null;
+    AppState.measurementPreviewText = '';
+  }
+  renderMeasurementGeometry();
+  updateMeasurementPanel();
+  renderMeasurementPointsList();
+}
+
+function undoMeasurementPoint() {
+  if (AppState.measurementLatLngs.length === 0) return;
+  removeMeasurementPoint(AppState.measurementLatLngs.length - 1);
 }
 
 function renderMeasurementGeometry() {
@@ -947,25 +1026,60 @@ function renderMeasurementGeometry() {
   }
 }
 
+function updateMeasurementRubberLine(latlng) {
+  if (!AppState.measurementLayer || AppState.measurementFinished || AppState.measurementLatLngs.length === 0 || !latlng) return;
+  const last = AppState.measurementLatLngs[AppState.measurementLatLngs.length - 1];
+  if (AppState.measurementRubberLine) {
+    AppState.measurementRubberLine.setLatLngs([last, latlng]);
+  } else {
+    AppState.measurementRubberLine = L.polyline([last, latlng], { className: 'measurement-rubber-line' }).addTo(AppState.measurementLayer);
+  }
+  const [e1, n1] = proj4(WGS84, 'EPSG:24877', [last.lng, last.lat]);
+  const [e2, n2] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
+  const dx = e2 - e1;
+  const dy = n2 - n1;
+  const segment = Math.sqrt(dx * dx + dy * dy);
+  let preview = 'Vista previa: ' + formatDistance(segment);
+  if (AppState.measurementType === 'area' && AppState.measurementLatLngs.length >= 2) {
+    const previewPoints = AppState.measurementUtmPoints.concat({ east: e2, north: n2 });
+    if (previewPoints.length >= 3) {
+      preview += ' | Area preview: ' + formatArea(calculatePolygonArea(previewPoints));
+    }
+  }
+  AppState.measurementPreviewText = preview;
+  updateMeasurementPanel();
+}
+
 function clearMeasurement() {
   AppState.measurementLatLngs = [];
   AppState.measurementUtmPoints = [];
   AppState.measurementFinished = false;
+  AppState.measurementPreviewText = '';
   if (AppState.measurementLayer) {
     AppState.measurementMarkers.forEach(m => AppState.measurementLayer.removeLayer(m));
     if (AppState.measurementLine) AppState.measurementLayer.removeLayer(AppState.measurementLine);
     if (AppState.measurementPolygon) AppState.measurementLayer.removeLayer(AppState.measurementPolygon);
+    if (AppState.measurementRubberLine) AppState.measurementLayer.removeLayer(AppState.measurementRubberLine);
   }
   AppState.measurementMarkers = [];
   AppState.measurementLine = null;
   AppState.measurementPolygon = null;
+  AppState.measurementRubberLine = null;
   updateMeasurementPanel();
+  renderMeasurementPointsList();
 }
 
 function finishMeasurement() {
   if (AppState.measurementLatLngs.length < 2) return;
   AppState.measurementFinished = true;
+  AppState.measurementMarkers.forEach(m => m.dragging && m.dragging.disable());
+  if (AppState.measurementRubberLine && AppState.measurementLayer) {
+    AppState.measurementLayer.removeLayer(AppState.measurementRubberLine);
+    AppState.measurementRubberLine = null;
+  }
+  AppState.measurementPreviewText = '';
   updateMeasurementPanel(true);
+  renderMeasurementPointsList();
   showToast('Medicion finalizada', 'success');
 }
 
@@ -1019,12 +1133,13 @@ function updateMeasurementPanel(finished) {
   const valueEl = document.getElementById('measurement-value');
   const secondaryEl = document.getElementById('measurement-secondary');
   const finishBtn = document.getElementById('btn-measure-finish');
-  const clearBtn = document.getElementById('btn-measure-clear');
+  const undoBtn = document.getElementById('btn-measure-undo');
   if (!valueEl) return;
   const points = AppState.measurementUtmPoints;
+  if (undoBtn) undoBtn.disabled = points.length === 0 || AppState.measurementFinished;
   if (points.length === 0) {
     valueEl.textContent = AppState.measurementType === 'distance' ? '0 m' : '0 m²';
-    secondaryEl.textContent = '';
+    secondaryEl.textContent = AppState.measurementPreviewText || '';
     if (finishBtn) finishBtn.disabled = true;
     return;
   }
@@ -1040,19 +1155,54 @@ function updateMeasurementPanel(finished) {
       );
       sec = 'Segmento actual: ' + formatDistance(lastSegment);
     }
+    if (AppState.measurementPreviewText && !finished) {
+      sec = AppState.measurementPreviewText + (sec ? ' | ' + sec : '');
+    }
     secondaryEl.textContent = sec;
   } else {
     if (points.length < 3) {
       valueEl.textContent = '0 m²';
-      secondaryEl.textContent = 'Agrega al menos 3 puntos';
+      secondaryEl.textContent = AppState.measurementPreviewText || 'Agrega al menos 3 puntos';
     } else {
       const area = calculatePolygonArea(points);
       const perimeter = calculatePolygonPerimeter(points);
       valueEl.textContent = formatArea(area);
-      secondaryEl.textContent = 'Perimetro: ' + formatDistance(perimeter);
+      let sec = 'Perimetro: ' + formatDistance(perimeter);
+      if (AppState.measurementPreviewText && !finished) {
+        sec = AppState.measurementPreviewText + ' | ' + sec;
+      }
+      secondaryEl.textContent = sec;
     }
   }
   if (finishBtn) finishBtn.disabled = points.length < 2;
+}
+
+function renderMeasurementPointsList() {
+  const listEl = document.getElementById('measurement-points-list');
+  if (!listEl) return;
+  if (AppState.measurementLatLngs.length === 0) {
+    listEl.innerHTML = '';
+    listEl.classList.add('hidden');
+    return;
+  }
+  listEl.classList.remove('hidden');
+  let html = '<div class="measurement-points-header">Puntos (' + AppState.measurementLatLngs.length + ')</div>';
+  html += '<div class="measurement-points-items">';
+  AppState.measurementLatLngs.forEach((latlng, i) => {
+    const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
+    html += '<div class="measurement-point-item">' +
+      '<span class="measurement-point-label">P' + (i + 1) + '</span>' +
+      '<span class="measurement-point-coords">E:' + Math.round(east) + ' N:' + Math.round(north) + '</span>';
+    if (!AppState.measurementFinished) {
+      html += '<button class="measurement-point-delete" data-index="' + i + '" title="Eliminar punto">&times;</button>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  listEl.innerHTML = html;
+  listEl.querySelectorAll('.measurement-point-delete').forEach(btn => {
+    btn.addEventListener('click', () => removeMeasurementPoint(parseInt(btn.dataset.index, 10)));
+  });
 }
 
 // ============================================
@@ -3088,6 +3238,12 @@ function initEventListeners() {
   document.getElementById('btn-close-measurement').addEventListener('click', stopMeasurement);
   document.getElementById('btn-measure-finish').addEventListener('click', finishMeasurement);
   document.getElementById('btn-measure-clear').addEventListener('click', clearMeasurement);
+  document.getElementById('btn-measure-undo')?.addEventListener('click', undoMeasurementPoint);
+  document.getElementById('btn-measure-add-point')?.addEventListener('click', () => {
+    if (AppState.map && AppState.isMeasurementMode && !AppState.measurementFinished) {
+      addMeasurementPoint(AppState.map.getCenter());
+    }
+  });
   document.querySelectorAll('.measurement-type-btn').forEach(btn => {
     btn.addEventListener('click', () => setMeasurementType(btn.dataset.type));
   });

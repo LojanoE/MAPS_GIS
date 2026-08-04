@@ -142,6 +142,17 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+### v2.10.0 — Medición con vértices arrastrables y línea elástica
+
+- Se rediseña la experiencia de ingreso de puntos en las herramientas de **distancia** y **área**:
+  - Los vértices ahora son marcadores **arrastrables** (`L.marker` con `draggable: true` y `L.divIcon`) para ajustar la posición con precisión.
+  - Se añade una **línea elástica** (rubber band) desde el último punto hasta el cursor/crosshair con distancia en vivo.
+  - En dispositivos táctiles se muestra un **crosshair fijo en el centro del mapa** para ingreso preciso; la línea elástica se ancla al centro del crosshair mientras el usuario desplaza el mapa.
+  - Se añaden botones **Deshacer** y lista de puntos con eliminación individual.
+  - Los cálculos de distancia/área/perímetro se mantienen en UTM PSAD56.
+- Archivos modificados: `js/app.js`, `css/styles.css`, `index.html`, `sw.js`, `AGENTS.md`.
+- **Bumps de versión:** `2.9.10` → `2.10.0`.
+
 ### v2.9.9 — GPS continuo, suavizado y calibración precisa
 
 - Se reemplaza la lectura única de GPS en `goToMyLocation()` por un seguimiento continuo con `navigator.geolocation.watchPosition`.
@@ -305,7 +316,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.9.9` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son de la v2.9.5 y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.0` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
