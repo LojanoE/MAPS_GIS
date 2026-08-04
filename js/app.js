@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.9.9';
+const APP_VERSION = '2.9.10';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -1371,7 +1371,7 @@ function confirmGoToCoords() {
 // ============================================
 // GPS / LOCATION
 // ============================================
-const LOCATION_SMOOTHING_ALPHA = 0.35; // 0= muy suave/lento, 1=sin suavizado
+const LOCATION_SMOOTHING_ALPHA = 0.75; // 0= muy suave/lento, 1=sin suavizado. Valor alto para seguimiento GPS casi instantaneo
 const LOCATION_MAX_AGE_MS = 10000;
 
 function ensureUserLocationLayer() {
@@ -1431,7 +1431,7 @@ function onLocationUpdate(position) {
   updateUserLocationOnMap(smoothed.lat, smoothed.lng, accuracy);
   updateCoordsDisplay({ lat: smoothed.lat, lng: smoothed.lng });
   if (AppState.isFollowingLocation && AppState.map) {
-    AppState.map.panTo([smoothed.lat, smoothed.lng], { animate: true, duration: 0.25 });
+    AppState.map.panTo([smoothed.lat, smoothed.lng], { animate: true, duration: 0.1 });
   }
 }
 
@@ -1454,6 +1454,10 @@ function startLocationTracking() {
     onLocationError,
     { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
   );
+  // Lectura inmediata para que el punto aparezca sin esperar al primer callback del watch
+  navigator.geolocation.getCurrentPosition(onLocationUpdate, onLocationError, {
+    enableHighAccuracy: true, maximumAge: 0, timeout: 5000
+  });
   return true;
 }
 
@@ -1470,6 +1474,14 @@ function goToMyLocation() {
   showToast('Siguiendo ubicacion GPS...', 'info');
   if (AppState.currentLocation) {
     AppState.map.setView([AppState.smoothedLocation.lat, AppState.smoothedLocation.lng], 18);
+  } else {
+    // Si aun no hay lectura previa, obtener una inmediata y centrar de una vez
+    navigator.geolocation.getCurrentPosition((position) => {
+      onLocationUpdate(position);
+      if (AppState.smoothedLocation) {
+        AppState.map.setView([AppState.smoothedLocation.lat, AppState.smoothedLocation.lng], 18);
+      }
+    }, onLocationError, { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 });
   }
 }
 
