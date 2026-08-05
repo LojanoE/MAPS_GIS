@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.0';
+const APP_VERSION = '2.10.1';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },

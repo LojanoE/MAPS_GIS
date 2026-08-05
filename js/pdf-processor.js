@@ -729,16 +729,26 @@ const PDFProcessor = (() => {
     // Detectar contenido rotado geograficamente (plano no norte-arriba):
     // el eje X de la imagen (tl->tr) debe apuntar al este. Si no, se
     // rectifica el canvas con una transformacion afin inversa.
+    // Umbral bajo (0.03°): corrige tambien la convergencia meridiana de los
+    // planos UTM (~0.1-0.3° entre el rectangulo UTM y el bbox lat/lon de
+    // Leaflet). Sin este warp, el overlay se estira varios metros (los bordes
+    // N y S quedan ~10 m fuera) y nunca alinea bien con el GPS en campo.
     const refLatC = (tl[0] + tr[0] + bl[0] + br[0]) / 4;
     const refLngC = (tl[1] + tr[1] + bl[1] + br[1]) / 4;
-    const mPerDegLatC = 111000;
-    const mPerDegLngC = 111000 * Math.cos(refLatC * Math.PI / 180);
+    // Conversion metros -> grados con formulas geodesicas del elipsoide WGS84
+    // (mas precisa que 111000 fijo).
+    const radC = Math.PI / 180;
+    const latRadC = refLatC * radC;
+    const sin2C = Math.sin(2 * latRadC);
+    const sin4C = Math.sin(4 * latRadC);
+    const mPerDegLatC = 111132.92 - 559.82 * sin2C + 1.175 * sin4C;
+    const mPerDegLngC = 111412.84 * Math.cos(latRadC) - 93.5 * Math.cos(3 * latRadC);
     const toMeters = (p) => [(p[1] - refLngC) * mPerDegLngC, (p[0] - refLatC) * mPerDegLatC];
     const gM = { tl: toMeters(tl), tr: toMeters(tr), bl: toMeters(bl), br: toMeters(br) };
     const anguloDeg = Math.atan2(gM.tr[1] - gM.tl[1], gM.tr[0] - gM.tl[0]) * 180 / Math.PI;
     let finalCanvas = canvas;
-    if (Math.abs(anguloDeg) >= 0.5) {
-      console.log('[createGeoOverlay] Contenido rotado ' + anguloDeg.toFixed(2) + ' grados -> rectificando a norte-arriba');
+    if (Math.abs(anguloDeg) >= 0.03) {
+      console.log('[createGeoOverlay] Contenido rotado ' + anguloDeg.toFixed(3) + ' grados -> rectificando a norte-arriba');
       finalCanvas = rectifyCanvasToNorthUp(canvas, gM);
     }
 

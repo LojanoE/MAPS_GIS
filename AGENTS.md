@@ -142,6 +142,17 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+### v2.10.1 — Fix: overlay de PDF estirado por convergencia meridiana
+
+- Se corrige el desfase de varios metros (típicamente ~5-10 m por borde, sobre todo en N-S) que presentaban los overlays de planos UTM en campo, comparado con Avenza Maps.
+- **Causa raíz:** Leaflet solo soporta `L.imageOverlay` con bbox lat/lon axis-aligned, pero un plano UTM es un rectángulo en su sistema proyectado, rotado ~0.1-0.3° respecto a los paralelos/meridianos por la **convergencia meridiana** (el plano está lejos del meridiano central de la zona). Al estirar la página al bbox lat/lon mínimo sin corregir esa rotación, el overlay quedaba ~0.5-0.7% más grande y deformado (ej. plano de 3.4 km: bordes N/S ~12 m fuera), y la calibración manual (traslación pura) no podía corregirlo.
+- **Cambios en `js/pdf-processor.js` (`createGeoOverlay`):**
+  - El umbral de rectificación `rectifyCanvasToNorthUp()` baja de `0.5°` a `0.03°` para que el warp afín se aplique también a la convergencia meridiana de los planos UTM (equivalente a proyectar el mapa en su CRS, como hace Avenza).
+  - La conversión metros→grados de la rectificación usa fórmulas geodésicas del elipsoide WGS84 en lugar de `111000` fijo (consistente con el offset de calibración de v2.9.9).
+- Los planos rotados 45° (v2.9.2) siguen funcionando igual.
+- **Aplica a mapas ya guardados** al volver a abrirlos (se recalculan al cargar). **Nota:** si tenías un offset de calibración guardado (`maps_gis_offset_<mapId>`) que compensaba este error, usa "Reset" en el panel de calibración; ahora el overlay queda bien sin offset.
+- **Bumps de versión:** `2.10.0` → `2.10.1`.
+
 ### v2.10.0 — Medición con vértices arrastrables y línea elástica
 
 - Se rediseña la experiencia de ingreso de puntos en las herramientas de **distancia** y **área**:
@@ -354,7 +365,7 @@ Nota: las claves `maps_gis_admin` y `maps_gis_app_version` solo existen en `js/a
 - Soporta **GeoTIFF** y **PDF georreferenciado**.
 - GeoTIFF proyectados: overlay manual con `L.imageOverlay` tras transformar esquinas con proj4.
 - GeoTIFF geográficos (EPSG:4326): `GeoRasterLayer`.
-- PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF, viewport bounds o anotaciones PDF.js; se guardan las esquinas en UTM PSAD56. El overlay se renderiza a escala 4 (~0.55 m/px) y soporta páginas con `/Rotate` y marcos rotados geográficamente (ver gotchas). Desde v2.9.8, el modal de georreferenciación permite elegir el **datum de origen** (WGS84 / PSAD56 / automático) para corregir desfases contra otros visores como Avenza Maps.
+- PDFs: extracción de coordenadas por ISO 32000-2, OGC GeoPDF, viewport bounds o anotaciones PDF.js; se guardan las esquinas en UTM PSAD56. El overlay se renderiza a escala 4 (~0.55 m/px) y soporta páginas con `/Rotate` y marcos rotados geográficamente (ver gotchas). Desde v2.9.8, el modal de georreferenciación permite elegir el **datum de origen** (WGS84 / PSAD56 / automático) para corregir desfases contra otros visores como Avenza Maps. Desde v2.10.1, `createGeoOverlay()` rectifica el canvas también por **convergencia meridiana** (umbral 0.03°): sin ese warp afín, el overlay se estiraba ~0.5-0.7% y los bordes N/S quedaban varios metros fuera.
 - Zoom máximo del mapa: **22** (tiles CartoDB con `maxNativeZoom: 19`, re-escalados en 20–22).
 - **Rotación visual del mapa:** rotación puramente visual de todo el mapa con gestos de dos dedos (touch) o `Shift` + scroll (desktop). Usa el plugin local `js/leaflet-rotate.js` y parches locales `js/leaflet-rotate-patches.js` para eliminar el *snap* final y reducir el trabajo por frame. Botón "Volver al norte" e indicador de ángulo en el header. No afecta coordenadas ni georreferenciación; no persiste entre sesiones.
 - **Calibración de mapa:** offset en metros (este/norte) por mapa, editable en pantalla con pasos de 0.1 m (`maps_gis_offset_<mapId>`). Desde v2.9.9 la conversión metros→grados usa fórmulas geodésicas del elipsoide WGS84 para mayor precisión.
