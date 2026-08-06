@@ -142,6 +142,16 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+### v2.10.2 — Fix: seguimiento GPS secuestraba el mapa al colocar marcadores
+
+- **Problema:** al pulsar "Mi ubicación", el mapa quedaba en modo seguir y **cada fix GPS** llamaba `map.panTo()` a la posición del usuario (solo se desactivaba al salir del mapa). Si el usuario se alejaba arrastrando el mapa para colocar un marcador lejos, el siguiente fix lo regresaba al centro (parpadeo) e impedía trabajar fuera de su ubicación.
+- **Cambios en `js/app.js`:**
+  - Nueva función `stopFollowLocation()`: desactiva el re-centrado automático (`isFollowingLocation = false`) y quita `.active` del botón `#btn-location`, **sin detener** el `watchPosition`: el punto azul y la precisión siguen actualizándose en segundo plano.
+  - `goToMyLocation()` ahora es **toggle**: pulsar con seguimiento activo lo desactiva (toast "Seguimiento desactivado"); pulsar sin seguimiento lo activa, marca `.active` y centra (comportamiento previo).
+  - En `initMap()` se añaden listeners `dragstart`, `zoomstart` y `click` → `stopFollowLocation()`: al arrastrar, hacer zoom o tocar el mapa para colocar un punto, el mapa deja de re-centrarse y queda donde el usuario lo dejó.
+  - En `onLocationUpdate()` el `panTo` solo se ejecuta si la distancia entre el centro del mapa y la posición GPS supera `max(50 m, accuracy)` (usando `haversineDistance`): estando quieto el mapa ya no "baila" con el jitter GPS; al caminar sigue centrándose.
+- **Bumps de versión:** `2.10.1` → `2.10.2`.
+
 ### v2.10.1 — Fix: overlay de PDF estirado por convergencia meridiana
 
 - Se corrige el desfase de varios metros (típicamente ~5-10 m por borde, sobre todo en N-S) que presentaban los overlays de planos UTM en campo, comparado con Avenza Maps.
@@ -327,7 +337,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.0` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.2` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`

@@ -20,7 +20,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.1';
+const APP_VERSION = '2.10.2';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -808,6 +808,11 @@ function initMap() {
   AppState.markersLayer = L.layerGroup().addTo(AppState.map);
   AppState.tracksLayer = L.layerGroup().addTo(AppState.map);
   AppState.measurementLayer = L.layerGroup().addTo(AppState.map);
+  // El usuario al interactuar (arrastrar, zoom, tap) desactiva el re-centrado
+  // automatico del GPS; el punto azul sigue actualizandose en segundo plano.
+  AppState.map.on('dragstart', stopFollowLocation);
+  AppState.map.on('zoomstart', stopFollowLocation);
+  AppState.map.on('click', stopFollowLocation);
   AppState.map.on('click', (e) => {
     if (AppState.isMeasurementMode && !AppState.measurementFinished && !AppState.measurementIsDragging) {
       addMeasurementPoint(e.latlng);
@@ -1581,7 +1586,17 @@ function onLocationUpdate(position) {
   updateUserLocationOnMap(smoothed.lat, smoothed.lng, accuracy);
   updateCoordsDisplay({ lat: smoothed.lat, lng: smoothed.lng });
   if (AppState.isFollowingLocation && AppState.map) {
-    AppState.map.panTo([smoothed.lat, smoothed.lng], { animate: true, duration: 0.1 });
+    // Solo re-centrar si el usuario se alejo lo suficiente del centro del mapa;
+    // si esta quieto o casi quieto (jitter GPS), el mapa no baila con cada fix.
+    const center = AppState.map.getCenter();
+    const threshold = Math.max(50, accuracy || 0);
+    const dist = haversineDistance(
+      { lat: center.lat, lng: center.lng },
+      { lat: smoothed.lat, lng: smoothed.lng }
+    );
+    if (dist > threshold) {
+      AppState.map.panTo([smoothed.lat, smoothed.lng], { animate: true, duration: 0.1 });
+    }
   }
 }
 
@@ -1618,12 +1633,33 @@ function stopLocationTracking() {
   }
 }
 
+// Detiene el re-centrado automatico del mapa (seguimiento activo) pero mantiene
+// el watchPosition vivo: el punto azul y la precision siguen actualizandose.
+function stopFollowLocation() {
+  AppState.isFollowingLocation = false;
+  const btn = document.getElementById('btn-location');
+  if (btn) btn.classList.remove('active');
+}
+
+// Arma el seguimiento activo. Debe llamarse DESPUES del centrado inicial:
+// setView dispara `zoomstart` (que llama stopFollowLocation) si cambia el zoom.
+function armFollowLocation() {
+  AppState.isFollowingLocation = true;
+  const btn = document.getElementById('btn-location');
+  if (btn) btn.classList.add('active');
+}
+
 function goToMyLocation() {
   if (!startLocationTracking()) return;
-  AppState.isFollowingLocation = true;
+  if (AppState.isFollowingLocation) {
+    stopFollowLocation();
+    showToast('Seguimiento desactivado', 'info');
+    return;
+  }
   showToast('Siguiendo ubicacion GPS...', 'info');
   if (AppState.currentLocation) {
     AppState.map.setView([AppState.smoothedLocation.lat, AppState.smoothedLocation.lng], 18);
+    armFollowLocation();
   } else {
     // Si aun no hay lectura previa, obtener una inmediata y centrar de una vez
     navigator.geolocation.getCurrentPosition((position) => {
@@ -1631,6 +1667,7 @@ function goToMyLocation() {
       if (AppState.smoothedLocation) {
         AppState.map.setView([AppState.smoothedLocation.lat, AppState.smoothedLocation.lng], 18);
       }
+      armFollowLocation();
     }, onLocationError, { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 });
   }
 }
@@ -3203,7 +3240,7 @@ function initEventListeners() {
   document.getElementById('btn-back').addEventListener('click', () => {
     resetMapVisualRotation(); // al salir del mapa se limpia la rotación visual
     stopLocationTracking();   // y se detiene el seguimiento GPS continuo
-    AppState.isFollowingLocation = false;
+    stopFollowLocation();     // limpia el estado visual del botón de ubicación
     if (AppState.isTracking) {
       if (!confirm('Hay un recorrido en curso. ¿Salir y guardarlo?')) return;
       stopTrack().finally(() => {
