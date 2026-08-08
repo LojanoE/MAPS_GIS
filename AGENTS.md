@@ -15,19 +15,19 @@ Además, la app incluye **recorridos GPS** (tracks), **herramientas de medición
 
 ```
 C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
-├── index.html              # UI única, carga todos los scripts y CSS (~1050 líneas)
-├── sw.js                   # Service Worker con cache-first y versionado (245 líneas)
+├── index.html              # UI única, carga todos los scripts y CSS (~1083 líneas)
+├── sw.js                   # Service Worker con cache-first y versionado (247 líneas)
 ├── manifest.json           # Manifest PWA
 ├── config.json             # Listas por defecto para selects LSM
-├── css/styles.css          # Estilos mobile-first, tema oscuro por defecto (~2507 líneas)
+├── css/styles.css          # Estilos mobile-first, tema oscuro por defecto (~2375 líneas)
 ├── js/
-│   ├── storage.js          # IndexedDB: mapas, fotos, recorridos (~548 líneas)
-│   ├── pdf-processor.js    # Procesamiento y georreferenciación de PDFs (~803 líneas)
+│   ├── storage.js          # IndexedDB: mapas, fotos, recorridos (~456 líneas)
+│   ├── pdf-processor.js    # Procesamiento y georreferenciación de PDFs (~754 líneas)
 │   ├── leaflet-rotate.js   # Plugin de rotación para Leaflet (Raruto/leaflet-rotate)
 │   ├── leaflet-rotate-patches.js # Parches de fluidez sobre leaflet-rotate
-│   ├── app.js              # Lógica principal: UI, mapa, marcadores (~3297 líneas)
-│   ├── sync-manager.js     # Sincronización unidireccional a Supabase (~266 líneas)
-│   └── admin-manager.js    # Panel de administración remoto (Supabase) (~924 líneas)
+│   ├── app.js              # Lógica principal: UI, mapa, marcadores (~3471 líneas)
+│   ├── sync-manager.js     # Sincronización unidireccional a Supabase (~236 líneas)
+│   └── admin-manager.js    # Panel de administración remoto (Supabase) (~815 líneas)
 ├── assets/
 │   └── logo_lab_chino_PNG.png   # Logo usado en el estampado de fotos LSM
 ├── js/app.js.backup.v161   # Backup antiguo, no usado en producción
@@ -342,9 +342,9 @@ Novedades en esta versión:
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
   - `index.html:20,25` — query strings `?v=X.Y.Z` en `<link>` de `css/styles.css` y `<preload>` del logo
-  - `index.html:975,978,981,984,987` — query strings `?v=X.Y.Z` en los `<script>` locales
-  - `sw.js:21-26,28` — query strings `?v=X.Y.Z` en `CORE_ASSETS` (línea 27 es `manifest.json` y 29 `config.json`, sin query)
-  - `app.js:570` — URL del logo con versión (`assets/logo_lab_chino_PNG.png?v=` + `APP_VERSION`)
+  - `index.html:977,978,1008,1011,1014,1017,1020` — query strings `?v=X.Y.Z` en los `<script>` locales (`leaflet-rotate.js`, `leaflet-rotate-patches.js`, `storage.js`, `pdf-processor.js`, `app.js`, `sync-manager.js`, `admin-manager.js`)
+  - `sw.js:21-28,30` — query strings `?v=X.Y.Z` en `CORE_ASSETS` (línea 29 es `manifest.json` y 31 `config.json`, sin query)
+  - `app.js:629` — URL del logo con versión (`assets/logo_lab_chino_PNG.png?v=` + `APP_VERSION`)
   - Los links de Google Fonts en `index.html:15-17` no llevan query string de versión.
 
 ## Almacenamiento local (referencia rápida)
