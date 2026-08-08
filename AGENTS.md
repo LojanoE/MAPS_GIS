@@ -142,6 +142,16 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+### v2.10.4 — Fix: fecha de hoy mostraba el día anterior en el modal de exportación
+
+- **Problema:** el modal de exportación mostraba "Solo los de hoy (07/08/2026)" cuando la fecha local era 08/08/2026 (un día menos).
+- **Causa raíz:** `openExportModal()` pasaba un string solo-fecha (`getLocalDateString()` → `"YYYY-MM-DD"`) a `formatDate()`, que hacía `new Date(str)`. En JavaScript, un string solo-fecha se parsea como **medianoche UTC**; en zonas UTC negativas (Ecuador UTC-5) cae en la tarde del **día anterior** local, y `toLocaleDateString` lo muestra un día atrás.
+- **Cambios en `js/app.js`:**
+  - Nueva función `parseLocalDate()`: los strings `YYYY-MM-DD` (sin hora) se parsean como fecha **local** (`new Date(año, mes-1, día)`); los ISO completos con hora/zona siguen igual. `formatDate()` y `formatDateTime()` la usan.
+  - El filtro "Solo los de hoy" de la exportación comparaba la fecha **UTC** del `createdAt` (`startsWith`) contra la fecha local: un marcador creado entre 19:00–23:59 local caía en el día siguiente. Ahora usa `getMarkerDayLayer(m) === todayStr` (día local, consistente con las capas diarias). Lo mismo para recorridos.
+- **No afecta:** la columna `Fecha_Hora` del Excel (verificado con SheetJS 0.20.1: el serial conserva fecha/hora local), el estampado de fotos, ni la agrupación por día del panel de marcadores.
+- **Bumps de versión:** `2.10.3` → `2.10.4`.
+
 ### v2.10.3 — Fix: transformación de datum PSAD56→WGS84 correcta para Ecuador (EPSG:3990)
 
 - **Problema:** los overlays de PDF (y GeoTIFFs PSAD56) aparecían desplazados ~+5 a +8 m hacia el suroeste respecto a Avenza Maps y al GPS en campo; el usuario debía calibrar manualmente ~+5 m Este / +5 m Norte en cada mapa.
@@ -348,7 +358,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.3` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.4` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`

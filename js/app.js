@@ -26,7 +26,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.3';
+const APP_VERSION = '2.10.4';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -344,12 +344,22 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
+function parseLocalDate(isoString) {
+  // Los strings solo-fecha "YYYY-MM-DD" se parsean como medianoche UTC por
+  // defecto, lo que en zonas UTC negativas (Ecuador UTC-5) muestra el dia
+  // anterior. Parsearlos siempre como fecha local.
+  if (typeof isoString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(isoString)) {
+    const p = isoString.split('-');
+    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  }
+  return new Date(isoString);
+}
 function formatDate(isoString) {
-  const d = new Date(isoString);
+  const d = parseLocalDate(isoString);
   return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 function formatDateTime(isoString) {
-  const d = new Date(isoString);
+  const d = parseLocalDate(isoString);
   return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 function getLocalDateString(date) {
@@ -2839,7 +2849,7 @@ function getExportMarkers() {
   const type = getExportType();
   if (type === 'today') {
     const todayStr = getLocalDateString();
-    return markers.filter(m => m.createdAt && m.createdAt.startsWith(todayStr));
+    return markers.filter(m => m.createdAt && getMarkerDayLayer(m) === todayStr);
   } else {
     const fromStr = document.getElementById('export-date-from').value || getLocalDateString();
     const toStr = document.getElementById('export-date-to').value || getLocalDateString();
@@ -2859,7 +2869,7 @@ async function exportToZIP() {
   const toDate = new Date(toStr + 'T23:59:59.999');
 
   const filteredTracks = dateType === 'today'
-    ? tracks.filter(t => t.createdAt && t.createdAt.startsWith(getLocalDateString()))
+    ? tracks.filter(t => t.createdAt && getLocalDateString(new Date(t.createdAt)) === getLocalDateString())
     : tracks.filter(t => { if (!t.createdAt) return false; const d = new Date(t.createdAt); return d >= fromDate && d <= toDate; });
 
   if (markers.length === 0 && filteredTracks.length === 0) { showToast('No hay marcadores ni recorridos para exportar', 'error'); return; }
