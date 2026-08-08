@@ -142,6 +142,17 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+### v2.10.3 — Fix: transformación de datum PSAD56→WGS84 correcta para Ecuador (EPSG:3990)
+
+- **Problema:** los overlays de PDF (y GeoTIFFs PSAD56) aparecían desplazados ~+5 a +8 m hacia el suroeste respecto a Avenza Maps y al GPS en campo; el usuario debía calibrar manualmente ~+5 m Este / +5 m Norte en cada mapa.
+- **Causa raíz:** la app convertía PSAD56→WGS84 con `+towgs84=-288,175,-376` (**EPSG:1201 "PSAD56 to WGS 84 (1)" DMA-mean**, precisión declarada 42 m), mientras Avenza/QGIS/PROJ usan para Ecuador continental la transformación específica **EPSG:3990 "PSAD56 to WGS 84 (14)"** (7 parámetros Coordinate Frame, precisión 5 m). Verificado con pyproj sobre las GPTS reales de los GeoPDFs del usuario (zona ~-3.58°, -78.47°): la diferencia entre ambas transformaciones es **+7.5 m Este / +8.1 m Norte**, uniforme en todo el mapa.
+- **Cambio en `js/app.js:6-7`:** las definiciones `EPSG:24877` y `PSAD56GEO` ahora usan `+towgs84=-60.31,245.935,31.008,12.324,3.755,-7.37,0.447` (EPSG:3990; las rotaciones llevan signo invertido porque proj4js usa la convención *Position Vector* y EPSG:3990 es *Coordinate Frame*; equivalencia verificada a 0.0000 m con pyproj). Es el único punto donde se define el datum en producción: corrige a la vez overlays PDF, GeoTIFFs PSAD56 y el este/norte de los marcadores.
+- **Impacto en datos existentes:**
+  - **Offsets de calibración guardados** (`maps_gis_offset_<mapId>`) que compensaban este error deben resetearse (botón "Reset" en el panel de calibración); el overlay ahora queda alineado sin offset.
+  - Los mapas guardados en IndexedDB se recalculan al abrirlos: no requieren re-subirse.
+  - Marcadores: lat/lng WGS84 (GPS) y los datos en Supabase **no cambian**. El este/norte PSAD56 de marcadores **nuevos** diferirá ~7-8 m de los creados antes del fix (los guardados conservan sus valores almacenados).
+- **Bumps de versión:** `2.10.2` → `2.10.3`.
+
 ### v2.10.2 — Fix: seguimiento GPS secuestraba el mapa al colocar marcadores
 
 - **Problema:** al pulsar "Mi ubicación", el mapa quedaba en modo seguir y **cada fix GPS** llamaba `map.panTo()` a la posición del usuario (solo se desactivaba al salir del mapa). Si el usuario se alejaba arrastrando el mapa para colocar un marcador lejos, el siguiente fix lo regresaba al centro (parpadeo) e impedía trabajar fuera de su ubicación.
@@ -337,7 +348,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.2` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.3` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`

@@ -3,8 +3,14 @@
  * Visor de mapas y marcadores. Todo local, sin base de datos.
  */
 
-const PSAD56_UTM_17S = '+proj=utm +zone=17 +south +ellps=intl +towgs84=-288,175,-376,0,0,0,0 +units=m +no_defs';
-const PSAD56_GEOGRAPHIC = '+proj=longlat +ellps=intl +towgs84=-288,175,-376,0,0,0,0 +no_defs';
+// Transformacion PSAD56 -> WGS84 para Ecuador: EPSG:3990 "PSAD56 to WGS 84 (14)"
+// (7-param Coordinate Frame: dx=-60.31 dy=245.935 dz=31.008 rx=-12.324" ry=-3.755" rz=7.37" s=0.447ppm).
+// Las rotaciones van con signo invertido porque proj4js usa la convencion Position Vector.
+// Es la misma transformacion que usan Avenza Maps y QGIS/PROJ para Ecuador continental.
+// Antes se usaba EPSG:1201 DMA-mean (-288,175,-376), que desfasaba el overlay
+// ~7.5 m al oeste y ~8.1 m al sur en la zona de trabajo (v2.10.3).
+const PSAD56_UTM_17S = '+proj=utm +zone=17 +south +ellps=intl +towgs84=-60.31,245.935,31.008,12.324,3.755,-7.37,0.447 +units=m +no_defs';
+const PSAD56_GEOGRAPHIC = '+proj=longlat +ellps=intl +towgs84=-60.31,245.935,31.008,12.324,3.755,-7.37,0.447 +no_defs';
 const WGS84 = 'EPSG:4326';
 proj4.defs('EPSG:24877', PSAD56_UTM_17S);
 proj4.defs('PSAD56GEO', PSAD56_GEOGRAPHIC);
@@ -20,7 +26,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.2';
+const APP_VERSION = '2.10.3';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
