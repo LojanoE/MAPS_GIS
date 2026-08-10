@@ -26,7 +26,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.4';
+const APP_VERSION = '2.10.6';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -41,6 +41,7 @@ const AppState = {
   map: null, mapOverlay: null, markersLayer: null, userLocationLayer: null,
   tracksLayer: null, activeTrackLayer: null,
   isAddMarkerMode: false, pendingMarkerLatLng: null, currentMapId: null,
+  markerPlacementMode: null,
   currentMapType: 'tiff', mapTitle: '', editingMarkerId: null,
   selectedCategory: 'red', darkTiles: null, lightTiles: null,
   pendingPDF: null, pendingPhotos: [], previewPhotoIndex: -1,
@@ -835,9 +836,7 @@ function initMap() {
       return;
     }
     if (AppState.isAddMarkerMode) {
-      hideGpsSnackbar();
-      if (AppState.currentMarkerMode === 'lsm') openLSMLoginOrMarkerModal(e.latlng);
-      else openMarkerModal(e.latlng);
+      placeMarkerAt(e.latlng);
     }
   });
   AppState.map.on('dblclick', (e) => {
@@ -932,7 +931,8 @@ function toggleMeasurementMode() {
     if (AppState.isAddMarkerMode) {
       AppState.isAddMarkerMode = false;
       document.getElementById('btn-add-marker').classList.remove('active');
-      hideGpsSnackbar();
+      exitMarkerPlacement();
+      closeMarkerPlacementModal();
     }
     AppState.map.doubleClickZoom.disable();
     showToast('Modo medicion activo', 'info');
@@ -1688,57 +1688,75 @@ function goToMyLocation() {
   }
 }
 
-let _gpsSnackbarCoords = null;
-let _gpsSnackbarWatchId = null;
+// ============================================
+// COLOCACION DE MARCADOR (crosshair / GPS)
+// ============================================
 
-function requestGpsForMarker() {
-  const snackbar = document.getElementById('gps-snackbar');
-  const textEl = document.getElementById('gps-snackbar-text');
-  if (!snackbar || !textEl) return;
-  snackbar.classList.add('hidden');
-  _gpsSnackbarCoords = null;
-
-  // Si ya hay seguimiento continuo con una lectura reciente, usarla.
-  if (AppState.smoothedLocation && AppState.currentLocation &&
-      (Date.now() - AppState.currentLocation.timestamp) < LOCATION_MAX_AGE_MS) {
-    const { lat, lng } = AppState.smoothedLocation;
-    const accuracy = AppState.locationAccuracy;
-    _gpsSnackbarCoords = { lat, lng, accuracy };
-    textEl.textContent = 'Ubicacion detectada (' + Math.round(accuracy || 0) + 'm)';
-    snackbar.classList.remove('hidden');
-    return;
-  }
-
-  if (!navigator.geolocation) return;
-  navigator.geolocation.getCurrentPosition((position) => {
-    const { latitude: lat, longitude: lng, accuracy, altitude } = position.coords;
-    if (altitude !== null && altitude !== undefined && !isNaN(altitude)) {
-      AppState.currentAltitude = altitude;
-    }
-    _gpsSnackbarCoords = { lat, lng, accuracy };
-    textEl.textContent = 'Ubicacion detectada (' + Math.round(accuracy) + 'm)';
-    snackbar.classList.remove('hidden');
-  }, () => {
-    snackbar.classList.add('hidden');
-    _gpsSnackbarCoords = null;
-  }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 });
+function openMarkerPlacementModal() {
+  const modal = document.getElementById('marker-placement-modal');
+  if (modal) modal.classList.remove('hidden');
 }
 
-function useGpsForMarker() {
-  if (!_gpsSnackbarCoords) return;
-  const { lat, lng } = _gpsSnackbarCoords;
-  hideGpsSnackbar();
+function closeMarkerPlacementModal() {
+  const modal = document.getElementById('marker-placement-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function selectMarkerPlacement(mode) {
+  closeMarkerPlacementModal();
+  if (mode === 'gps') { placeMarkerAtGps(); return; }
+  AppState.markerPlacementMode = 'crosshair';
+  const crosshair = document.getElementById('marker-crosshair');
+  const bar = document.getElementById('marker-place-bar');
+  if (crosshair) crosshair.classList.remove('hidden');
+  if (bar) bar.classList.remove('hidden');
+  showToast('Mueve el mapa y pulsa Colocar aqui (o toca el mapa)', 'info');
+}
+
+function exitMarkerPlacement() {
+  AppState.markerPlacementMode = null;
+  const crosshair = document.getElementById('marker-crosshair');
+  const bar = document.getElementById('marker-place-bar');
+  if (crosshair) crosshair.classList.add('hidden');
+  if (bar) bar.classList.add('hidden');
+}
+
+function placeMarkerAt(latlng) {
+  exitMarkerPlacement();
+  closeMarkerPlacementModal();
   AppState.isAddMarkerMode = false;
   document.getElementById('btn-add-marker').classList.remove('active');
-  const latlng = { lat, lng };
   if (AppState.currentMarkerMode === 'lsm') openLSMLoginOrMarkerModal(latlng);
   else openMarkerModal(latlng);
 }
 
-function hideGpsSnackbar() {
-  const snackbar = document.getElementById('gps-snackbar');
-  if (snackbar) snackbar.classList.add('hidden');
-  _gpsSnackbarCoords = null;
+function placeMarkerAtGps() {
+  // Reutiliza la lectura suavizada si es reciente; si no, pide una nueva.
+  if (AppState.smoothedLocation && AppState.currentLocation &&
+      (Date.now() - AppState.currentLocation.timestamp) < LOCATION_MAX_AGE_MS) {
+    const { lat, lng } = AppState.smoothedLocation;
+    showToast('Ubicacion (' + Math.round(AppState.locationAccuracy || 0) + 'm)', 'info');
+    placeMarkerAt({ lat, lng });
+    return;
+  }
+  if (!navigator.geolocation) {
+    showToast('GPS no disponible en este dispositivo', 'error');
+    if (AppState.isAddMarkerMode) openMarkerPlacementModal();
+    return;
+  }
+  showToast('Obteniendo ubicacion...', 'info');
+  navigator.geolocation.getCurrentPosition((position) => {
+    if (!AppState.isAddMarkerMode) return; // el usuario cancelo mientras se obtenia el fix
+    const { latitude: lat, longitude: lng, accuracy, altitude } = position.coords;
+    if (altitude !== null && altitude !== undefined && !isNaN(altitude)) {
+      AppState.currentAltitude = altitude;
+    }
+    showToast('Ubicacion (' + Math.round(accuracy) + 'm)', 'info');
+    placeMarkerAt({ lat, lng });
+  }, () => {
+    showToast('No se pudo obtener la ubicacion GPS', 'error');
+    if (AppState.isAddMarkerMode) openMarkerPlacementModal();
+  }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 });
 }
 
 // ============================================
@@ -3261,12 +3279,16 @@ function initEventListeners() {
       if (!confirm('Hay un recorrido en curso. ¿Salir y guardarlo?')) return;
       stopTrack().finally(() => {
         stopMeasurement();
+        exitMarkerPlacement();
+        closeMarkerPlacementModal();
         showScreen('home-screen');
         loadMapsList();
         updateMarkerCountBadge();
       });
     } else {
       stopMeasurement();
+      exitMarkerPlacement();
+      closeMarkerPlacementModal();
       showScreen('home-screen');
       loadMapsList();
       updateMarkerCountBadge();
@@ -3280,10 +3302,10 @@ function initEventListeners() {
     document.getElementById('btn-add-marker').classList.toggle('active', AppState.isAddMarkerMode);
     if (AppState.isAddMarkerMode) {
       if (AppState.isMeasurementMode) stopMeasurement();
-      showToast('Modo marcador activo', 'info');
-      requestGpsForMarker();
+      openMarkerPlacementModal();
     } else {
-      hideGpsSnackbar();
+      exitMarkerPlacement();
+      closeMarkerPlacementModal();
       showToast('Modo marcador desactivado', 'info');
     }
   });
@@ -3305,8 +3327,18 @@ function initEventListeners() {
   document.getElementById('btn-confirm-goto').addEventListener('click', confirmGoToCoords);
   document.getElementById('btn-goto-qc').addEventListener('click', () => selectGotoType('qc'));
   document.getElementById('btn-goto-lsm').addEventListener('click', () => selectGotoType('lsm'));
-  document.getElementById('btn-use-gps').addEventListener('click', useGpsForMarker);
-  document.getElementById('btn-dismiss-gps').addEventListener('click', hideGpsSnackbar);
+  document.getElementById('btn-place-crosshair').addEventListener('click', () => selectMarkerPlacement('crosshair'));
+  document.getElementById('btn-place-gps').addEventListener('click', () => selectMarkerPlacement('gps'));
+  document.getElementById('btn-cancel-placement').addEventListener('click', () => {
+    closeMarkerPlacementModal();
+    exitMarkerPlacement();
+    AppState.isAddMarkerMode = false;
+    document.getElementById('btn-add-marker').classList.remove('active');
+    showToast('Modo marcador desactivado', 'info');
+  });
+  document.getElementById('btn-place-here').addEventListener('click', () => {
+    if (AppState.map && AppState.isAddMarkerMode) placeMarkerAt(AppState.map.getCenter());
+  });
   var gotoNorte = document.getElementById('goto-norte');
   var gotoEste = document.getElementById('goto-este');
   if (gotoNorte) gotoNorte.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmGoToCoords(); if (e.key === 'Escape') closeGoToCoordsModal(); });

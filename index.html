@@ -17,12 +17,12 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
 
   <!-- App CSS -->
-  <link rel="stylesheet" href="css/styles.css?v=2.10.4">
+  <link rel="stylesheet" href="css/styles.css?v=2.10.6">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.10.4">
+  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.10.6">
 </head>
 <body>
 
@@ -48,7 +48,7 @@
               <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:999px;">v2.10.4</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:999px;">v2.10.6</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -183,6 +183,13 @@
         <div class="crosshair-dot"></div>
       </div>
 
+      <!-- Crosshair para colocar marcador en el centro del mapa -->
+      <div id="marker-crosshair" class="measurement-crosshair hidden">
+        <div class="crosshair-h"></div>
+        <div class="crosshair-v"></div>
+        <div class="crosshair-dot"></div>
+      </div>
+
       <!-- Panel flotante de medicion -->
       <div id="measurement-panel" class="measurement-panel hidden">
         <div class="measurement-header">
@@ -209,6 +216,11 @@
         </div>
         <p class="measurement-hint">Toca el mapa para agregar puntos. Arrastra los puntos para ajustar. Doble tap para terminar.</p>
         <div id="measurement-points-list" class="measurement-points-list hidden"></div>
+      </div>
+
+      <!-- Barra flotante: colocar marcador en el centro (crosshair) -->
+      <div id="marker-place-bar" class="marker-place-bar hidden">
+        <button id="btn-place-here" class="btn-sm btn-primary" title="Colocar marcador en el centro del mapa">Colocar aquí</button>
       </div>
 
       <!-- Botones flotantes del mapa -->
@@ -634,6 +646,39 @@
     </div>
   </div>
 
+  <!-- ==================== MODAL SELECCION DE COLOCACION DE MARCADOR ==================== -->
+  <div id="marker-placement-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Colocar marcador</h3>
+      <p class="type-info">¿Dónde deseas colocar el marcador?</p>
+      <div class="marker-type-selector">
+        <button id="btn-place-crosshair" class="marker-type-card">
+          <span class="type-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="12" r="7"/>
+              <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+            </svg>
+          </span>
+          <span class="type-title">Crosshair</span>
+          <span class="type-desc">Mover el mapa y colocar en el centro</span>
+        </button>
+        <button id="btn-place-gps" class="marker-type-card">
+          <span class="type-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+              <circle cx="12" cy="9" r="2.5"/>
+            </svg>
+          </span>
+          <span class="type-title">Mi ubicación</span>
+          <span class="type-desc">Usar la posición GPS actual</span>
+        </button>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-cancel-placement" class="btn-secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== MODAL BUSCAR POR COORDENADAS ==================== -->
   <div id="go-to-coords-modal" class="modal hidden">
     <div class="modal-content">
@@ -959,14 +1004,6 @@
     </div>
   </div>
 
-  <!-- Snackbar GPS: usar ubicacion actual para marcador -->
-  <div id="gps-snackbar" class="gps-snackbar hidden">
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
-    <span id="gps-snackbar-text">Ubicacion detectada</span>
-    <button id="btn-use-gps" class="gps-snackbar-btn">Usar aqui</button>
-    <button id="btn-dismiss-gps" class="gps-snackbar-close">&times;</button>
-  </div>
-
   <!-- Toast de notificaciones -->
   <div id="toast" class="toast hidden"></div>
 
@@ -974,8 +1011,8 @@
 
   <!-- Leaflet JS -->
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script defer src="js/leaflet-rotate.js?v=2.10.4"></script>
-  <script defer src="js/leaflet-rotate-patches.js?v=2.10.4"></script>
+  <script defer src="js/leaflet-rotate.js?v=2.10.6"></script>
+  <script defer src="js/leaflet-rotate-patches.js?v=2.10.6"></script>
 
   <!-- Proj4js -->
   <script defer src="https://unpkg.com/proj4@2.9.2/dist/proj4.js"></script>
@@ -1005,19 +1042,19 @@
   <script defer src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
 
   <!-- Storage Module (IndexedDB) -->
-  <script defer src="js/storage.js?v=2.10.4"></script>
+  <script defer src="js/storage.js?v=2.10.6"></script>
 
   <!-- PDF Processor -->
-  <script defer src="js/pdf-processor.js?v=2.10.4"></script>
+  <script defer src="js/pdf-processor.js?v=2.10.6"></script>
 
   <!-- App Main Logic -->
-  <script defer src="js/app.js?v=2.10.4"></script>
+  <script defer src="js/app.js?v=2.10.6"></script>
 
   <!-- Sync Manager (Offline-first Supabase sync) -->
-  <script defer src="js/sync-manager.js?v=2.10.4"></script>
+  <script defer src="js/sync-manager.js?v=2.10.6"></script>
 
   <!-- Admin Manager (Remote admin panel) -->
-  <script defer src="js/admin-manager.js?v=2.10.4"></script>
+  <script defer src="js/admin-manager.js?v=2.10.6"></script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>

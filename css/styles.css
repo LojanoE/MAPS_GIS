@@ -1702,66 +1702,29 @@ img {
   color: var(--danger);
 }
 
-/* --- GPS Snackbar --- */
-.gps-snackbar {
-  position: fixed;
-  bottom: 70px;
+/* --- Barra flotante: colocar marcador en el centro (crosshair) --- */
+.marker-place-bar {
+  position: absolute;
+  bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
+  z-index: 1000;
   background: var(--bg-secondary);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-md);
-  padding: 10px 16px;
-  z-index: 1500;
+  border-radius: 999px;
+  padding: 6px;
   box-shadow: 0 4px 16px var(--shadow);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.85rem;
-  color: var(--text-primary);
-  max-width: 90%;
   animation: toastIn 0.3s ease;
 }
 
-.gps-snackbar.hidden {
-  display: none !important;
+.marker-place-bar.hidden {
+  display: none;
 }
 
-.gps-snackbar svg {
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-.gps-snackbar-btn {
-  background: var(--accent);
-  color: white;
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 6px 12px;
-  font-weight: 600;
-  font-size: 0.8rem;
-  cursor: pointer;
+.marker-place-bar .btn-sm {
+  flex: none;
   white-space: nowrap;
-  transition: background var(--transition);
-}
-
-.gps-snackbar-btn:hover {
-  background: var(--accent-hover);
-}
-
-.gps-snackbar-close {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 1.2rem;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
-  transition: color var(--transition);
-}
-
-.gps-snackbar-close:hover {
-  color: var(--text-primary);
+  padding: 8px 20px;
 }
 
 /* --- Admin Panel --- */
@@ -2318,8 +2281,10 @@ img {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 12px;
-  width: 260px;
+  padding: 8px 10px;
+  width: 240px;
+  max-height: 55vh;
+  overflow-y: auto;
   box-shadow: 0 4px 16px var(--shadow);
 }
 
@@ -2331,41 +2296,46 @@ img {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .measurement-title {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .measurement-header .icon-btn {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 .measurement-type {
   display: flex;
   gap: 4px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   background: var(--bg-primary);
-  padding: 4px;
+  padding: 3px;
   border-radius: var(--radius-sm);
 }
 
 .measurement-type-btn {
   flex: 1;
-  padding: 6px 4px;
+  min-width: 0;
+  padding: 5px 4px;
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .measurement-type-btn:hover {
@@ -2379,37 +2349,43 @@ img {
 
 .measurement-result {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 10px;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 8px;
   background: var(--bg-primary);
   border-radius: var(--radius-sm);
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 #measurement-value {
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--accent);
   font-family: monospace;
 }
 
 .measurement-secondary {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-secondary);
-  min-height: 1rem;
 }
 
 .measurement-actions {
   display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .measurement-actions .btn-sm {
-  flex: 1;
+  flex: 1 1 calc(50% - 3px);
   min-width: 0;
+  padding: 6px 8px;
+  font-size: 0.78rem;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .measurement-actions .measurement-add-point {
@@ -2423,19 +2399,19 @@ img {
 }
 
 .measurement-hint {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
   text-align: center;
-  margin: 0 0 8px 0;
-  line-height: 1.3;
+  margin: 0 0 4px 0;
+  line-height: 1.25;
 }
 
 .measurement-points-list {
-  max-height: 140px;
+  max-height: 84px;
   overflow-y: auto;
   background: var(--bg-primary);
   border-radius: var(--radius-sm);
-  padding: 8px;
+  padding: 6px;
 }
 
 .measurement-points-list.hidden {
@@ -2443,25 +2419,25 @@ img {
 }
 
 .measurement-points-header {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-secondary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .measurement-points-items {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .measurement-point-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-primary);
-  padding: 4px 6px;
+  padding: 2px 6px;
   background: var(--bg-secondary);
   border-radius: var(--radius-sm);
 }

@@ -139,8 +139,30 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 19. Verificar zoom hasta nivel 22 sobre un overlay PDF (nítido hasta ~20, suave en 21–22).
 20. **Rotación visual del mapa:** rotar el mapa con gesto de dos dedos (emulador/dispositivo) o `Shift` + scroll (desktop); verificar que el indicador muestra el ángulo, el botón "Volver al norte" resetea a `0°`, y pan/zoom/clics siguen funcionando correctamente mientras está rotado.
 21. Verificar que la app funcione offline tras la primera carga.
+22. **Colocación de marcador (v2.10.6):** activar el modo marcador y verificar que aparece el diálogo de elección. Opción Crosshair: la mira y el botón "Colocar aquí" se muestran, mover el mapa y colocar en el centro; tocar el mapa también coloca. Opción Mi ubicación: el modal QC/LSM se abre en la posición GPS (toast con precisión); si el GPS falla, reaparece el diálogo. Cancelar desactiva el modo. Verificar que al activar medición o salir del mapa se ocultan la mira y la barra.
 
 ## Notas de versión
+
+### v2.10.6 — Elección de colocación de marcador: crosshair o GPS
+
+- Al activar el modo "agregar marcador" (`#btn-add-marker`) ya no aparece el snackbar GPS: ahora se abre el modal `#marker-placement-modal` que pregunta **dónde colocar el marcador**, con dos tarjetas (patrón de `#marker-type-modal`):
+  - **Crosshair:** muestra `#marker-crosshair` (reutiliza las clases `.measurement-crosshair`, sin CSS nuevo) fijo en el centro del mapa + barra flotante `#marker-place-bar` con el botón **"Colocar aquí"** (`#btn-place-here`), que coloca en `AppState.map.getCenter()`. Tocar el mapa directamente sigue funcionando.
+  - **Mi ubicación (GPS):** `placeMarkerAtGps()` usa `AppState.smoothedLocation` si es reciente (`LOCATION_MAX_AGE_MS`) o pide un fix con `getCurrentPosition`, muestra toast con la precisión y abre el modal QC/LSM directamente. Si el GPS falla, se reabre el modal de elección.
+  - **Cancelar** desactiva el modo marcador.
+- Funciones nuevas en `js/app.js` (~línea 1691, en el lugar del antiguo snackbar): `openMarkerPlacementModal`, `closeMarkerPlacementModal`, `selectMarkerPlacement`, `exitMarkerPlacement`, `placeMarkerAt` (helper único que cierra todo, desactiva el modo y abre el modal QC/LSM), `placeMarkerAtGps`. Estado nuevo: `AppState.markerPlacementMode` (`null` | `'crosshair'`).
+- **Eliminado:** `#gps-snackbar` (HTML, CSS `.gps-snackbar*`, listeners `#btn-use-gps`/`#btn-dismiss-gps`) y las funciones `requestGpsForMarker` / `useGpsForMarker` / `hideGpsSnackbar` con `_gpsSnackbarCoords`/`_gpsSnackbarWatchId`.
+- `exitMarkerPlacement()` + `closeMarkerPlacementModal()` se llaman también al activar medición (exclusión mutua) y al salir de la pantalla del mapa (`#btn-back`).
+- **Bumps de versión:** `2.10.5` → `2.10.6`.
+
+### v2.10.5 — Panel de medición compacto y botones ajustados
+
+- **Problema:** el panel flotante de medición crecía demasiado al ingresar puntos (lista de hasta 140 px + secciones con márgenes amplios), tapando el crosshair central en pantallas móviles; además, los 4 botones de acción (Agregar/Terminar/Deshacer/Borrar) se desbordaban de su contenedor en una sola fila dentro del panel de 260 px.
+- **Cambios en `css/styles.css` (solo estilos, sin tocar HTML ni JS):**
+  - Panel más compacto: ancho 260→240 px, padding 12→8/10 px, `max-height: 55vh` con scroll interno, márgenes entre secciones 10→6 px.
+  - Resultado (`.measurement-result`) pasa de columna a fila (valor + secundario en línea), ahorrando altura.
+  - Botones de acción: `.measurement-actions` ahora usa `flex-wrap: wrap` y cada `.btn-sm` ocupa `flex: 1 1 calc(50% - 3px)` (rejilla 2×2 en móvil con Agregar visible; en desktop Terminar/Deshacer en fila 1 y Borrar en fila 2), con padding y fuente reducidos y `text-overflow: ellipsis` para que el texto nunca se salga del botón.
+  - Botones de tipo (Distancia/Área), header, hint y lista de puntos compactados (lista máx. 140→84 px, ítems más delgados).
+- **Bumps de versión:** `2.10.4` → `2.10.5`.
 
 ### v2.10.4 — Fix: fecha de hoy mostraba el día anterior en el modal de exportación
 
@@ -358,7 +380,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.4` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.6` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
