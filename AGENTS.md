@@ -144,6 +144,8 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 ## Notas de versión
 
+> **Regla para agentes:** cada vez que hagas un cambio de código en este proyecto (fix, feature, refactor visible), agrega una entrada nueva arriba de todo en esta sección, siguiendo el formato de las entradas existentes (título con versión, bullets de Problema/Solución/Cambios, archivos y funciones tocadas, "Bumps de versión"). Súmale también un paso a la lista de verificación de la sección anterior si el cambio es comprobable manualmente. Bumpea `APP_VERSION` en `js/app.js` y `sw.js` (y el badge en `index.html`) en el mismo commit. No cierres una tarea sin dejar esto documentado — es lo que permite retomar el trabajo en la siguiente sesión sin releer el diff completo.
+
 ### v2.10.7 — Coordenadas en vivo del crosshair en el panel de coordenadas
 
 - **Problema:** `#coords-panel` (esquina inferior izquierda) solo se alimentaba de `mousemove` (desktop) y del fix GPS suavizado; no había ningún listener de `move`/`moveend` sobre el mapa. Al usar la mira (`#marker-crosshair` en colocación de marcador, o `#measurement-crosshair` en medición táctil) para apuntar, el panel no reflejaba el centro del mapa: en móvil seguía mostrando el GPS y en desktop la posición del cursor, dando una sensación de panel estático/desconectado.
