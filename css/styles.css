@@ -613,6 +613,19 @@ img {
   font-size: 0.75rem;
   color: var(--text-secondary);
   min-width: 180px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* En vivo desde la mira: el panel se marca con el color de acento. */
+.coords-panel.is-live {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.coord-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .coord-label {
@@ -622,10 +635,51 @@ img {
   letter-spacing: 0.05em;
 }
 
+.coord-source {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  padding: 0 5px;
+  transition: color 0.2s ease;
+}
+
+.coords-panel.is-live .coord-source {
+  color: var(--accent);
+}
+
 .coord-values {
   display: flex;
   gap: 12px;
   margin-top: 2px;
+}
+
+.coord-values span {
+  transition: color 0.15s ease;
+}
+
+/* Mientras se arrastra el mapa con la mira activa, resaltar los valores. */
+.coords-panel.is-moving .coord-values span {
+  color: var(--accent);
+}
+
+/* Micro-destello al cambiar un valor, para que se note que esta "en uso". */
+@keyframes coord-tick {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+.coord-values span.tick {
+  animation: coord-tick 0.18s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coord-values span.tick {
+    animation: none;
+  }
 }
 
 .coord-wgs84 {

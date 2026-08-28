@@ -26,7 +26,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.6';
+const APP_VERSION = '2.10.7';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -845,7 +845,7 @@ function initMap() {
     }
   });
   AppState.map.on('mousemove', (e) => {
-    updateCoordsDisplay(e.latlng);
+    updateCoordsDisplay(e.latlng, 'pointer');
     if (AppState.isMeasurementMode && !AppState.measurementFinished && AppState.measurementLatLngs.length > 0) {
       updateMeasurementRubberLine(e.latlng);
     }
@@ -854,6 +854,13 @@ function initMap() {
     if (AppState.isMeasurementMode && !AppState.measurementFinished && AppState.measurementLatLngs.length > 0 && isTouchDevice()) {
       updateMeasurementRubberLine(AppState.map.getCenter());
     }
+    updateCoordsFromCrosshair();
+  });
+  // Con la mira activa el panel de coordenadas sigue al centro del mapa en vivo.
+  AppState.map.on('movestart zoomstart', markCoordsMoving);
+  AppState.map.on('moveend zoomend', () => {
+    updateCoordsFromCrosshair();
+    scheduleCoordsMovingOff();
   });
   initMapVisualRotation();
 }
@@ -899,21 +906,89 @@ function initMapVisualRotation() {
   document.getElementById('btn-reset-rotation')?.addEventListener('click', resetMapVisualRotation);
 }
 
-function updateCoordsDisplay(latlng) {
+// ============================================
+// PANEL DE COORDENADAS
+// Fuentes posibles: 'gps' (fix suavizado), 'pointer' (mousemove en desktop) y
+// 'crosshair' (centro del mapa mientras la mira esta activa). La mira tiene
+// prioridad: mientras apunta, ni el GPS ni el puntero pisan su lectura.
+// ============================================
+
+// La mira "manda" solo cuando el usuario la esta usando para apuntar:
+// colocacion de marcador por crosshair siempre, y medicion en tactil (en
+// desktop el mousemove ya da feedback en vivo). Mismo criterio que el rubber
+// band de medicion.
+function isCrosshairActive() {
+  return AppState.markerPlacementMode === 'crosshair'
+      || (AppState.isMeasurementMode && !AppState.measurementFinished && isTouchDevice());
+}
+
+// Escribe solo si cambio y dispara el micro-destello reiniciando la animacion.
+function setCoordText(el, text) {
+  if (!el || el.textContent === text) return;
+  el.textContent = text;
+  el.classList.remove('tick');
+  // Forzar reflujo para reiniciar la animacion aunque el cambio sea seguido.
+  void el.offsetWidth;
+  el.classList.add('tick');
+}
+
+function updateCoordsDisplay(latlng, source) {
   if (!latlng) return;
+  source = source || 'gps';
+  // La mira tiene prioridad mientras esta activa.
+  if (source !== 'crosshair' && isCrosshairActive()) return;
   const [east, north] = proj4(WGS84, 'EPSG:24877', [latlng.lng, latlng.lat]);
-  document.getElementById('coord-norte').textContent = 'N: ' + Math.round(north);
-  document.getElementById('coord-este').textContent = 'E: ' + Math.round(east);
-  document.getElementById('coord-lat').textContent = 'Lat: ' + latlng.lat.toFixed(6);
-  document.getElementById('coord-lng').textContent = 'Lon: ' + latlng.lng.toFixed(6);
-  const altEl = document.getElementById('coord-altura');
-  if (altEl) {
-    altEl.textContent = 'Z: ' + (AppState.currentAltitude != null ? Math.round(AppState.currentAltitude) + ' m' : '---');
-  }
-  const accEl = document.getElementById('coord-accuracy');
-  if (accEl) {
-    accEl.textContent = 'Prec: ' + (AppState.locationAccuracy != null ? '±' + Math.round(AppState.locationAccuracy) + ' m' : '---');
-  }
+  setCoordText(document.getElementById('coord-norte'), 'N: ' + Math.round(north));
+  setCoordText(document.getElementById('coord-este'), 'E: ' + Math.round(east));
+  setCoordText(document.getElementById('coord-lat'), 'Lat: ' + latlng.lat.toFixed(6));
+  setCoordText(document.getElementById('coord-lng'), 'Lon: ' + latlng.lng.toFixed(6));
+  // Z y precision siguen siendo del dispositivo, no de la mira.
+  setCoordText(document.getElementById('coord-altura'),
+    'Z: ' + (AppState.currentAltitude != null ? Math.round(AppState.currentAltitude) + ' m' : '---'));
+  setCoordText(document.getElementById('coord-accuracy'),
+    'Prec: ' + (AppState.locationAccuracy != null ? '±' + Math.round(AppState.locationAccuracy) + ' m' : '---'));
+  const isCrosshair = source === 'crosshair';
+  const srcEl = document.getElementById('coord-source');
+  if (srcEl) srcEl.textContent = isCrosshair ? 'MIRA' : 'GPS';
+  document.getElementById('coords-panel')?.classList.toggle('is-live', isCrosshair);
+}
+
+// Actualizacion en vivo del centro del mapa, throttleada a un frame (mismo
+// patron que el indicador de rotacion) para no recalcular proj4 por evento.
+let pendingCoordsFrame = null;
+function updateCoordsFromCrosshair() {
+  if (!AppState.map || !isCrosshairActive()) return;
+  if (pendingCoordsFrame) return;
+  pendingCoordsFrame = requestAnimationFrame(() => {
+    pendingCoordsFrame = null;
+    if (!AppState.map || !isCrosshairActive()) return;
+    updateCoordsDisplay(AppState.map.getCenter(), 'crosshair');
+  });
+}
+
+// Resalte "en movimiento" del panel mientras se desplaza el mapa con la mira.
+let coordsMovingTimer = null;
+function markCoordsMoving() {
+  if (!isCrosshairActive()) return;
+  if (coordsMovingTimer) { clearTimeout(coordsMovingTimer); coordsMovingTimer = null; }
+  document.getElementById('coords-panel')?.classList.add('is-moving');
+}
+function scheduleCoordsMovingOff() {
+  if (coordsMovingTimer) clearTimeout(coordsMovingTimer);
+  coordsMovingTimer = setTimeout(() => {
+    coordsMovingTimer = null;
+    document.getElementById('coords-panel')?.classList.remove('is-moving');
+  }, 250);
+}
+
+// Devuelve el panel al modo GPS al salir de un modo de mira.
+function resetCoordsToGps() {
+  if (coordsMovingTimer) { clearTimeout(coordsMovingTimer); coordsMovingTimer = null; }
+  const panel = document.getElementById('coords-panel');
+  if (panel) panel.classList.remove('is-live', 'is-moving');
+  const srcEl = document.getElementById('coord-source');
+  if (srcEl) srcEl.textContent = 'GPS';
+  if (AppState.smoothedLocation) updateCoordsDisplay(AppState.smoothedLocation, 'gps');
 }
 
 // ============================================
@@ -927,6 +1002,8 @@ function toggleMeasurementMode() {
   btn.classList.toggle('active', AppState.isMeasurementMode);
   panel.classList.toggle('hidden', !AppState.isMeasurementMode);
   if (crosshair) crosshair.classList.toggle('hidden', !AppState.isMeasurementMode);
+  if (AppState.isMeasurementMode) updateCoordsFromCrosshair();
+  else resetCoordsToGps();
   if (AppState.isMeasurementMode) {
     if (AppState.isAddMarkerMode) {
       AppState.isAddMarkerMode = false;
@@ -1710,6 +1787,7 @@ function selectMarkerPlacement(mode) {
   const bar = document.getElementById('marker-place-bar');
   if (crosshair) crosshair.classList.remove('hidden');
   if (bar) bar.classList.remove('hidden');
+  updateCoordsFromCrosshair();
   showToast('Mueve el mapa y pulsa Colocar aqui (o toca el mapa)', 'info');
 }
 
@@ -1719,6 +1797,7 @@ function exitMarkerPlacement() {
   const bar = document.getElementById('marker-place-bar');
   if (crosshair) crosshair.classList.add('hidden');
   if (bar) bar.classList.add('hidden');
+  resetCoordsToGps();
 }
 
 function placeMarkerAt(latlng) {

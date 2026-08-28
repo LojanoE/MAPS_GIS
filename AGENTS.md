@@ -140,8 +140,17 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 20. **Rotación visual del mapa:** rotar el mapa con gesto de dos dedos (emulador/dispositivo) o `Shift` + scroll (desktop); verificar que el indicador muestra el ángulo, el botón "Volver al norte" resetea a `0°`, y pan/zoom/clics siguen funcionando correctamente mientras está rotado.
 21. Verificar que la app funcione offline tras la primera carga.
 22. **Colocación de marcador (v2.10.6):** activar el modo marcador y verificar que aparece el diálogo de elección. Opción Crosshair: la mira y el botón "Colocar aquí" se muestran, mover el mapa y colocar en el centro; tocar el mapa también coloca. Opción Mi ubicación: el modal QC/LSM se abre en la posición GPS (toast con precisión); si el GPS falla, reaparece el diálogo. Cancelar desactiva el modo. Verificar que al activar medición o salir del mapa se ocultan la mira y la barra.
+23. **Coordenadas en vivo de la mira (v2.10.7):** activar "Agregar marcador → Crosshair" (o medición en un emulador táctil) y arrastrar el mapa: el panel de coordenadas debe cambiar la etiqueta a `MIRA`, tomar el borde de acento y actualizar N/E/Lat/Lon en vivo siguiendo el centro del mapa, con un leve destello en los valores al cambiar. Al soltar, el resalte de "en movimiento" se apaga a los ~250 ms. Al cancelar/colocar el marcador o salir del modo, el panel debe volver a mostrar `GPS` y la última posición conocida. En desktop sin la mira activa, el panel debe seguir el puntero del mouse como antes.
 
 ## Notas de versión
+
+### v2.10.7 — Coordenadas en vivo del crosshair en el panel de coordenadas
+
+- **Problema:** `#coords-panel` (esquina inferior izquierda) solo se alimentaba de `mousemove` (desktop) y del fix GPS suavizado; no había ningún listener de `move`/`moveend` sobre el mapa. Al usar la mira (`#marker-crosshair` en colocación de marcador, o `#measurement-crosshair` en medición táctil) para apuntar, el panel no reflejaba el centro del mapa: en móvil seguía mostrando el GPS y en desktop la posición del cursor, dando una sensación de panel estático/desconectado.
+- **Solución:** `updateCoordsDisplay(latlng, source)` en `js/app.js` ahora recibe una fuente (`'gps' | 'pointer' | 'crosshair'`). Mientras `isCrosshairActive()` es verdadero (modo marcador por crosshair, o medición en táctil), la mira tiene prioridad y el GPS/puntero se ignoran. Nuevos listeners `move`/`movestart zoomstart`/`moveend zoomend` en `AppState.map` llaman a `updateCoordsFromCrosshair()` (throttleado a un frame con `requestAnimationFrame`, mismo patrón que `initMapVisualRotation`) para refrescar N/E/Lat/Lon con `AppState.map.getCenter()`.
+- **Feedback visual:** `#coord-source` muestra `GPS` o `MIRA`; `.coords-panel.is-live` resalta el borde con `var(--accent)`; `.coords-panel.is-moving` colorea los valores mientras se arrastra el mapa (se apaga ~250 ms después de soltar); `setCoordText()` reemplaza las asignaciones directas de `textContent` y dispara un micro-destello (`.tick`, respeta `prefers-reduced-motion`) solo cuando el valor realmente cambia.
+- `selectMarkerPlacement()`/`exitMarkerPlacement()` y ambas ramas de `toggleMeasurementMode()` llaman a `updateCoordsFromCrosshair()`/`resetCoordsToGps()` para que el panel arranque y termine sincronizado con la mira, sin quedar la etiqueta `MIRA` colgada.
+- **Bumps de versión:** `2.10.6` → `2.10.7`.
 
 ### v2.10.6 — Elección de colocación de marcador: crosshair o GPS
 
