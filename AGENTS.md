@@ -141,10 +141,51 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 21. Verificar que la app funcione offline tras la primera carga.
 22. **Colocación de marcador (v2.10.6):** activar el modo marcador y verificar que aparece el diálogo de elección. Opción Crosshair: la mira y el botón "Colocar aquí" se muestran, mover el mapa y colocar en el centro; tocar el mapa también coloca. Opción Mi ubicación: el modal QC/LSM se abre en la posición GPS (toast con precisión); si el GPS falla, reaparece el diálogo. Cancelar desactiva el modo. Verificar que al activar medición o salir del mapa se ocultan la mira y la barra.
 23. **Coordenadas en vivo de la mira (v2.10.7):** activar "Agregar marcador → Crosshair" (o medición en un emulador táctil) y arrastrar el mapa: el panel de coordenadas debe cambiar la etiqueta a `MIRA`, tomar el borde de acento y actualizar N/E/Lat/Lon en vivo siguiendo el centro del mapa, con un leve destello en los valores al cambiar. Al soltar, el resalte de "en movimiento" se apaga a los ~250 ms. Al cancelar/colocar el marcador o salir del modo, el panel debe volver a mostrar `GPS` y la última posición conocida. En desktop sin la mira activa, el panel debe seguir el puntero del mouse como antes.
+24. **Badge y nombre del marcador (v2.10.8):** crear un marcador QC y uno LSM (uno con nombre largo, ej. "Muestra de relleno zona 1 sector norte"). Abrir el panel de marcadores: el badge `QC` debe verse como pastilla verde y `LSM` naranja, siempre visible aunque el nombre se trunque con "…". Tocar un marcador en el mapa: el popup debe usar los colores del tema (fondo oscuro en tema oscuro, claro en tema claro) y mostrar nombre + badge + coordenadas.
+25. **Re-estampado de foto LSM al editar (v2.10.8):** crear un marcador LSM con foto y anotar la localización impresa en ella. Editar el marcador, cambiar **Localización** o **Nombre de Muestra** sin tocar la foto, guardar. Exportar ZIP: la foto en `fotos/` debe mostrar el dato **nuevo**, y `fotos_crudas/` seguir siendo la original sin estampar. Repetir editando solo **Ensayos** (campo que no va en la foto): la foto no debe re-procesarse. Fotos antiguas sin `originalBlob` no deben romper el guardado (aviso en consola).
+26. **Gestionar opciones desde el formulario LSM (v2.10.8):** abrir "Agregar marcador → LSM", llenar Nombre de Muestra y marcar algunos Ensayos. Tocar el ícono de lápiz junto a **Fuente**, agregar una opción nueva y pulsar "Listo": el modal LSM debe seguir abierto, la opción nueva aparecer en el `<select>` de Fuente, y el nombre y los ensayos marcados **no deben perderse**. Verificar lo mismo con Ensayos (los marcados que sigan existiendo se conservan). Confirmar que el valor nuevo también aparece en Home → Configuración.
 
 ## Notas de versión
 
 > **Regla para agentes:** cada vez que hagas un cambio de código en este proyecto (fix, feature, refactor visible), agrega una entrada nueva arriba de todo en esta sección, siguiendo el formato de las entradas existentes (título con versión, bullets de Problema/Solución/Cambios, archivos y funciones tocadas, "Bumps de versión"). Súmale también un paso a la lista de verificación de la sección anterior si el cambio es comprobable manualmente. Bumpea `APP_VERSION` en `js/app.js` y `sw.js` (y el badge en `index.html`) en el mismo commit. No cierres una tarea sin dejar esto documentado — es lo que permite retomar el trabajo en la siguiente sesión sin releer el diff completo.
+
+### v2.10.8 — Fix: nombre/badge del marcador, re-estampado de foto LSM al editar, y gestión de opciones desde el formulario LSM
+
+Tres correcciones reportadas en campo, agrupadas en una sola versión.
+
+**1. Nombre del marcador mal mostrado (panel lateral y popup del mapa)**
+
+- **Problema:** el badge de tipo (QC/LSM) junto al nombre no tenía ningún estilo, y con nombres largos el nombre se comía el badge. Al tocar un marcador en el mapa, el popup salía con el blanco por defecto de Leaflet, ajeno al tema de la app.
+- **Causa raíz:** `renderMarkersList()` emitía las clases `marker-item-dot` y `marker-type-badge`, que **no existen** en `css/styles.css`. Las clases reales son `.marker-item .marker-dot` y `.marker-item-type` (con modificadores `.qc`/`.lsm` que colorean el badge). Desajuste de nombres entre JS y CSS de larga data. Además, el proyecto no tenía **ninguna** regla CSS para `.leaflet-popup*`: el popup de `addMarkerToMap()` se armaba con estilos inline (`color:#666`).
+- **Solución:**
+  - `renderMarkersList()` ahora emite `marker-dot` y `marker-item-type <qc|lsm>` (usa `m.markerType`, que ya vale exactamente `'qc'`/`'lsm'`).
+  - El nombre se envuelve en `<span class="marker-name-text">`: `.marker-item-name` pasa a `display:flex` y el truncado con ellipsis aplica **solo al nombre**, así el badge nunca se corta (`flex-shrink:0`).
+  - `addMarkerToMap()` deja los estilos inline y usa clases (`.marker-popup`, `.marker-popup-title`, `.marker-popup-name`, `.marker-popup-coords`) + el mismo badge de tipo. Nuevo bloque CSS para `.leaflet-popup-content-wrapper`/`-tip`/close-button con las variables del tema (funciona en claro y oscuro).
+
+**2. La foto LSM no se re-estampaba al editar el marcador**
+
+- **Problema:** al editar un marcador LSM y cambiar la localización o el nombre de muestra **sin tomar una foto nueva**, la foto seguía mostrando el estampado viejo.
+- **Causa raíz:** `openLSMMarkerModal()` cargaba las fotos existentes en `AppState.pendingPhotos` **sin** el `originalBlob`, y `saveLSMMarker()`, al encontrar una foto con `photoId`, simplemente reusaba el id (`photoIds.push(photo.photoId)`) sin comparar datos ni volver a llamar `stampImage()`. La foto quedaba congelada.
+- **Solución:**
+  - `openLSMMarkerModal()` ahora incluye `originalBlob: photoRecord.originalBlob || null` al cargar cada foto existente.
+  - `saveLSMMarker()` calcula `stampDataChanged` comparando `localizacion` y `name` viejos vs. nuevos; si cambió y hay foto cruda, re-estampa con `stampImage(photo.originalBlob, ...)` y persiste con la nueva `MapStorage.updatePhotoBlob()`. **Siempre parte de la foto cruda**, nunca sobre la ya estampada (sin doble estampado).
+  - Fecha del estampado: se usa `getLocalDateString(new Date(oldMarker.createdAt))` (día de creación del marcador), para que reeditar semanas después no cambie la fecha impresa.
+  - Si nada relevante cambió, **no se re-estampa** (evita recompresión JPEG innecesaria). Si la foto es legado y no tiene `originalBlob`, se deja la estampada vieja y se avisa por consola, sin bloquear el guardado.
+- **Nueva función `updatePhotoBlob(photoId, newBlob)` en `js/storage.js`:** reemplaza solo el `blob` procesado del registro, conservando `id`, `markerId`, `originalBlob` y `createdAt` (agrega `updatedAt`). Update in place: el `photoId` no cambia, así que `marker.photos`, la exportación ZIP y `refreshMarkersOnMap()` siguen funcionando sin tocarse.
+
+**3. Gestión de opciones LSM desde el propio formulario**
+
+- **Problema:** los 4 campos de lista del modal LSM son `<select>`/checkboxes puros. Para agregar una opción nueva había que cerrar el modal, salir del mapa, ir a Home → Configuración, agregarla y volver a abrir todo.
+- **Solución:** botón de gestión (`.btn-manage-field` con `data-config-key`) junto al label de **Tipo de Material, Localización, Fuente y Ensayos**. Abre `#inline-config-modal`, un modal anidado genérico parametrizado por `key` que se pinta **encima** del modal LSM sin cerrarlo (mismo patrón que `#photo-preview-modal`; está último en el DOM, después de `#config-modal`).
+- Funciones nuevas en `js/app.js` (junto a `renderConfigSections`): `openInlineConfigEditor(key)`, `closeInlineConfigEditor()`, `renderInlineConfigTags()`, `addInlineConfigValue()` y `refreshLsmFieldPreservingSelection(key)`. Reutiliza `ConfigManager.addValue/removeValue` y `createConfigTag()` **sin modificarlos**.
+- `refreshLsmFieldPreservingSelection()` repuebla solo el campo tocado conservando lo elegido (para `ensayos` re-marca los checkboxes que sigan existiendo); **nunca** se vuelve a llamar `openLSMMarkerModal()`, así no se pierde nada de lo ya llenado en el formulario.
+- Lo agregado desde aquí es la misma fuente de verdad de siempre (`maps_gis_config_v2`), así que también aparece en Home → Configuración.
+- Se añade la rama `inline-config-modal` al handler de clic en el backdrop para que cerrar por fuera también refresque el campo.
+
+**Otros:** los query strings `?v=` de CSS/scripts en `index.html` y `sw.js` habían quedado en `2.10.6` durante el release de v2.10.7; ahora quedan sincronizados con `APP_VERSION`.
+
+- **Archivos tocados:** `js/app.js`, `js/storage.js`, `index.html`, `css/styles.css`, `AGENTS.md`.
+- **Bumps de versión:** `2.10.7` → `2.10.8`.
 
 ### v2.10.7 — Coordenadas en vivo del crosshair en el panel de coordenadas
 
@@ -391,7 +432,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.6` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.8` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
@@ -530,6 +571,8 @@ Si se agrega un campo al formulario LSM, actualizar:
 8. Exportación ZIP en `app.js`.
 9. Tabla / detalle / edición en `admin-manager.js`.
 10. `autoLearnLSMConfig()` en `app.js` si aplica.
+11. Si el campo **se imprime en la foto** (vía `stampImage()`), agregarlo también a la comparación `stampDataChanged` de `saveLSMMarker()`; si no, editar ese campo no disparará el re-estampado de las fotos existentes (v2.10.8).
+12. Si el campo usa un `<select>`/checkboxes poblados por `ConfigManager`, agregar su botón `.btn-manage-field` con `data-config-key` junto al label en `#lsm-marker-modal`, y contemplar la key en `INLINE_CONFIG_LABELS`, `INLINE_CONFIG_SELECT_IDS` y `refreshLsmFieldPreservingSelection()` (v2.10.8).
 
 ### Cambiar lógica de rotación visual del mapa
 

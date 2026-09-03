@@ -338,6 +338,49 @@ const MapStorage = (() => {
     return record && record.originalBlob ? record.originalBlob : null;
   }
 
+  /**
+   * Reemplaza solo el blob procesado/estampado de una foto existente,
+   * conservando id, markerId, originalBlob (foto cruda) y createdAt.
+   * Se usa al reeditar un marcador LSM para re-estampar desde la foto cruda.
+   */
+  async function updatePhotoBlob(photoId, newBlob) {
+    const database = await initDB();
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction([STORE_PHOTOS], 'readwrite');
+      const store = transaction.objectStore(STORE_PHOTOS);
+      const getRequest = store.get(photoId);
+
+      let found = false;
+
+      getRequest.onsuccess = () => {
+        const record = getRequest.result;
+        if (!record) return;
+        found = true;
+        record.blob = newBlob;
+        record.updatedAt = new Date().toISOString();
+        store.put(record);
+      };
+
+      getRequest.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error al leer la foto para actualizar'));
+      };
+
+      transaction.oncomplete = () => {
+        if (found) {
+          resolve(photoId);
+        } else {
+          reject(new Error('Foto no encontrada: ' + photoId));
+        }
+      };
+      transaction.onerror = (e) => {
+        e.preventDefault();
+        reject(new Error('Error en transaccion de actualizacion de foto'));
+      };
+    });
+  }
+
   async function getPhotosByMarker(markerId) {
     const database = await initDB();
 
@@ -536,6 +579,7 @@ const MapStorage = (() => {
     savePhoto,
     getPhoto,
     getPhotoOriginal,
+    updatePhotoBlob,
     getPhotosByMarker,
     deletePhoto,
     deletePhotosByMarker,

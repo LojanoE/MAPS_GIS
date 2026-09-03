@@ -26,7 +26,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.7';
+const APP_VERSION = '2.10.8';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -2440,7 +2440,13 @@ async function openLSMMarkerModal(latlng, editId) {
           const photoRecord = await MapStorage.getPhoto(photoId);
           if (photoRecord && photoRecord.blob) {
             const dataUrl = await blobToDataURL(photoRecord.blob);
-            AppState.pendingPhotos.push({ photoId: photoId, blob: photoRecord.blob, dataUrl: dataUrl });
+            // Se conserva la foto cruda para poder re-estampar si cambian los datos del formulario
+            AppState.pendingPhotos.push({
+              photoId: photoId,
+              blob: photoRecord.blob,
+              dataUrl: dataUrl,
+              originalBlob: photoRecord.originalBlob || null
+            });
           }
         } catch (e) { console.warn('Could not load photo:', photoId); }
       }
@@ -2603,10 +2609,36 @@ async function saveLSMMarker() {
       })()
     : AppState.pendingMarkerLatLng;
 
+  // Datos previos del marcador: sirven para saber si cambio algo que va estampado en la foto
+  const oldMarker = AppState.editingMarkerId ? MarkerManager.getById(AppState.editingMarkerId) : null;
+  const oldLsmData = (oldMarker && oldMarker.lsmData) || {};
+  // Fecha estable: la del dia en que se creo el marcador, para que reeditar
+  // semanas despues no cambie la fecha impresa en la foto.
+  const fechaEstampado = oldMarker && oldMarker.createdAt
+    ? getLocalDateString(new Date(oldMarker.createdAt))
+    : getLocalDateString();
+
   for (const photo of AppState.pendingPhotos) {
     try {
       let blobToSave = photo.blob;
       if (photo.photoId) {
+        // Foto existente: si cambio algun dato que se imprime en el estampado,
+        // se vuelve a estampar partiendo de la foto cruda (nunca sobre la ya estampada).
+        const stampDataChanged =
+          (oldLsmData.localizacion || '') !== (lsmData.localizacion || '') ||
+          ((oldMarker && oldMarker.name) || '') !== nombreMuestra;
+        if (stampDataChanged && photo.originalBlob) {
+          const restamped = await stampImage(photo.originalBlob, {
+            nombreMuestra: nombreMuestra,
+            localizacion: lsmData.localizacion,
+            fecha: fechaEstampado,
+            lat: markerLatLng ? markerLatLng.lat : null,
+            lng: markerLatLng ? markerLatLng.lng : null
+          });
+          await MapStorage.updatePhotoBlob(photo.photoId, restamped.stampedBlob);
+        } else if (stampDataChanged && !photo.originalBlob) {
+          console.warn('[saveLSMMarker] Sin foto cruda guardada, no se re-estampa:', photo.photoId);
+        }
         photoIds.push(photo.photoId);
       } else if (photo.blob) {
         const markerId = AppState.editingMarkerId || ('m_' + Date.now());
@@ -2621,7 +2653,6 @@ async function saveLSMMarker() {
     } catch (e) { console.error('Error saving photo:', e); }
   }
   if (AppState.editingMarkerId) {
-    const oldMarker = MarkerManager.getById(AppState.editingMarkerId);
     if (oldMarker && oldMarker.photos) {
       const removedPhotos = oldMarker.photos.filter(id => !photoIds.includes(id));
       for (const photoId of removedPhotos) {
@@ -2821,7 +2852,15 @@ async function deleteCurrentMarker() {
 // ============================================
 function addMarkerToMap(marker) {
   const icon = createMarkerIcon(marker);
-  const popupContent = '<div style="min-width:140px;padding:4px;"><strong style="font-size:0.9rem;">' + escapeHtml(marker.name) + '</strong><br><span style="font-size:0.75rem;color:#666;">N: ' + marker.norte + ' | E: ' + marker.este + (marker.altura != null ? ' | Z: ' + marker.altura + ' m' : '') + '</span></div>';
+  const typeLabel = marker.markerType === 'lsm' ? 'LSM' : 'QC';
+  const popupContent = '<div class="marker-popup">' +
+    '<div class="marker-popup-title">' +
+      '<span class="marker-popup-name">' + escapeHtml(marker.name) + '</span>' +
+      '<span class="marker-item-type ' + marker.markerType + '">' + typeLabel + '</span>' +
+    '</div>' +
+    '<div class="marker-popup-coords">N: ' + marker.norte + ' | E: ' + marker.este +
+      (marker.altura != null ? ' | Z: ' + marker.altura + ' m' : '') + '</div>' +
+  '</div>';
   L.marker([marker.lat, marker.lng], { icon: icon }).bindPopup(popupContent).on('click', () => {
     AppState.map.setView([marker.lat, marker.lng], AppState.map.getZoom());
   }).addTo(AppState.markersLayer);
@@ -2866,7 +2905,7 @@ function renderMarkersList(filter = '') {
     const items = groupMarkers.map(m => {
       const color = MARKER_COLORS[m.color]?.hex || MARKER_COLORS.red.hex;
       const typeLabel = m.markerType === 'lsm' ? 'LSM' : 'QC';
-      return '<div class="marker-item" data-id="' + m.id + '"><span class="marker-item-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name">' + escapeHtml(m.name) + ' <span class="marker-type-badge">' + typeLabel + '</span></div><div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + (m.altura != null ? ' | Z: ' + m.altura + ' m' : '') + '</div></div><div class="marker-item-actions"><button class="marker-item-btn marker-btn-edit" data-id="' + m.id + '" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button><button class="marker-item-btn marker-btn-delete" data-id="' + m.id + '" title="Eliminar" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"></path><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg></button></div></div>';
+      return '<div class="marker-item" data-id="' + m.id + '"><span class="marker-dot" style="background:' + color + ';"></span><div class="marker-item-info"><div class="marker-item-name"><span class="marker-name-text">' + escapeHtml(m.name) + '</span><span class="marker-item-type ' + m.markerType + '">' + typeLabel + '</span></div><div class="marker-item-coords">N: ' + m.norte + ' | E: ' + m.este + (m.altura != null ? ' | Z: ' + m.altura + ' m' : '') + '</div></div><div class="marker-item-actions"><button class="marker-item-btn marker-btn-edit" data-id="' + m.id + '" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button><button class="marker-item-btn marker-btn-delete" data-id="' + m.id + '" title="Eliminar" aria-label="Eliminar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"></path><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg></button></div></div>';
     }).join('');
     return '<div class="layer-group' + (active ? '' : ' layer-disabled') + '" data-day="' + day + '">' +
       '<div class="layer-group-header">' +
@@ -3483,6 +3522,7 @@ function initEventListeners() {
         else if (modal.id === 'lsm-login-modal') closeLSMLoginModal();
         else if (modal.id === 'lsm-marker-modal') closeLSMMarkerModal();
         else if (modal.id === 'config-modal') closeConfigModal();
+        else if (modal.id === 'inline-config-modal') closeInlineConfigEditor();
         else if (modal.id === 'marker-detail-modal') closeMarkerDetail();
         else if (modal.id === 'go-to-coords-modal') closeGoToCoordsModal();
         else if (modal.id === 'delete-map-modal') { pendingDeleteMapId = null; modal.classList.add('hidden'); }
@@ -3520,6 +3560,20 @@ function initEventListeners() {
   // Config button (local only)
   document.getElementById('btn-config').addEventListener('click', openConfigModal);
   document.getElementById('btn-close-config').addEventListener('click', closeConfigModal);
+
+  // Editor de opciones inline (desde el formulario LSM)
+  document.querySelectorAll('.btn-manage-field[data-config-key]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openInlineConfigEditor(btn.dataset.configKey);
+    });
+  });
+  document.getElementById('btn-inline-config-add').addEventListener('click', addInlineConfigValue);
+  document.getElementById('inline-config-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addInlineConfigValue(); }
+  });
+  document.getElementById('btn-close-inline-config').addEventListener('click', closeInlineConfigEditor);
+  document.getElementById('btn-done-inline-config').addEventListener('click', closeInlineConfigEditor);
 
   // Device setup
   document.getElementById('btn-save-device-name').addEventListener('click', saveDeviceName);
@@ -3764,6 +3818,93 @@ function createConfigTag(key, val) {
     } else { showToast('Error al borrar', 'error'); }
   });
   return tag;
+}
+
+// ============================================
+// EDITOR DE OPCIONES INLINE (desde el formulario LSM)
+// ============================================
+// Permite agregar/quitar opciones de las listas LSM sin cerrar el modal LSM
+// ni salir del mapa hacia la pantalla de Configuracion.
+
+let inlineConfigCurrentKey = null;
+
+const INLINE_CONFIG_LABELS = {
+  tipo_material: 'Tipo de Material',
+  localizacion: 'Localizacion',
+  fuente: 'Fuente',
+  ensayos: 'Ensayos'
+};
+
+const INLINE_CONFIG_SELECT_IDS = {
+  tipo_material: 'lsm-tipo-material',
+  localizacion: 'lsm-localizacion',
+  fuente: 'lsm-fuente'
+};
+
+function openInlineConfigEditor(key) {
+  if (!CONFIG_KEYS.includes(key)) return;
+  inlineConfigCurrentKey = key;
+  document.getElementById('inline-config-title').textContent = 'Gestionar: ' + (INLINE_CONFIG_LABELS[key] || key);
+  renderInlineConfigTags();
+  const input = document.getElementById('inline-config-input');
+  input.value = '';
+  document.getElementById('inline-config-modal').classList.remove('hidden');
+  setTimeout(() => input.focus(), 100);
+}
+
+function closeInlineConfigEditor() {
+  document.getElementById('inline-config-modal').classList.add('hidden');
+  // Refresca solo el campo afectado, preservando lo que el usuario ya lleno en el resto del formulario
+  refreshLsmFieldPreservingSelection(inlineConfigCurrentKey);
+  inlineConfigCurrentKey = null;
+}
+
+function renderInlineConfigTags() {
+  const list = document.getElementById('inline-config-tag-list');
+  if (!list || !inlineConfigCurrentKey) return;
+  list.innerHTML = '';
+  const values = ConfigManager.getValues(inlineConfigCurrentKey);
+  if (values.length === 0) {
+    list.innerHTML = '<p class="empty-msg">Sin opciones todavia</p>';
+    return;
+  }
+  values.forEach(val => { list.appendChild(createConfigTag(inlineConfigCurrentKey, val)); });
+}
+
+function addInlineConfigValue() {
+  const input = document.getElementById('inline-config-input');
+  const val = input.value.trim();
+  if (!val) { showToast('Ingresa un valor', 'error'); return; }
+  if (ConfigManager.addValue(inlineConfigCurrentKey, val)) {
+    input.value = '';
+    renderInlineConfigTags();
+    showToast('Agregado: ' + val, 'success');
+    input.focus();
+  } else {
+    showToast('Esa opcion ya existe', 'error');
+  }
+}
+
+// Repuebla el select (o los checkboxes) del modal LSM conservando la seleccion actual.
+function refreshLsmFieldPreservingSelection(key) {
+  if (!key) return;
+  if (key === 'ensayos') {
+    const checked = Array.from(document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]:checked')).map(cb => cb.value);
+    populateLsmEnsayos();
+    document.querySelectorAll('#lsm-ensayos-group input[type="checkbox"]').forEach(cb => {
+      cb.checked = checked.includes(cb.value);
+    });
+    return;
+  }
+  const selectId = INLINE_CONFIG_SELECT_IDS[key];
+  if (!selectId) return;
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const currentVal = select.value;
+  populateLsmSelect(selectId, key);
+  if (Array.from(select.options).some(o => o.value === currentVal)) {
+    select.value = currentVal;
+  }
 }
 
 // ============================================

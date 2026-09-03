@@ -854,9 +854,18 @@ img {
 .marker-item-name {
   font-size: 0.85rem;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* El nombre se trunca solo a si mismo: el badge de tipo siempre queda visible */
+.marker-item-name .marker-name-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .marker-item-coords {
@@ -869,6 +878,7 @@ img {
   padding: 2px 6px;
   border-radius: 10px;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .marker-item-type.qc {
@@ -886,6 +896,55 @@ img {
   align-items: center;
   gap: 8px;
   margin-left: 8px;
+}
+
+/* ============================================
+   POPUP DEL MARCADOR EN EL MAPA (Leaflet)
+   ============================================ */
+
+.leaflet-popup-content-wrapper {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.leaflet-popup-content {
+  margin: 10px 12px;
+  min-width: 150px;
+}
+
+.leaflet-popup-tip {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--text-secondary);
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover {
+  color: var(--text-primary);
+}
+
+.marker-popup-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.marker-popup-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.marker-popup-coords {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .marker-item-btn {
@@ -2296,6 +2355,58 @@ img {
 
 .config-input-row .btn-add-config:hover {
   background: var(--accent-hover);
+}
+
+/* ============================================
+   GESTION DE OPCIONES DESDE EL FORMULARIO LSM
+   ============================================ */
+
+/* Fila label + boton de gestion dentro de un .form-group */
+.form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.form-label-row label {
+  margin-bottom: 0;
+}
+
+.btn-manage-field {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.btn-manage-field:hover {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+}
+
+/* Header de modal: titulo a la izquierda, boton de cierre a la derecha.
+   Aplica al modal de Configuracion y al editor de opciones inline. */
+.config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.config-header h3 {
+  margin: 0;
+}
+
+/* Modal anidado: se abre encima del modal LSM sin cerrarlo */
+.modal-inline-config {
+  max-width: 420px;
 }
 
 /* ============================================
