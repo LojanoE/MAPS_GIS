@@ -150,6 +150,12 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 > **Regla para agentes:** cada vez que hagas un cambio de código en este proyecto (fix, feature, refactor visible), agrega una entrada nueva arriba de todo en esta sección, siguiendo el formato de las entradas existentes (título con versión, bullets de Problema/Solución/Cambios, archivos y funciones tocadas, "Bumps de versión"). Súmale también un paso a la lista de verificación de la sección anterior si el cambio es comprobable manualmente. Bumpea `APP_VERSION` en `js/app.js` y `sw.js` (y el badge en `index.html`) en el mismo commit. No cierres una tarea sin dejar esto documentado — es lo que permite retomar el trabajo en la siguiente sesión sin releer el diff completo.
 
+### v2.10.10 — Fix: panel de capas del PDF solapado con los botones del mapa
+
+- **Problema:** el panel `#pdf-layers-panel` quedó posicionado en `bottom: 100px; right: 16px`, justo **debajo de la columna de botones flotantes** `.map-controls` (borde derecho, `top: 8px; right: 8px`, botones de 44 px apilados). Los botones tapaban los switches del panel y no se podía interactuar.
+- **Solución:** fix puramente CSS en `css/styles.css` (`.pdf-layers-panel`): `top: 8px; right: 60px; z-index: 1001`. El panel ahora crece hacia abajo desde el tope, **a la izquierda de la columna de botones** (8 px margen + 44 px botón + 8 px separación), sin tocar el panel de coordenadas (inferior izquierdo) ni el de medición. No se tocó JS ni HTML.
+- **Bumps de versión:** `2.10.9` → `2.10.10`.
+
 ### v2.10.9 — Panel de capas del PDF (activar/desactivar capas OCG)
 
 - **Problema:** los GeoPDFs subidos venían con todas sus capas internas (Optional Content Groups) siempre visibles; no había forma de apagar capas para mejorar la lectura del plano.
@@ -450,7 +456,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.9` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.10` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
