@@ -545,6 +545,10 @@ const PDFProcessor = (() => {
     return { geoData, renderRotation: r };
   }
 
+  // Render task activo: se cancela antes de iniciar uno nuevo para evitar
+  // renders superpuestos (ej. al mover varios switches de capas seguidos).
+  let activeRenderTask = null;
+
   /**
    * Load a PDF from ArrayBuffer
    */
@@ -563,8 +567,10 @@ const PDFProcessor = (() => {
    * @param {number} scale - Escala de render
    * @param {number} [rotation] - Rotacion explicita para getViewport.
    *   Si es undefined, PDF.js usa page.rotate (orientacion de visor).
+   * @param {object} [optionalContentConfig] - OptionalContentConfig de PDF.js
+   *   (capas OCG). Si viene, la visibilidad de capas se evalua segun esta config.
    */
-  async function renderPage(pdf, scale = 2, rotation = undefined) {
+  async function renderPage(pdf, scale = 2, rotation = undefined, optionalContentConfig = undefined) {
     const page = await pdf.getPage(1);
     const viewportOptions = { scale: scale };
     if (rotation !== undefined && rotation !== null) {
@@ -576,10 +582,54 @@ const PDFProcessor = (() => {
     canvas.width = viewport.width;
     canvas.height = viewport.height;
 
+    if (activeRenderTask) {
+      try { activeRenderTask.cancel(); } catch (e) { /* ya termino */ }
+      activeRenderTask = null;
+    }
+
     const ctx = canvas.getContext('2d');
-    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+    const renderParams = { canvasContext: ctx, viewport: viewport };
+    if (optionalContentConfig) {
+      renderParams.optionalContentConfigPromise = Promise.resolve(optionalContentConfig);
+    }
+    activeRenderTask = page.render(renderParams);
+    try {
+      await activeRenderTask.promise;
+    } catch (err) {
+      if (err && err.name === 'RenderingCancelledException') return null;
+      throw err;
+    } finally {
+      activeRenderTask = null;
+    }
 
     return { canvas, width: viewport.width, height: viewport.height };
+  }
+
+  /**
+   * Obtiene la info de capas (Optional Content Groups) del PDF.
+   * @param {object} pdf - PDF.js document
+   * @returns {Promise<{config: object|null, groups: Array<{id: string, name: string}>}>}
+   *   config es el OptionalContentConfig (null si el PDF no tiene capas).
+   */
+  async function getPdfLayerInfo(pdf) {
+    try {
+      const config = await pdf.getOptionalContentConfig();
+      if (!config || typeof config.getGroups !== 'function') return { config: null, groups: [] };
+      const rawGroups = config.getGroups() || {};
+      const groups = Object.keys(rawGroups).map(id => {
+        let visible = true;
+        try { if (typeof config.isVisible === 'function') visible = !!config.isVisible(rawGroups[id]); } catch (e) { /* default visible */ }
+        return {
+          id: id,
+          name: (rawGroups[id] && rawGroups[id].name) ? String(rawGroups[id].name) : id,
+          visible: visible
+        };
+      });
+      return { config: groups.length > 0 ? config : null, groups: groups };
+    } catch (e) {
+      console.warn('[getPdfLayerInfo] Sin capas o error:', e);
+      return { config: null, groups: [] };
+    }
   }
 
   /**
@@ -844,6 +894,7 @@ const PDFProcessor = (() => {
     isGeoPDF,
     createGeoOverlay,
     getThumbnail,
+    getPdfLayerInfo,
     processPDF,
     detectCRS,
     applyPageRotation,

@@ -26,7 +26,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.8';
+const APP_VERSION = '2.10.9';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -73,7 +73,14 @@ const AppState = {
   currentLocation: null,
   smoothedLocation: null,
   locationAccuracy: null,
-  isFollowingLocation: false
+  isFollowingLocation: false,
+  // PDF actual cacheado y capas (OCG)
+  pdfDoc: null,
+  pdfDocMapId: null,
+  pdfGeoref: null,
+  pdfLayersConfig: null,
+  pdfLayerGroups: [],
+  pdfLayerRenderTimer: null
 };
 
 // ============================================
@@ -1355,6 +1362,7 @@ function getGeoTiffCRS(image) {
 }
 
 async function loadGeoTiff(mapId) {
+  destroyCachedPdfDoc();
   try {
     const arrayBuffer = await MapStorage.getMapData(mapId);
     const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
@@ -1463,17 +1471,19 @@ async function loadPDFMap(mapId) {
   try {
     const record = await MapStorage.getMapRecord(mapId);
     if (!record.georef || !record.georef.corners) { showToast('PDF sin georreferenciacion', 'error'); return; }
-    const pdf = await PDFProcessor.loadPDF(record.data);
-    const { canvas } = await PDFProcessor.renderPage(pdf, 4, record.georef.renderRotation);
-    if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
-    const offset = getMapOffset(mapId);
-    AppState.currentMapOffset = offset;
-    AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, offset, record.georef.sourceDatum);
-    AppState.mapOverlay.addTo(AppState.map);
-    AppState.map.fitBounds(AppState.mapOverlay.getBounds());
+    if (AppState.pdfDoc && AppState.pdfDocMapId !== mapId) destroyCachedPdfDoc();
+    if (!AppState.pdfDoc) {
+      AppState.pdfDoc = await PDFProcessor.loadPDF(record.data);
+      AppState.pdfDocMapId = mapId;
+    }
+    AppState.pdfGeoref = record.georef;
+    AppState.currentMapOffset = getMapOffset(mapId);
+    await setupPdfLayers(mapId, AppState.pdfDoc);
+    await rerenderPDFOverlay();
+    if (AppState.mapOverlay) AppState.map.fitBounds(AppState.mapOverlay.getBounds());
     showToast('PDF cargado', 'success');
     updateCalibButtonVisibility(true);
-  } catch (error) { showToast('Error al cargar PDF', 'error'); }
+  } catch (error) { console.error('[loadPDFMap] Error:', error); showToast('Error al cargar PDF', 'error'); }
 }
 
 // ============================================
@@ -1559,14 +1569,134 @@ function updateCalibrationDisplay() {
 }
 
 async function reloadMapWithOffset() {
-  if (!AppState.currentMapId) return;
-  const record = await MapStorage.getMapRecord(AppState.currentMapId);
-  if (!record || !record.georef) return;
-  const pdf = await PDFProcessor.loadPDF(record.data);
-  const { canvas } = await PDFProcessor.renderPage(pdf, 4, record.georef.renderRotation);
-  if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
-  AppState.mapOverlay = PDFProcessor.createGeoOverlay(canvas, record.georef.corners, record.georef.crs, AppState.currentMapOffset, record.georef.sourceDatum);
-  AppState.mapOverlay.addTo(AppState.map);
+  if (!AppState.currentMapId || !AppState.pdfGeoref) return;
+  await rerenderPDFOverlay();
+}
+
+// ============================================
+// PDF LAYERS (Capas OCG del PDF)
+// ============================================
+function getPdfLayerStateKey(mapId) { return 'maps_gis_pdflayers_' + mapId; }
+function loadSavedPdfLayerState(mapId) {
+  try { return JSON.parse(localStorage.getItem(getPdfLayerStateKey(mapId))) || {}; }
+  catch { return {}; }
+}
+function savePdfLayerState(mapId) {
+  const state = {};
+  AppState.pdfLayerGroups.forEach(g => { state[g.id] = g.visible; });
+  localStorage.setItem(getPdfLayerStateKey(mapId), JSON.stringify(state));
+}
+
+async function setupPdfLayers(mapId, pdf) {
+  AppState.pdfLayersConfig = null;
+  AppState.pdfLayerGroups = [];
+  const btn = document.getElementById('btn-pdf-layers');
+  let info;
+  try { info = await PDFProcessor.getPdfLayerInfo(pdf); }
+  catch { info = { config: null, groups: [] }; }
+  if (!info.config || info.groups.length === 0) {
+    if (btn) btn.style.display = 'none';
+    closePdfLayersPanel();
+    return;
+  }
+  const saved = loadSavedPdfLayerState(mapId);
+  info.groups.forEach(g => {
+    if (Object.prototype.hasOwnProperty.call(saved, g.id)) g.visible = saved[g.id] !== false;
+    try { info.config.setVisibility(g.id, g.visible); } catch (e) { /* grupo no controlable */ }
+  });
+  AppState.pdfLayersConfig = info.config;
+  AppState.pdfLayerGroups = info.groups;
+  if (btn) btn.style.display = 'flex';
+  renderPdfLayersList();
+}
+
+function renderPdfLayersList() {
+  const list = document.getElementById('pdf-layers-list');
+  if (!list) return;
+  list.innerHTML = '';
+  AppState.pdfLayerGroups.forEach(g => {
+    const row = document.createElement('div');
+    row.className = 'pdf-layer-row';
+    const name = document.createElement('span');
+    name.className = 'pdf-layer-name';
+    name.textContent = g.name;
+    name.title = g.name;
+    const toggle = document.createElement('label');
+    toggle.className = 'layer-toggle';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'layer-toggle-input';
+    input.checked = g.visible;
+    input.addEventListener('change', () => togglePdfLayer(g.id, input.checked));
+    const slider = document.createElement('span');
+    slider.className = 'layer-toggle-slider';
+    toggle.appendChild(input);
+    toggle.appendChild(slider);
+    row.appendChild(name);
+    row.appendChild(toggle);
+    list.appendChild(row);
+  });
+}
+
+function togglePdfLayer(groupId, visible) {
+  const g = AppState.pdfLayerGroups.find(x => x.id === groupId);
+  if (!g || !AppState.pdfLayersConfig) return;
+  g.visible = visible;
+  try { AppState.pdfLayersConfig.setVisibility(groupId, visible); } catch (e) { return; }
+  savePdfLayerState(AppState.currentMapId);
+  schedulePdfRerender();
+}
+
+function setAllPdfLayers(visible) {
+  if (!AppState.pdfLayersConfig) return;
+  AppState.pdfLayerGroups.forEach(g => {
+    g.visible = visible;
+    try { AppState.pdfLayersConfig.setVisibility(g.id, visible); } catch (e) { /* continuar */ }
+  });
+  savePdfLayerState(AppState.currentMapId);
+  renderPdfLayersList();
+  schedulePdfRerender();
+}
+
+function schedulePdfRerender() {
+  if (AppState.pdfLayerRenderTimer) clearTimeout(AppState.pdfLayerRenderTimer);
+  AppState.pdfLayerRenderTimer = setTimeout(() => {
+    AppState.pdfLayerRenderTimer = null;
+    rerenderPDFOverlay();
+  }, 250);
+}
+
+function openPdfLayersPanel() {
+  const panel = document.getElementById('pdf-layers-panel');
+  if (panel) panel.classList.remove('hidden');
+}
+function closePdfLayersPanel() {
+  const panel = document.getElementById('pdf-layers-panel');
+  if (panel) panel.classList.add('hidden');
+}
+
+async function rerenderPDFOverlay() {
+  if (!AppState.pdfDoc || !AppState.pdfGeoref) return;
+  try {
+    const result = await PDFProcessor.renderPage(AppState.pdfDoc, 4, AppState.pdfGeoref.renderRotation, AppState.pdfLayersConfig);
+    if (!result) return; // render cancelado: hay otro mas reciente en curso
+    if (AppState.mapOverlay) AppState.map.removeLayer(AppState.mapOverlay);
+    AppState.mapOverlay = PDFProcessor.createGeoOverlay(result.canvas, AppState.pdfGeoref.corners, AppState.pdfGeoref.crs, AppState.currentMapOffset, AppState.pdfGeoref.sourceDatum);
+    AppState.mapOverlay.addTo(AppState.map);
+  } catch (e) { console.error('[rerenderPDFOverlay] Error:', e); }
+}
+
+function destroyCachedPdfDoc() {
+  if (AppState.pdfDoc) { try { AppState.pdfDoc.destroy(); } catch (e) { /* ya destruido */ } }
+  AppState.pdfDoc = null;
+  AppState.pdfDocMapId = null;
+  AppState.pdfGeoref = null;
+  AppState.pdfLayersConfig = null;
+  AppState.pdfLayerGroups = [];
+  if (AppState.pdfLayerRenderTimer) { clearTimeout(AppState.pdfLayerRenderTimer); AppState.pdfLayerRenderTimer = null; }
+  const btn = document.getElementById('btn-pdf-layers');
+  if (btn) btn.style.display = 'none';
+  closePdfLayersPanel();
 }
 
 // ============================================
@@ -3393,6 +3523,7 @@ function initEventListeners() {
     resetMapVisualRotation(); // al salir del mapa se limpia la rotación visual
     stopLocationTracking();   // y se detiene el seguimiento GPS continuo
     stopFollowLocation();     // limpia el estado visual del botón de ubicación
+    destroyCachedPdfDoc();    // libera el PDF cacheado y oculta el panel de capas
     if (AppState.isTracking) {
       if (!confirm('Hay un recorrido en curso. ¿Salir y guardarlo?')) return;
       stopTrack().finally(() => {
@@ -3485,6 +3616,10 @@ function initEventListeners() {
   document.getElementById('photo-input').addEventListener('change', (e) => { if (e.target.files.length > 0) { handlePhotoCapture(e.target.files[0], AppState.pendingMarkerLatLng); e.target.value = ''; } });
   document.getElementById('btn-export').addEventListener('click', openExportModal);
   document.getElementById('btn-calibrate').addEventListener('click', showCalibrationPanel);
+  document.getElementById('btn-pdf-layers').addEventListener('click', openPdfLayersPanel);
+  document.getElementById('btn-close-pdf-layers').addEventListener('click', closePdfLayersPanel);
+  document.getElementById('btn-pdf-layers-all').addEventListener('click', () => setAllPdfLayers(true));
+  document.getElementById('btn-pdf-layers-none').addEventListener('click', () => setAllPdfLayers(false));
   document.getElementById('btn-markers-panel').addEventListener('click', openMarkersPanel);
   document.getElementById('btn-close-panel').addEventListener('click', closeMarkersPanel);
   document.getElementById('btn-export-panel').addEventListener('click', openExportModal);

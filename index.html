@@ -17,12 +17,12 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
 
   <!-- App CSS -->
-  <link rel="stylesheet" href="css/styles.css?v=2.10.8">
+  <link rel="stylesheet" href="css/styles.css?v=2.10.9">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.10.8">
+  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.10.9">
 </head>
 <body>
 
@@ -48,7 +48,7 @@
               <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:999px;">v2.10.8</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:999px;">v2.10.9</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -224,6 +224,23 @@
         <button id="btn-place-here" class="btn-sm btn-primary" title="Colocar marcador en el centro del mapa">Colocar aquí</button>
       </div>
 
+      <!-- Panel flotante: capas del PDF -->
+      <div id="pdf-layers-panel" class="pdf-layers-panel hidden">
+        <div class="pdf-layers-header">
+          <span class="pdf-layers-title">Capas del PDF</span>
+          <button id="btn-close-pdf-layers" class="icon-btn" title="Cerrar">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="pdf-layers-actions">
+          <button id="btn-pdf-layers-all" class="btn-sm btn-secondary">Todo</button>
+          <button id="btn-pdf-layers-none" class="btn-sm btn-secondary">Nada</button>
+        </div>
+        <div id="pdf-layers-list" class="pdf-layers-list"></div>
+      </div>
+
       <!-- Botones flotantes del mapa -->
       <div class="map-controls">
         <!-- Mi ubicacion -->
@@ -286,6 +303,15 @@
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"/>
             <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/>
+          </svg>
+        </button>
+
+        <!-- Capas del PDF -->
+        <button id="btn-pdf-layers" class="map-btn" title="Capas del PDF" style="display:none;">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 8l10 6 10-6-10-6z" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 13l10 6 10-6" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 18l10 6 10-6" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </button>
 
@@ -1055,8 +1081,8 @@
 
   <!-- Leaflet JS -->
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script defer src="js/leaflet-rotate.js?v=2.10.8"></script>
-  <script defer src="js/leaflet-rotate-patches.js?v=2.10.8"></script>
+  <script defer src="js/leaflet-rotate.js?v=2.10.9"></script>
+  <script defer src="js/leaflet-rotate-patches.js?v=2.10.9"></script>
 
   <!-- Proj4js -->
   <script defer src="https://unpkg.com/proj4@2.9.2/dist/proj4.js"></script>
@@ -1086,19 +1112,19 @@
   <script defer src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
 
   <!-- Storage Module (IndexedDB) -->
-  <script defer src="js/storage.js?v=2.10.8"></script>
+  <script defer src="js/storage.js?v=2.10.9"></script>
 
   <!-- PDF Processor -->
-  <script defer src="js/pdf-processor.js?v=2.10.8"></script>
+  <script defer src="js/pdf-processor.js?v=2.10.9"></script>
 
   <!-- App Main Logic -->
-  <script defer src="js/app.js?v=2.10.8"></script>
+  <script defer src="js/app.js?v=2.10.9"></script>
 
   <!-- Sync Manager (Offline-first Supabase sync) -->
-  <script defer src="js/sync-manager.js?v=2.10.8"></script>
+  <script defer src="js/sync-manager.js?v=2.10.9"></script>
 
   <!-- Admin Manager (Remote admin panel) -->
-  <script defer src="js/admin-manager.js?v=2.10.8"></script>
+  <script defer src="js/admin-manager.js?v=2.10.9"></script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>

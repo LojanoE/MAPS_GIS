@@ -144,10 +144,28 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 24. **Badge y nombre del marcador (v2.10.8):** crear un marcador QC y uno LSM (uno con nombre largo, ej. "Muestra de relleno zona 1 sector norte"). Abrir el panel de marcadores: el badge `QC` debe verse como pastilla verde y `LSM` naranja, siempre visible aunque el nombre se trunque con "…". Tocar un marcador en el mapa: el popup debe usar los colores del tema (fondo oscuro en tema oscuro, claro en tema claro) y mostrar nombre + badge + coordenadas.
 25. **Re-estampado de foto LSM al editar (v2.10.8):** crear un marcador LSM con foto y anotar la localización impresa en ella. Editar el marcador, cambiar **Localización** o **Nombre de Muestra** sin tocar la foto, guardar. Exportar ZIP: la foto en `fotos/` debe mostrar el dato **nuevo**, y `fotos_crudas/` seguir siendo la original sin estampar. Repetir editando solo **Ensayos** (campo que no va en la foto): la foto no debe re-procesarse. Fotos antiguas sin `originalBlob` no deben romper el guardado (aviso en consola).
 26. **Gestionar opciones desde el formulario LSM (v2.10.8):** abrir "Agregar marcador → LSM", llenar Nombre de Muestra y marcar algunos Ensayos. Tocar el ícono de lápiz junto a **Fuente**, agregar una opción nueva y pulsar "Listo": el modal LSM debe seguir abierto, la opción nueva aparecer en el `<select>` de Fuente, y el nombre y los ensayos marcados **no deben perderse**. Verificar lo mismo con Ensayos (los marcados que sigan existiendo se conservan). Confirmar que el valor nuevo también aparece en Home → Configuración.
+27. **Capas del PDF (v2.10.9):** subir un GeoPDF con capas OCG (ej. planos DRT/DRQ de QGIS/AutoCAD) y abrirlo: debe aparecer el botón de capas (icono de rombos apilados) en los controles del mapa. Abrir el panel "Capas del PDF": debe listar las capas con switches. Apagar una capa → el overlay se re-renderiza sin ella (~250 ms de debounce). "Nada"/"Todo" apagan/encienden todas. Recargar la página y reabrir el mapa: la selección debe persistir. Verificar que la calibración (offset) sigue funcionando con capas apagadas, y que al abrir un GeoTIFF o un PDF sin capas el botón no aparece.
 
 ## Notas de versión
 
 > **Regla para agentes:** cada vez que hagas un cambio de código en este proyecto (fix, feature, refactor visible), agrega una entrada nueva arriba de todo en esta sección, siguiendo el formato de las entradas existentes (título con versión, bullets de Problema/Solución/Cambios, archivos y funciones tocadas, "Bumps de versión"). Súmale también un paso a la lista de verificación de la sección anterior si el cambio es comprobable manualmente. Bumpea `APP_VERSION` en `js/app.js` y `sw.js` (y el badge en `index.html`) en el mismo commit. No cierres una tarea sin dejar esto documentado — es lo que permite retomar el trabajo en la siguiente sesión sin releer el diff completo.
+
+### v2.10.9 — Panel de capas del PDF (activar/desactivar capas OCG)
+
+- **Problema:** los GeoPDFs subidos venían con todas sus capas internas (Optional Content Groups) siempre visibles; no había forma de apagar capas para mejorar la lectura del plano.
+- **Solución:** panel flotante **"Capas del PDF"** en la pantalla del mapa, usando la API nativa de PDF.js de contenido opcional (`getOptionalContentConfig()` + `optionalContentConfigPromise` en `page.render()`).
+  - Nuevo botón `#btn-pdf-layers` en `.map-controls` (visible solo cuando el mapa abierto es un PDF **con** capas). Panel `#pdf-layers-panel` con un switch por capa (reutiliza `.layer-toggle`) y botones **Todo/Nada**.
+  - Cada toggle llama `config.setVisibility(id, visible)`, guarda el estado y re-renderiza el overlay con debounce de 250 ms; `renderPage()` cancela el render anterior (`RenderingCancelledException`) para evitar renders superpuestos.
+  - **Persistencia por mapa:** `maps_gis_pdflayers_<mapId>` en LocalStorage (mismo patrón que los offsets de calibración); se aplica antes del primer render al abrir el mapa.
+  - **Documento PDF cacheado** (`AppState.pdfDoc`/`pdfDocMapId`/`pdfGeoref`): `loadPDFMap()` ya no re-parsea el archivo en cada calibración o toggle; `reloadMapWithOffset()` ahora es un wrapper de la función compartida `rerenderPDFOverlay()`. Se libera con `destroyCachedPdfDoc()` al abrir un GeoTIFF o salir del mapa.
+- **Cambios:**
+  - `js/pdf-processor.js`: `renderPage()` acepta 4to parámetro `optionalContentConfig` y cancela renders previos; nueva función `getPdfLayerInfo(pdf)` (devuelve `{config, groups:[{id, name, visible}]}`), exportada.
+  - `js/app.js`: estado nuevo en `AppState` (`pdfDoc`, `pdfDocMapId`, `pdfGeoref`, `pdfLayersConfig`, `pdfLayerGroups`, `pdfLayerRenderTimer`); funciones nuevas `getPdfLayerStateKey`, `loadSavedPdfLayerState`, `savePdfLayerState`, `setupPdfLayers`, `renderPdfLayersList`, `togglePdfLayer`, `setAllPdfLayers`, `schedulePdfRerender`, `openPdfLayersPanel`, `closePdfLayersPanel`, `rerenderPDFOverlay`, `destroyCachedPdfDoc`; `loadPDFMap()` y `reloadMapWithOffset()` reescritas; listeners de los 4 botones nuevos; limpieza en `loadGeoTiff()` y `#btn-back`.
+  - `index.html`: botón `#btn-pdf-layers` y panel `#pdf-layers-panel` (junto a `#measurement-panel`).
+  - `css/styles.css`: bloque `.pdf-layers-panel*` (panel flotante a la derecha, estilo `.measurement-panel`/`.calibration-panel`, switches `.layer-toggle` reutilizados).
+- **No afecta:** GeoTIFFs ni PDFs sin capas (el botón no aparece); la rectificación `rectifyCanvasToNorthUp()` (ocultar capas no cambia el viewport ni las esquinas GPTS); la exportación ni la sincronización.
+- **Archivos tocados:** `js/pdf-processor.js`, `js/app.js`, `index.html`, `css/styles.css`, `sw.js`, `AGENTS.md`.
+- **Bumps de versión:** `2.10.8` → `2.10.9`.
 
 ### v2.10.8 — Fix: nombre/badge del marcador, re-estampado de foto LSM al editar, y gestión de opciones desde el formulario LSM
 
@@ -432,7 +450,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.8` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.9` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
@@ -453,6 +471,7 @@ Novedades en esta versión:
 | Tamaño fuente estampado | LocalStorage | `maps_gis_stamp_font_size` (default 30 px) |
 | Mapas / fotos / recorridos | IndexedDB | `MapsGISDB` v4 (`maps`, `photos`, `tracks`) |
 | Offset por mapa | LocalStorage | `maps_gis_offset_<mapId>` |
+| Capas PDF visibles por mapa | LocalStorage | `maps_gis_pdflayers_<mapId>` (`{groupId: bool}`) |
 | Device name / id | LocalStorage | `maps_gis_device_name` / `maps_gis_device_id` (formato `dev_<timestamp>_<random>`) |
 | Usuario LSM | LocalStorage | `maps_gis_lsm_user` |
 | Último formulario LSM | LocalStorage | `maps_gis_last_lsm_form` (excluye `nombreMuestra` y `ensayos`) |
@@ -474,6 +493,7 @@ Nota: las claves `maps_gis_admin` y `maps_gis_app_version` solo existen en `js/a
 - Zoom máximo del mapa: **22** (tiles CartoDB con `maxNativeZoom: 19`, re-escalados en 20–22).
 - **Rotación visual del mapa:** rotación puramente visual de todo el mapa con gestos de dos dedos (touch) o `Shift` + scroll (desktop). Usa el plugin local `js/leaflet-rotate.js` y parches locales `js/leaflet-rotate-patches.js` para eliminar el *snap* final y reducir el trabajo por frame. Botón "Volver al norte" e indicador de ángulo en el header. No afecta coordenadas ni georreferenciación; no persiste entre sesiones.
 - **Calibración de mapa:** offset en metros (este/norte) por mapa, editable en pantalla con pasos de 0.1 m (`maps_gis_offset_<mapId>`). Desde v2.9.9 la conversión metros→grados usa fórmulas geodésicas del elipsoide WGS84 para mayor precisión.
+- **Capas del PDF (OCG):** desde v2.10.9, si el PDF abierto tiene capas internas (Optional Content Groups), aparece el botón `#btn-pdf-layers` y el panel flotante `#pdf-layers-panel` permite activar/desactivar cada capa (API `getOptionalContentConfig()`/`setVisibility()` de PDF.js, re-render con debounce y cancelación). El estado persiste por mapa en `maps_gis_pdflayers_<mapId>`. El documento PDF queda cacheado en `AppState.pdfDoc` mientras el mapa está abierto.
 - **Seguimiento GPS continuo:** el botón de ubicación activa `watchPosition`, muestra el punto con suavizado exponencial y transiciones suaves, y muestra la precisión (`accuracy`) en el panel de coordenadas. Se detiene al salir del mapa.
 
 ### Marcadores
