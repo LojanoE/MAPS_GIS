@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resumen Ejecutivo — MAPS GIS</title>
+<style>
+/* ============================================================
+   MARGENES A PRUEBA DEL CUADRO DE IMPRESION
+   ------------------------------------------------------------
+   El cuadro de impresion del navegador puede forzar
+   "Margenes: ninguno" y anular cualquier margen declarado en
+   @page. Por eso aqui @page va en 0 y el margen lo reserva el
+   propio documento:
+     - .frame es una tabla; su <thead> y su <tfoot> se repiten
+       en CADA hoja impresa y reservan 25 mm arriba y abajo.
+     - .frame-body aporta 25 mm a izquierda y derecha.
+   Resultado: 25 mm iguales en los cuatro lados y en todas las
+   hojas, este el cuadro en "Predeterminado" o en "Ninguno".
+   ============================================================ */
+@page { size: A4; margin: 0; }
+
+:root {
+  --accent: #c2410c;
+  --accent-soft: #fdf1e7;
+  --ink: #14181d;
+  --ink-soft: #4a5361;
+  --rule: #e2d8ce;
+  --band: #faf6f1;
+  --margin: 25mm;
+}
+
+* { box-sizing: border-box; }
+
+html { background: #8c95a3; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, "Roboto", "Helvetica Neue", Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.45;
+  color: var(--ink);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ---- Hoja simulada en pantalla: mismo ancho y mismos margenes que en papel ---- */
+.sheet {
+  width: 210mm;
+  margin: 12mm auto;
+  background: #fff;
+  box-shadow: 0 2px 18px rgba(0,0,0,.35);
+}
+
+.frame { width: 100%; border-collapse: collapse; }
+.frame td { padding: 0; vertical-align: top; }
+.frame-space { height: var(--margin); }                    /* margen superior e inferior */
+/* OJO: el selector debe ser mas especifico que ".frame td",
+   o el padding: 0 de esa regla anula los margenes laterales. */
+.frame td.frame-body { padding: 0 var(--margin); }         /* margen izquierdo y derecho */
+
+/* ---- Boton de impresion ---- */
+.print-bar { position: fixed; top: 14px; right: 18px; z-index: 10; width: 232px; }
+.print-bar button {
+  font: inherit; font-size: 10pt; font-weight: 600; width: 100%;
+  color: #fff; background: var(--accent); border: none; border-radius: 4px;
+  padding: 10px 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.print-bar button:hover { background: #9a3412; }
+.print-bar button:disabled { opacity: .6; cursor: wait; }
+.print-hint {
+  margin-top: 8px; background: #fff; border: 1px solid var(--rule);
+  border-radius: 4px; padding: 9px 11px; font-size: 8.5pt; line-height: 1.45;
+  color: var(--ink-soft); box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.print-hint b { color: var(--ink); }
+.print-hint ul { margin: 5px 0 0; padding-left: 15px; }
+.print-hint li { margin-bottom: 2px; }
+
+/* ---- Encabezado ---- */
+.doc-head { text-align: center; padding-bottom: 10px; border-bottom: 2.5px solid var(--accent); }
+.doc-head img { height: 52px; width: auto; margin: 0 8px; }
+h1 { margin: 6px 0 0; font-size: 22pt; letter-spacing: .06em; color: var(--accent); line-height: 1.1; }
+.subtitle { margin: 3px 0 0; font-size: 11pt; font-weight: 600; color: var(--ink); }
+.kicker { margin: 6px 0 0; font-size: 8.5pt; letter-spacing: .03em; text-transform: uppercase; color: var(--ink-soft); }
+.doc-head p { text-align: center; }   /* no justificar el encabezado */
+
+/* ---- Titulos ---- */
+h2 {
+  font-size: 12.5pt; color: var(--accent); margin: 16px 0 6px; padding-bottom: 3px;
+  border-bottom: 1px solid var(--rule);
+  break-after: avoid; page-break-after: avoid;
+}
+h3 { font-size: 11pt; margin: 13px 0 4px; color: var(--ink); break-after: avoid; page-break-after: avoid; }
+h3 .num {
+  display: inline-block; min-width: 20px; height: 20px; line-height: 20px; text-align: center;
+  margin-right: 7px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 9pt;
+}
+p { margin: 0 0 8px; text-align: justify; }
+.lead { font-size: 10.5pt; }
+
+/* ---- Listas ---- */
+ul { margin: 0 0 8px; padding-left: 17px; }
+li { margin-bottom: 3px; text-align: justify; break-inside: avoid; page-break-inside: avoid; }
+.why li { margin-bottom: 5px; }
+b { color: var(--ink); }
+
+/* ---- Banda de cifras ---- */
+.metrics {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+  background: var(--rule); border: 1px solid var(--rule); margin: 11px 0 4px;
+  break-inside: avoid; page-break-inside: avoid;
+}
+.metric { background: var(--band); padding: 9px 8px; text-align: center; }
+.metric .value { font-size: 16.5pt; font-weight: 700; color: var(--accent); line-height: 1.1; }
+.metric .label { font-size: 8.5pt; color: var(--ink-soft); line-height: 1.3; margin-top: 2px; }
+.metrics-note { font-size: 8pt; color: var(--ink-soft); margin-top: 4px; text-align: left; }
+
+/* ---- Modulos ---- */
+.role { font-size: 9.5pt; color: var(--ink-soft); font-style: italic; margin: 0 0 6px; }
+
+/* ---- Cierre ---- */
+.closing {
+  background: var(--accent-soft); border-left: 4px solid var(--accent);
+  padding: 11px 14px; margin-top: 6px;
+  break-inside: avoid; page-break-inside: avoid;
+}
+.closing p:last-child { margin-bottom: 0; }
+
+.doc-foot {
+  margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--rule);
+  font-size: 8pt; color: var(--ink-soft); text-align: center;
+}
+
+/* ---- Impresion ---- */
+@media print {
+  html { background: #fff; }
+  .no-print { display: none !important; }
+  .sheet { width: auto; margin: 0; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  <button id="btn-print" disabled>⏳ Cargando cifras…</button>
+  <div class="print-hint">
+    <b>Los márgenes de 25 mm los trae el documento</b>, así que salen iguales
+    aunque el cuadro de impresión esté en «Márgenes: ninguno».
+    <ul>
+      <li>Tamaño de papel: <b>A4</b></li>
+      <li>Escala: <b>Predeterminada (100 %)</b></li>
+      <li>Desmarcar <b>Encabezados y pies de página</b></li>
+    </ul>
+    Si la impresora tiene cargado papel <b>Carta</b>, elige
+    «Ajustar al tamaño de página».
+  </div>
+</div>
+
+<div class="sheet">
+<table class="frame">
+  <thead><tr><td><div class="frame-space"></div></td></tr></thead>
+  <tfoot><tr><td><div class="frame-space"></div></td></tr></tfoot>
+  <tbody><tr><td class="frame-body">
+
+    <div class="doc-head">
+      <img src="assets/logo_lab_chino_PNG.png" alt="Logo Laboratorio">
+      <h1>MAPS GIS</h1>
+      <p class="subtitle">Aplicación móvil de captura y visualización geoespacial en campo</p>
+      <p class="kicker" id="doc-subtitle">Departamento de Gestión de Depósitos de Relaves &nbsp;·&nbsp; Resumen ejecutivo para Gerencia</p>
+    </div>
+
+    <h2>¿Qué es MAPS GIS?</h2>
+    <p class="lead">MAPS GIS es la aplicación que lleva el mapa del sitio al bolsillo del técnico. Funciona
+    en el celular como una app instalable, visualiza los planos y ortofotos propios del proyecto
+    (GeoPDF y GeoTIFF georreferenciados) directamente sobre el terreno, y permite capturar puntos de
+    control de calidad, muestras de laboratorio con foto estampada y recorridos GPS &mdash; todo
+    georreferenciado y todo sincronizado a la base de datos central del departamento.</p>
+    <p class="lead">Está construida para el campo: opera al 100% sin señal de internet y sincroniza cuando
+    la conexión vuelve. Este documento resume lo que la aplicación ya hace hoy por la operación
+    &mdash; mucho de lo cual no es ampliamente conocido fuera del equipo que la usa a diario.</p>
+
+    <h2>Por qué importa para la gerencia</h2>
+    <ul class="why">
+      <li><b>Todo en un solo lugar.</b> El punto tomado en campo, sus fotos georreferenciadas, sus
+      coordenadas y sus datos de laboratorio quedan conectados desde la captura hasta la exportación
+      en Excel: sin planillas sueltas y sin doble digitación.</li>
+      <li><b>Trazabilidad completa.</b> Cada foto lleva incrustadas sus coordenadas GPS en formato WGS84
+      (compatibles con QGIS), cada marcador registra dispositivo, usuario y fecha, y cada muestra del
+      laboratorio queda ligada a su semana, localización, fuente y ensayos. Auditoría disponible en
+      cualquier momento, no una reconstrucción manual después del hecho.</li>
+      <li><b>Operación incluso sin señal.</b> Toda la captura (mapas, puntos, fotos, recorridos) se guarda
+      primero en el propio dispositivo; el técnico sigue trabajando en zonas del depósito sin cobertura
+      y la información sube a la nube cuando hay conexión. Nada se pierde.</li>
+      <li><b>Los mapas propios del proyecto, no mapas genéricos.</b> El fondo de trabajo son los planos y
+      ortofotos reales del sitio (GeoPDF y GeoTIFF), con zoom de detalle y calibración fina por mapa
+      para que el overlay coincida con el terreno.</li>
+      <li><b>Precisión geodésica seria.</b> Las coordenadas se manejan en PSAD56 UTM 17S con la
+      transformación oficial para Ecuador (EPSG:3990), la misma referencia que usan los visores
+      profesionales de la industria.</li>
+    </ul>
+
+    <h2>Estado actual del sistema</h2>
+    <p class="lead">Cifras reales, leídas en vivo de la base de datos central al momento de abrir este documento:</p>
+    <div class="metrics">
+      <div class="metric"><div class="value" id="kpi-total">…</div><div class="label">marcadores capturados<br>en campo</div></div>
+      <div class="metric"><div class="value" id="kpi-qc">…</div><div class="label">puntos de control<br>de calidad (QC)</div></div>
+      <div class="metric"><div class="value" id="kpi-lsm">…</div><div class="label">muestras de laboratorio<br>(LSM)</div></div>
+      <div class="metric"><div class="value" id="kpi-fotos">…</div><div class="label">fotos capturadas<br>con GPS</div></div>
+      <div class="metric"><div class="value" id="kpi-equipos">…</div><div class="label">dispositivos<br>en uso</div></div>
+      <div class="metric"><div class="value" id="kpi-dias">…</div><div class="label">días en operación<br>continua</div></div>
+    </div>
+    <p class="metrics-note" id="kpi-note">Cargando cifras desde la base de datos…</p>
+
+    <h2>Módulos de la plataforma</h2>
+
+    <h3><span class="num">1</span>Mapas georreferenciados del sitio</h3>
+    <p class="role">La base de todo: el plano real del proyecto, en el celular, sobre el terreno.</p>
+    <ul>
+      <li>Carga de <b>GeoPDF y GeoTIFF</b> georreferenciados (planos de QGIS, AutoCAD, ortofotos),
+      almacenados en el propio dispositivo para uso sin conexión.</li>
+      <li>Soporte de páginas rotadas y marcos rotados geográficamente: el plano siempre se presenta
+      <b>norte-arriba y correctamente posicionado</b>, con corrección de la convergencia meridiana.</li>
+      <li><b>Capas internas del PDF</b> activables y desactivables (topografía, demarcación, estructuras)
+      para leer el plano sin saturación.</li>
+      <li><b>Calibración fina por mapa</b> en pasos de 0.1 m, rotación visual del mapa con gestos y zoom
+      hasta nivel 22 para ver el detalle del plano.</li>
+      <li>Coordenadas en vivo en PSAD56 UTM 17S y WGS84, con la precisión del GPS siempre visible.</li>
+    </ul>
+
+    <h3><span class="num">2</span>Marcadores QC — Control de calidad</h3>
+    <ul>
+      <li>Puntos de control de calidad con nombre automático por día, descripción, color y
+      <b>hasta 2 fotos</b> con coordenadas GPS incrustadas y altura registrada.</li>
+      <li>Colocación por mira central en el mapa o directamente sobre la posición GPS del técnico.</li>
+    </ul>
+
+    <h3><span class="num">3</span>Marcadores LSM — Muestras de laboratorio</h3>
+    <p class="role">Del punto de muestreo al laboratorio, con la evidencia ya impresa en la foto.</p>
+    <ul>
+      <li>Formulario de laboratorio con <b>semana auto-calculada</b>, tipo de material, nombre de muestra,
+      localización, fuente y ensayos solicitados, con listas configurables por el propio equipo.</li>
+      <li><b>Foto estampada automáticamente</b> con el logo del laboratorio, la fecha, la localización y el
+      nombre de la muestra: la evidencia sale del campo ya rotulada.</li>
+      <li>Se conserva siempre la foto original sin estampar, junto a la versión rotulada.</li>
+    </ul>
+
+    <h3><span class="num">4</span>Recorridos GPS y herramientas de medición</h3>
+    <ul>
+      <li>Grabación de <b>recorridos GPS</b> (tracks) con filtros de distancia y precisión, exportables en
+      GeoJSON con la altura de cada punto.</li>
+      <li>Medición de <b>distancias y áreas</b> sobre el mapa, con vértices arrastrables para ajuste fino
+      y resultados en metros y hectáreas.</li>
+    </ul>
+
+    <h3><span class="num">5</span>Sincronización a la nube y panel de administración</h3>
+    <ul>
+      <li>Sincronización a la <b>base de datos central del departamento</b> (Supabase/PostgreSQL): lo
+      capturado en campo queda disponible para consulta inmediata en oficina.</li>
+      <li><b>Panel de administración web</b> protegido con contraseña: tabla y mapa de todos los puntos
+      sincronizados, filtros por fecha, usuario y dispositivo, edición y exportación a Excel.</li>
+    </ul>
+
+    <h3><span class="num">6</span>Exportación de resultados</h3>
+    <ul>
+      <li>Un botón genera el <b>paquete ZIP</b> del trabajo: Excel con hojas QC, LSM y recorridos
+      (con coordenadas UTM, geográficas y altura), fotos rotuladas, fotos originales y tracks GeoJSON.</li>
+      <li>Todo listo para abrir en Excel o cargar en QGIS, sin procesamiento adicional.</li>
+    </ul>
+
+    <h2>En síntesis</h2>
+    <div class="closing">
+      <p>MAPS GIS ya es, hoy, una herramienta operativa que sostiene la captura de información en el
+      terreno: cada punto queda registrado con su ubicación exacta, cada foto sale ya rotulada y cada
+      recorrido queda trazado sobre el plano real del sitio. Capacidades que muchas veces no se ven
+      porque simplemente funcionan en segundo plano.</p>
+      <p>Este resumen busca precisamente eso: que la gerencia conozca todo lo que MAPS GIS ya hace
+      por la operación del departamento.</p>
+    </div>
+
+    <div class="doc-foot">
+      MAPS GIS &nbsp;·&nbsp; Documento interno del Departamento de Gestión de Depósitos de Relaves
+    </div>
+
+  </td></tr></tbody>
+</table>
+</div>
+
+<script>
+  (function () {
+    'use strict';
+
+    // Mismo backend que la aplicación (ver js/sync-manager.js)
+    const SUPABASE_URL = 'https://dzmhhlsttqygjvfabdxx.supabase.co/rest/v1';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6bWhobHN0dHF5Z2p2ZmFiZHh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTE3MDAsImV4cCI6MjA5MDcyNzcwMH0._Gf0G2gpV_9QAYqFx1Kn6TN0lFDq3LxmBdNI82Suj-o';
+    const HEADERS = { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY };
+
+    // Subtítulo con mes/año actual
+    const now = new Date();
+    let month = now.toLocaleDateString('es-EC', { month: 'long', year: 'numeric' });
+    month = month.charAt(0).toUpperCase() + month.slice(1);
+    document.getElementById('doc-subtitle').textContent =
+      'Departamento de Gestión de Depósitos de Relaves · Resumen ejecutivo para Gerencia · ' + month;
+
+    const btnPrint = document.getElementById('btn-print');
+    const note = document.getElementById('kpi-note');
+    btnPrint.addEventListener('click', () => window.print());
+
+    const set = (id, value) => { document.getElementById(id).textContent = value; };
+    const KPI_IDS = ['kpi-total', 'kpi-qc', 'kpi-lsm', 'kpi-fotos', 'kpi-equipos', 'kpi-dias'];
+
+    function finish(msg) {
+      btnPrint.disabled = false;
+      btnPrint.textContent = 'Imprimir / Guardar como PDF';
+      note.textContent = msg;
+    }
+
+    async function fetchWithTimeout(url, options, timeoutMs) {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs || 8000);
+      try {
+        return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+      } finally {
+        clearTimeout(id);
+      }
+    }
+
+    // Conteo exacto con petición HEAD (no descarga filas)
+    async function headCount(table) {
+      const res = await fetchWithTimeout(
+        SUPABASE_URL + '/' + table + '?deleted_at=is.null',
+        { method: 'HEAD', headers: Object.assign({ 'Prefer': 'count=exact' }, HEADERS) }
+      );
+      if (!res.ok) throw new Error(table + ': HTTP ' + res.status);
+      const range = res.headers.get('content-range') || '';
+      const total = parseInt(range.split('/')[1], 10);
+      return isNaN(total) ? 0 : total;
+    }
+
+    // Filas ligeras de una tabla, paginadas de a 1000
+    async function fetchRows(table) {
+      const rows = [];
+      for (let from = 0; ; from += 1000) {
+        const res = await fetchWithTimeout(
+          SUPABASE_URL + '/' + table +
+            '?select=photos_count,created_at,device_id&deleted_at=is.null' +
+            '&order=created_at.asc&limit=1000&offset=' + from,
+          { headers: HEADERS, cache: 'no-store' }
+        );
+        if (!res.ok) throw new Error(table + ': HTTP ' + res.status);
+        const data = await res.json();
+        if (!Array.isArray(data) || !data.length) break;
+        rows.push.apply(rows, data);
+        if (data.length < 1000) break;
+      }
+      return rows;
+    }
+
+    async function loadMetrics() {
+      if (!navigator.onLine) {
+        KPI_IDS.forEach(id => set(id, '—'));
+        finish('Sin conexión a la base de datos: abre el documento con internet y recarga para ver las cifras.');
+        return;
+      }
+      try {
+        const [qcCount, lsmCount, qcRows, lsmRows] = await Promise.all([
+          headCount('qc_markers'),
+          headCount('lsm_markers'),
+          fetchRows('qc_markers'),
+          fetchRows('lsm_markers')
+        ]);
+
+        const total = qcCount + lsmCount;
+        if (!total) {
+          KPI_IDS.forEach(id => set(id, '0'));
+          finish('Aún no hay marcadores sincronizados en la base de datos.');
+          return;
+        }
+
+        let photos = 0;
+        let first = null;
+        const devices = new Set();
+        qcRows.concat(lsmRows).forEach(r => {
+          photos += Number(r.photos_count) || 0;
+          if (r.device_id) devices.add(r.device_id);
+          if (r.created_at) {
+            const d = new Date(r.created_at);
+            if (!first || d < first) first = d;
+          }
+        });
+
+        const days = first ? Math.max(1, Math.round((now - first) / 86400000) + 1) : '—';
+
+        set('kpi-total', total);
+        set('kpi-qc', qcCount);
+        set('kpi-lsm', lsmCount);
+        set('kpi-fotos', photos);
+        set('kpi-equipos', devices.size);
+        set('kpi-dias', days);
+        finish('Cifras actualizadas al ' + now.toLocaleDateString('es-EC',
+          { day: 'numeric', month: 'long', year: 'numeric' }) + '.');
+      } catch (err) {
+        console.error('Error cargando cifras:', err);
+        KPI_IDS.forEach(id => set(id, '—'));
+        finish('No se pudieron cargar las cifras. Verifica tu conexión a internet y recarga la página (Ctrl+F5).');
+      }
+    }
+
+    loadMetrics();
+  })();
+</script>
+
+</body>
+</html>

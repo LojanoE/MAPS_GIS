@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resumen Ejecutivo — RDV GDR</title>
+<style>
+/* ============================================================
+   MARGENES A PRUEBA DEL CUADRO DE IMPRESION
+   ------------------------------------------------------------
+   El cuadro de impresion del navegador puede forzar
+   "Margenes: ninguno" y anular cualquier margen declarado en
+   @page. Por eso aqui @page va en 0 y el margen lo reserva el
+   propio documento:
+     - .frame es una tabla; su <thead> y su <tfoot> se repiten
+       en CADA hoja impresa y reservan 25 mm arriba y abajo.
+     - .frame-body aporta 25 mm a izquierda y derecha.
+   Resultado: 25 mm iguales en los cuatro lados y en todas las
+   hojas, este el cuadro en "Predeterminado" o en "Ninguno".
+   ============================================================ */
+@page { size: A4; margin: 0; }
+
+:root {
+  --accent: #14508c;
+  --accent-soft: #eaf1f8;
+  --ink: #14181d;
+  --ink-soft: #4a5361;
+  --rule: #c9d3e0;
+  --band: #f4f7fb;
+  --margin: 25mm;
+}
+
+* { box-sizing: border-box; }
+
+html { background: #8c95a3; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, "Roboto", "Helvetica Neue", Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.45;
+  color: var(--ink);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ---- Hoja simulada en pantalla: mismo ancho y mismos margenes que en papel ---- */
+.sheet {
+  width: 210mm;
+  margin: 12mm auto;
+  background: #fff;
+  box-shadow: 0 2px 18px rgba(0,0,0,.35);
+}
+
+.frame { width: 100%; border-collapse: collapse; }
+.frame td { padding: 0; vertical-align: top; }
+.frame-space { height: var(--margin); }                    /* margen superior e inferior */
+/* OJO: el selector debe ser mas especifico que ".frame td",
+   o el padding: 0 de esa regla anula los margenes laterales. */
+.frame td.frame-body { padding: 0 var(--margin); }         /* margen izquierdo y derecho */
+
+/* ---- Boton de impresion ---- */
+.print-bar { position: fixed; top: 14px; right: 18px; z-index: 10; width: 232px; }
+.print-bar button {
+  font: inherit; font-size: 10pt; font-weight: 600; width: 100%;
+  color: #fff; background: var(--accent); border: none; border-radius: 4px;
+  padding: 10px 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.print-bar button:hover { background: #0f3f70; }
+.print-bar button:disabled { opacity: .6; cursor: wait; }
+.print-hint {
+  margin-top: 8px; background: #fff; border: 1px solid var(--rule);
+  border-radius: 4px; padding: 9px 11px; font-size: 8.5pt; line-height: 1.45;
+  color: var(--ink-soft); box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+.print-hint b { color: var(--ink); }
+.print-hint ul { margin: 5px 0 0; padding-left: 15px; }
+.print-hint li { margin-bottom: 2px; }
+.back-link {
+  display: block; margin-top: 8px; text-align: center;
+  font-size: 8.5pt; color: #fff; text-decoration: none;
+  background: rgba(20,80,140,.85); border-radius: 4px; padding: 6px 10px;
+}
+.back-link:hover { background: var(--accent); }
+
+/* ---- Encabezado ---- */
+.doc-head { text-align: center; padding-bottom: 10px; border-bottom: 2.5px solid var(--accent); }
+.doc-head img { height: 52px; width: auto; margin: 0 8px; }
+h1 { margin: 6px 0 0; font-size: 22pt; letter-spacing: .06em; color: var(--accent); line-height: 1.1; }
+.subtitle { margin: 3px 0 0; font-size: 11pt; font-weight: 600; color: var(--ink); }
+.kicker { margin: 6px 0 0; font-size: 8.5pt; letter-spacing: .03em; text-transform: uppercase; color: var(--ink-soft); }
+.doc-head p { text-align: center; }   /* no justificar el encabezado */
+
+/* ---- Titulos ---- */
+h2 {
+  font-size: 12.5pt; color: var(--accent); margin: 16px 0 6px; padding-bottom: 3px;
+  border-bottom: 1px solid var(--rule);
+  break-after: avoid; page-break-after: avoid;
+}
+h3 { font-size: 11pt; margin: 13px 0 4px; color: var(--ink); break-after: avoid; page-break-after: avoid; }
+h3 .num {
+  display: inline-block; min-width: 20px; height: 20px; line-height: 20px; text-align: center;
+  margin-right: 7px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 9pt;
+}
+p { margin: 0 0 8px; text-align: justify; }
+.lead { font-size: 10.5pt; }
+
+/* ---- Listas ---- */
+ul { margin: 0 0 8px; padding-left: 17px; }
+li { margin-bottom: 3px; break-inside: avoid; page-break-inside: avoid; }
+.why li { margin-bottom: 5px; }
+b { color: var(--ink); }
+
+/* ---- Banda de cifras ---- */
+.metrics {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+  background: var(--rule); border: 1px solid var(--rule); margin: 11px 0 4px;
+  break-inside: avoid; page-break-inside: avoid;
+}
+.metric { background: var(--band); padding: 9px 8px; text-align: center; }
+.metric .value { font-size: 16.5pt; font-weight: 700; color: var(--accent); line-height: 1.1; }
+.metric .label { font-size: 8.5pt; color: var(--ink-soft); line-height: 1.3; margin-top: 2px; }
+.metrics-note { font-size: 8pt; color: var(--ink-soft); margin-top: 4px; text-align: left; }
+
+/* ---- Modulos ---- */
+.role { font-size: 9.5pt; color: var(--ink-soft); font-style: italic; margin: 0 0 6px; }
+
+/* ---- Cierre ---- */
+.closing {
+  background: var(--accent-soft); border-left: 4px solid var(--accent);
+  padding: 11px 14px; margin-top: 6px;
+  break-inside: avoid; page-break-inside: avoid;
+}
+.closing p:last-child { margin-bottom: 0; }
+
+.doc-foot {
+  margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--rule);
+  font-size: 8pt; color: var(--ink-soft); text-align: center;
+}
+
+/* ---- Impresion ---- */
+@media print {
+  html { background: #fff; }
+  .no-print { display: none !important; }
+  .sheet { width: auto; margin: 0; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  <button id="btn-print" disabled>⏳ Cargando cifras…</button>
+  <div class="print-hint">
+    <b>Los márgenes de 25 mm los trae el documento</b>, así que salen iguales
+    aunque el cuadro de impresión esté en «Márgenes: ninguno».
+    <ul>
+      <li>Tamaño de papel: <b>A4</b></li>
+      <li>Escala: <b>Predeterminada (100 %)</b></li>
+      <li>Desmarcar <b>Encabezados y pies de página</b></li>
+    </ul>
+    Si la impresora tiene cargado papel <b>Carta</b>, elige
+    «Ajustar al tamaño de página».
+  </div>
+  <a href="dashboard.html" class="back-link">← Volver al dashboard</a>
+</div>
+
+<div class="sheet">
+<table class="frame">
+  <thead><tr><td><div class="frame-space"></div></td></tr></thead>
+  <tfoot><tr><td><div class="frame-space"></div></td></tr></tfoot>
+  <tbody><tr><td class="frame-body">
+
+    <div class="doc-head">
+      <img src="LOGO GDR.jpeg" alt="Logo GDR"><img src="ECUACORRIENTE.png" alt="Ecuacorriente">
+      <h1>RDV</h1>
+      <p class="subtitle">Sistema de Reportes Diarios de Inspección Vehicular</p>
+      <p class="kicker" id="doc-subtitle">Departamento de Gestión de Depósitos de Relaves &nbsp;·&nbsp; Resumen ejecutivo para Gerencia</p>
+    </div>
+
+    <h2>¿Qué es RDV?</h2>
+    <p class="lead">RDV es la plataforma que centraliza la inspección diaria de la flota vehicular del
+    Departamento de Gestión de Depósitos de Relaves. Cada vehículo se inspecciona en 16 sistemas (frenos,
+    neumáticos, motor, luces, seguridad y más), el resultado se guarda en una base de datos central en la
+    nube y se genera automáticamente un reporte formal imprimible con código único: sin planillas sueltas,
+    sin formatos en papel y sin depender de la memoria de una sola persona.</p>
+    <p class="lead">La plataforma ya está en operación diaria. Este documento resume lo que el sistema hace
+    hoy por el departamento &mdash; mucho de lo cual no es ampliamente conocido fuera del equipo que lo usa
+    a diario.</p>
+
+    <h2>Por qué importa para la gerencia</h2>
+    <ul class="why">
+      <li><b>Todo en un solo lugar.</b> La inspección del conductor, el reporte firmado, el historial por
+      vehículo y los indicadores gerenciales trabajan sobre la misma base de información: desde el registro
+      en campo hasta el análisis, sin doble digitación.</li>
+      <li><b>Trazabilidad completa.</b> Cada reporte tiene un código único auto-incremental
+      (<b>YYMM-VEHÍCULO-RDV-0DÍA-VN</b>), con fecha, conductor, inspector, kilometraje y fotos de evidencia.
+      Auditoría disponible en cualquier momento, no una reconstrucción manual después del hecho.</li>
+      <li><b>Mantenimiento preventivo por diseño.</b> El sistema vigila el kilometraje de cada vehículo
+      contra sus umbrales de mantenimiento de motor y caja, y alerta automáticamente cuando se aproxima el
+      próximo servicio.</li>
+      <li><b>Operación incluso sin señal.</b> Si no hay conexión a internet, el reporte se guarda en el
+      propio dispositivo y se sincroniza automáticamente a la nube apenas vuelve la señal. Nada se pierde.</li>
+      <li><b>Bilingüe Español / 中文.</b> La interfaz se cambia con un botón para el personal en campo; el
+      reporte impreso se genera siempre en español, con formato uniforme.</li>
+    </ul>
+
+    <h2>Estado actual del sistema</h2>
+    <p class="lead">Cifras reales, leídas en vivo de la base de datos central al momento de abrir este documento:</p>
+    <div class="metrics">
+      <div class="metric"><div class="value" id="kpi-reportes">…</div><div class="label">reportes de inspección<br>registrados</div></div>
+      <div class="metric"><div class="value" id="kpi-vehiculos">…</div><div class="label">vehículos con<br>inspecciones</div></div>
+      <div class="metric"><div class="value">16</div><div class="label">sistemas inspeccionados<br>por vehículo, cada día</div></div>
+      <div class="metric"><div class="value" id="kpi-operativo">…</div><div class="label">de reportes con vehículo<br>OPERATIVO</div></div>
+      <div class="metric"><div class="value" id="kpi-obs">…</div><div class="label">observaciones (OBS)<br>detectadas y registradas</div></div>
+      <div class="metric"><div class="value" id="kpi-cri">…</div><div class="label">fallas críticas (CRI)<br>detectadas y registradas</div></div>
+      <div class="metric"><div class="value" id="kpi-dias">…</div><div class="label">días en operación<br>continua</div></div>
+    </div>
+    <p class="metrics-note" id="kpi-note">Cargando cifras desde la base de datos…</p>
+
+    <h2>Módulos de la plataforma</h2>
+
+    <h3><span class="num">1</span>Formulario de inspección diaria</h3>
+    <p class="role">La puerta de entrada del sistema. El conductor o inspector evalúa su vehículo todos los días, en minutos.</p>
+    <ul>
+      <li>Inspección de <b>16 sistemas</b> por vehículo (frenos, neumáticos, dirección, motor, luces,
+      espejos, seguridad y más), cada uno con estado OK / Observado / Crítico y observaciones.</li>
+      <li>Flota de <b>12 vehículos</b> del departamento registrados, con placas asociadas automáticamente a
+      cada código.</li>
+      <li><b>Fotos de evidencia</b> adjuntas desde el celular, redimensionadas automáticamente en el
+      navegador para no consumir datos ni almacenamiento.</li>
+      <li>Validación del formulario y <b>borrador automático</b>: si la página se cierra a mitad de la
+      inspección, nada se pierde.</li>
+      <li>Generación del <b>reporte formal imprimible</b> en formato A4, listo para firmar, con código único
+      auto-incremental por vehículo y día.</li>
+      <li>Interfaz bilingüe <b>Español / 中文</b> con un solo botón.</li>
+    </ul>
+
+    <h3><span class="num">2</span>Persistencia en la nube y modo sin conexión</h3>
+    <ul>
+      <li>Todos los reportes se guardan en una <b>base de datos central en la nube</b> (Supabase/PostgreSQL),
+      disponible para consulta inmediata.</li>
+      <li><b>Trabajo 100% sin conexión:</b> si no hay internet, el reporte completo se encola en el propio
+      dispositivo y el usuario sigue trabajando.</li>
+      <li><b>Sincronización automática:</b> apenas vuelve la señal, los reportes pendientes suben solos a la
+      nube y se retiran de la cola. Sin pasos manuales.</li>
+    </ul>
+
+    <h3><span class="num">3</span>Dashboard gerencial</h3>
+    <p class="role">Panel de indicadores protegido con contraseña, con la operación de la flota de un vistazo.</p>
+    <ul>
+      <li>KPIs y 7 gráficos: reportes por día, sistemas con más fallas, distribución de estados operativos,
+      último kilometraje por vehículo, tendencia de fallas críticas, comparativa entre vehículos y
+      <b>proyección de mantenimiento</b> por kilometraje.</li>
+      <li>Filtros por rango de fechas (con presets: últimos 7 días, último mes, este mes, este año), vehículo,
+      conductor y estado operativo.</li>
+    </ul>
+
+    <h3><span class="num">4</span>Reporte por vehículo</h3>
+    <ul>
+      <li>Historial completo de cada vehículo: métricas de operatividad, kilómetros recorridos, fallas por
+      sistema y reportes por conductor.</li>
+      <li>Exportación a <b>Excel</b> (resumen, detalle, conductores y fallas por sistema) e impresión directa
+      a <b>PDF</b> en formato A4.</li>
+    </ul>
+
+    <h2>En síntesis</h2>
+    <div class="closing">
+      <p>RDV ya es, hoy, una herramienta operativa que sostiene el control diario de la flota vehicular del
+      departamento: cada inspección queda registrada, cada falla queda trazada y cada vehículo tiene su
+      historial disponible en segundos. Capacidades que muchas veces no se ven porque simplemente funcionan
+      en segundo plano.</p>
+      <p>Este resumen busca precisamente eso: que la gerencia conozca todo lo que RDV ya hace por el
+      departamento.</p>
+    </div>
+
+    <div class="doc-foot">
+      RDV &nbsp;·&nbsp; Documento interno del Departamento de Gestión de Depósitos de Relaves
+    </div>
+
+  </td></tr></tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-client.js"></script>
+<script>
+  (function () {
+    'use strict';
+
+    // Subtítulo con mes/año actual
+    const now = new Date();
+    let month = now.toLocaleDateString('es-EC', { month: 'long', year: 'numeric' });
+    month = month.charAt(0).toUpperCase() + month.slice(1);
+    document.getElementById('doc-subtitle').textContent =
+      'Departamento de Gestión de Depósitos de Relaves · Resumen ejecutivo para Gerencia · ' + month;
+
+    const btnPrint = document.getElementById('btn-print');
+    const note = document.getElementById('kpi-note');
+    btnPrint.addEventListener('click', () => window.print());
+
+    const set = (id, value) => { document.getElementById(id).textContent = value; };
+    const KPI_IDS = ['kpi-reportes', 'kpi-vehiculos', 'kpi-operativo', 'kpi-obs', 'kpi-cri', 'kpi-dias'];
+
+    function finish(msg) {
+      btnPrint.disabled = false;
+      btnPrint.textContent = 'Imprimir / Guardar como PDF';
+      note.textContent = msg;
+    }
+
+    async function loadMetrics() {
+      if (!window.SUPABASE_READY || !window.supabaseClient) {
+        KPI_IDS.forEach(id => set(id, '—'));
+        finish('Sin conexión a la base de datos: abre el documento con internet y recarga para ver las cifras.');
+        return;
+      }
+      try {
+        const client = window.supabaseClient;
+
+        // Conteos exactos con head queries (rápidos: no descargan filas)
+        const headCount = (table, col, val) => {
+          let q = client.from(table).select('id', { count: 'exact', head: true });
+          if (col) q = q.eq(col, val);
+          return q;
+        };
+        const [tot, op, obsC, criC] = await Promise.all([
+          headCount('reports'),
+          headCount('reports', 'estado_operativo', 'OPERATIVO'),
+          headCount('report_systems', 'estado', 'OBS'),
+          headCount('report_systems', 'estado', 'CRI')
+        ]);
+        if (tot.error) throw tot.error;
+
+        const total = tot.count || 0;
+        if (!total) {
+          KPI_IDS.forEach(id => set(id, '0'));
+          finish('Aún no hay reportes registrados en la base de datos.');
+          return;
+        }
+
+        // Vehículos distintos y primer reporte: paginar solo columnas ligeras
+        const vehicles = new Set();
+        let first = null;
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await client
+            .from('reports')
+            .select('codigo_vehiculo, fecha_hora')
+            .order('fecha_hora', { ascending: true })
+            .range(from, from + 999);
+          if (error) throw error;
+          if (!data || !data.length) break;
+          data.forEach(r => {
+            if (r.codigo_vehiculo) vehicles.add(r.codigo_vehiculo);
+            if (!first && r.fecha_hora) first = new Date(r.fecha_hora);
+          });
+          if (data.length < 1000) break;
+        }
+
+        const pct = Math.round(((op.count || 0) / total) * 100);
+        const days = first ? Math.max(1, Math.round((now - first) / 86400000) + 1) : '—';
+
+        set('kpi-reportes', total);
+        set('kpi-vehiculos', vehicles.size);
+        set('kpi-operativo', pct + '%');
+        set('kpi-obs', obsC.count != null ? obsC.count : '—');
+        set('kpi-cri', criC.count != null ? criC.count : '—');
+        set('kpi-dias', days);
+        finish('Cifras actualizadas al ' + now.toLocaleDateString('es-EC',
+          { day: 'numeric', month: 'long', year: 'numeric' }) + '.');
+      } catch (err) {
+        console.error('Error cargando cifras:', err);
+        KPI_IDS.forEach(id => set(id, '—'));
+        finish('No se pudieron cargar las cifras. Verifica tu conexión a internet y recarga la página (Ctrl+F5).');
+      }
+    }
+
+    loadMetrics();
+  })();
+</script>
+
+</body>
+</html>
