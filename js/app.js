@@ -26,7 +26,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.10';
+const APP_VERSION = '2.10.11';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -826,8 +826,11 @@ function initMap() {
   // Deshabilitamos touchZoom nativo de Leaflet para evitar que compita y cause snap final.
   if (AppState.map.touchZoom) AppState.map.touchZoom.disable();
   L.control.zoom({ position: 'topleft' }).addTo(AppState.map);
-  AppState.darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19 });
-  AppState.lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd', maxZoom: 22, maxNativeZoom: 19 });
+  // CARTO dejo de servir sus basemaps sin API key: los tiles siguen llegando
+  // pero estampados con "API KEY REQUIRED". Esri Canvas es equivalente,
+  // gratuito y sin clave.
+  AppState.darkTiles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri', maxZoom: 22, maxNativeZoom: 19 });
+  AppState.lightTiles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri', maxZoom: 22, maxNativeZoom: 19 });
   AppState.darkTiles.addTo(AppState.map);
   AppState.markersLayer = L.layerGroup().addTo(AppState.map);
   AppState.tracksLayer = L.layerGroup().addTo(AppState.map);

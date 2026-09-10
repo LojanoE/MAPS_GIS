@@ -61,8 +61,12 @@ const AdminManager = {
     this.currentTab = 'mapa';
     this.renderTabs();
     document.getElementById('admin-panel-modal').classList.remove('hidden');
+    // El mapa se pinta de inmediato: no debe depender de la respuesta de
+    // Supabase. Si la red esta lenta o caida, el panel mostraba un recuadro
+    // vacio y el selector de mapas locales nunca se llenaba.
+    this.renderMapTab();
     this.loadMarkers().then(() => {
-      this.switchTab('mapa');
+      if (this.currentTab === 'mapa') this.renderAdminMarkers();
     });
   },
 
@@ -72,6 +76,9 @@ const AdminManager = {
       this.adminMap.remove();
       this.adminMap = null;
       this.adminMapLayer = null;
+      // Sin esto quedaba una referencia a una capa de un mapa ya destruido,
+      // que al reabrir el panel bloqueaba el fitBounds de los marcadores.
+      this.adminMapOverlay = null;
     }
   },
 
@@ -137,13 +144,26 @@ const AdminManager = {
   },
 
   async fetchTable(table) {
-    const res = await fetch(`${SUPABASE_ADMIN_URL}/${table}?select=*&order=created_at.desc`, {
-      cache: 'no-store',
-      headers: {
-        'apikey': SUPABASE_ADMIN_KEY,
-        'Authorization': `Bearer ${SUPABASE_ADMIN_KEY}`
-      }
-    });
+    // Timeout explicito: sin el, una red colgada dejaba el panel esperando
+    // indefinidamente.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    let res;
+    try {
+      res = await fetch(`${SUPABASE_ADMIN_URL}/${table}?select=*&order=created_at.desc`, {
+        cache: 'no-store',
+        signal: controller.signal,
+        headers: {
+          'apikey': SUPABASE_ADMIN_KEY,
+          'Authorization': `Bearer ${SUPABASE_ADMIN_KEY}`
+        }
+      });
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error(`Tiempo de espera agotado en ${table}`);
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) {
       console.error(`[Admin] fetchTable ${table} failed: HTTP ${res.status}`);
       throw new Error(`HTTP ${res.status} en ${table}`);
@@ -172,9 +192,11 @@ const AdminManager = {
   async renderMapSelector() {
     const select = document.getElementById('admin-map-select');
     if (!select) return;
+    const previous = this.adminSelectedMapId || select.value;
     select.innerHTML = '<option value="">-- Seleccionar mapa --</option>';
 
     try {
+      if (typeof MapStorage === 'undefined') throw new Error('MapStorage no disponible');
       const maps = await MapStorage.getAllMaps();
       maps.forEach(map => {
         const opt = document.createElement('option');
@@ -182,13 +204,32 @@ const AdminManager = {
         opt.textContent = map.name + ' (' + (map.type || 'tiff').toUpperCase() + ')';
         select.appendChild(opt);
       });
+      if (maps.length === 0) {
+        // Distinguir "no hay mapas en este dispositivo" de "fallo la lectura".
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.disabled = true;
+        opt.textContent = 'No hay mapas guardados en este dispositivo';
+        select.appendChild(opt);
+      }
+      if (previous && maps.some(m => m.id === previous)) select.value = previous;
     } catch (e) {
+      // Antes este error se tragaba en silencio: el selector se veia vacio
+      // sin ninguna pista de que la lectura de IndexedDB habia fallado.
       console.error('[Admin] Error loading map list:', e);
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.disabled = true;
+      opt.textContent = 'Error al leer los mapas locales';
+      select.appendChild(opt);
+      showToast('No se pudieron leer los mapas del dispositivo: ' + (e.message || e), 'error');
     }
   },
 
   async loadAdminMap(mapId) {
     if (!mapId) return;
+    if (!this.adminMap) this.renderMapTab();
+    if (!this.adminMap) { showToast('El mapa del panel no esta inicializado', 'error'); return; }
     this.adminSelectedMapId = mapId;
 
     this.clearAdminMapOverlay();
@@ -204,10 +245,11 @@ const AdminManager = {
       }
 
       this.renderAdminMarkers();
+      this.refreshAdminMapSize();
       showToast('Mapa cargado: ' + record.name, 'success');
     } catch (e) {
       console.error('[Admin] Error loading map:', e);
-      showToast('Error al cargar mapa', 'error');
+      showToast('Error al cargar mapa: ' + (e.message || 'desconocido'), 'error');
     }
   },
 
@@ -296,7 +338,9 @@ const AdminManager = {
 
   async loadAdminPDF(record) {
     if (!record.georef || !record.georef.corners) {
-      showToast('PDF sin georreferenciacion', 'error'); return;
+      // Lanzar en vez de retornar: si solo se retornaba, loadAdminMap seguia
+      // y anunciaba "Mapa cargado" aunque no se dibujara nada.
+      throw new Error('el PDF no tiene georreferenciacion');
     }
     const pdf = await PDFProcessor.loadPDF(record.data);
     const { canvas } = await PDFProcessor.renderPage(pdf, 2);
@@ -313,6 +357,7 @@ const AdminManager = {
   },
 
   clearAdminMapOverlay() {
+    if (!this.adminMap) { this.adminMapOverlay = null; this.adminMapLayer = null; return; }
     if (this.adminMapOverlay) {
       this.adminMap.removeLayer(this.adminMapOverlay);
       this.adminMapOverlay = null;
@@ -366,7 +411,8 @@ const AdminManager = {
       this.adminMap.fitBounds(bounds, { padding: [30, 30] });
     }
 
-    document.getElementById('admin-map-count').textContent = `${activeMarkers.length} puntos activos${this.adminMapOverlay ? ' | Mapa cargado' : ''}`;
+    const countEl = document.getElementById('admin-map-count');
+    if (countEl) countEl.textContent = `${activeMarkers.length} puntos activos${this.adminMapOverlay ? ' | Mapa cargado' : ''}`;
   },
 
   // ============================================
@@ -376,22 +422,50 @@ const AdminManager = {
     const container = document.getElementById('admin-map-container');
     if (!container) return;
 
+    // El selector va primero y por separado: si la creacion del mapa falla,
+    // el usuario debe seguir viendo sus mapas locales (antes una excepcion en
+    // L.map dejaba el recuadro gris Y el desplegable vacio).
+    this.renderMapSelector();
+
     if (!this.adminMap) {
-      this.adminMap = L.map(container).setView([-1.8, -78.5], 7);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 19
-      }).addTo(this.adminMap);
+      try {
+        // Si un mapa anterior no se destruyo bien, Leaflet lanza
+        // "Map container is already initialized" y aborta todo el tab.
+        if (container._leaflet_id) {
+          delete container._leaflet_id;
+          container.innerHTML = '';
+        }
+        this.adminMap = L.map(container, { rotate: false }).setView([-1.8, -78.5], 7);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+          attribution: 'Tiles &copy; Esri',
+          maxZoom: 22,
+          maxNativeZoom: 19
+        }).addTo(this.adminMap);
+      } catch (e) {
+        console.error('[Admin] Error creando el mapa:', e);
+        showToast('Error al iniciar el mapa: ' + (e.message || 'desconocido'), 'error');
+        this.adminMap = null;
+        return;
+      }
     }
 
-    this.renderMapSelector();
+    // El contenedor puede haberse medido con tamano 0 (modal recien mostrado o
+    // pestana que estaba oculta): sin invalidateSize Leaflet no pide tiles y el
+    // mapa se queda gris.
+    this.refreshAdminMapSize();
 
     if (this.adminSelectedMapId) {
       this.loadAdminMap(this.adminSelectedMapId);
     } else {
       this.renderAdminMarkers();
     }
+  },
+
+  refreshAdminMapSize() {
+    if (!this.adminMap) return;
+    const apply = () => { if (this.adminMap) this.adminMap.invalidateSize(false); };
+    requestAnimationFrame(apply);
+    setTimeout(apply, 250);
   },
 
   // ============================================

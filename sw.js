@@ -8,7 +8,7 @@
 // ============================================
 // VERSION CONTROL - BUMP THIS TO FORCE UPDATE
 // ============================================
-const APP_VERSION = '2.10.10'; // Bump to force cache refresh on all devices
+const APP_VERSION = '2.10.11'; // Bump to force cache refresh on all devices
 
 const CACHE_NAME = 'maps-gis-v' + APP_VERSION;
 const STATIC_CACHE = 'maps-gis-static-v' + APP_VERSION;
@@ -18,16 +18,16 @@ const DYNAMIC_CACHE = 'maps-gis-dynamic-v' + APP_VERSION;
 const CORE_ASSETS = [
   './',
   './index.html',
-  './css/styles.css?v=2.10.10',
-  './js/leaflet-rotate.js?v=2.10.10',
-  './js/leaflet-rotate-patches.js?v=2.10.10',
-  './js/app.js?v=2.10.10',
-  './js/storage.js?v=2.10.10',
-  './js/pdf-processor.js?v=2.10.10',
-  './js/sync-manager.js?v=2.10.10',
-  './js/admin-manager.js?v=2.10.10',
+  './css/styles.css?v=2.10.11',
+  './js/leaflet-rotate.js?v=2.10.11',
+  './js/leaflet-rotate-patches.js?v=2.10.11',
+  './js/app.js?v=2.10.11',
+  './js/storage.js?v=2.10.11',
+  './js/pdf-processor.js?v=2.10.11',
+  './js/sync-manager.js?v=2.10.11',
+  './js/admin-manager.js?v=2.10.11',
   './manifest.json',
-  './assets/logo_lab_chino_PNG.png?v=2.10.10',
+  './assets/logo_lab_chino_PNG.png?v=2.10.11',
   './config.json'
 ];
 
@@ -50,6 +50,7 @@ const CDN_ASSETS = [
 
 // Tile URL patterns to handle separately (stale-while-revalidate for speed)
 const TILE_PATTERNS = [
+  'server.arcgisonline.com',
   'basemaps.cartocdn.com',
   'tile.openstreetmap.org'
 ];
@@ -154,6 +155,15 @@ self.addEventListener('fetch', (event) => {
 // HELPERS
 // ============================================
 
+// PNG 1x1 totalmente transparente, usado como tile de respaldo.
+const TRANSPARENT_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+function TRANSPARENT_PNG() {
+  const bin = atob(TRANSPARENT_PNG_B64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 function fetchWithTimeout(request, timeoutMs) {
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
@@ -200,7 +210,7 @@ async function cacheFirst(request, cacheName) {
 async function staleWhileRevalidate(request) {
   const cachedResponse = await caches.match(request);
 
-  const networkFetch = fetchWithTimeout(request, 1500)
+  const networkFetch = fetchWithTimeout(request, 4000)
     .then((networkResponse) => {
       if (networkResponse && networkResponse.ok) {
         const cache = caches.open(DYNAMIC_CACHE);
@@ -223,10 +233,12 @@ async function staleWhileRevalidate(request) {
     console.error('[SW] Stale-while-revalidate failed:', error);
   }
 
-  // Return a transparent 1x1 pixel for failed tile requests
-  return new Response('', {
-    status: 204,
-    statusText: 'No Content'
+  // Devolver un PNG transparente real para los tiles que fallaron.
+  // Una respuesta 204 vacia hace que <img> dispare 'error' y Leaflet deje el
+  // tile en blanco de forma permanente.
+  return new Response(TRANSPARENT_PNG(), {
+    status: 200,
+    headers: { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }
   });
 }
 
