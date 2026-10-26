@@ -147,9 +147,19 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 27. **Capas del PDF (v2.10.9):** subir un GeoPDF con capas OCG (ej. planos DRT/DRQ de QGIS/AutoCAD) y abrirlo: debe aparecer el botón de capas (icono de rombos apilados) en los controles del mapa. Abrir el panel "Capas del PDF": debe listar las capas con switches. Apagar una capa → el overlay se re-renderiza sin ella (~250 ms de debounce). "Nada"/"Todo" apagan/encienden todas. Recargar la página y reabrir el mapa: la selección debe persistir. Verificar que la calibración (offset) sigue funcionando con capas apagadas, y que al abrir un GeoTIFF o un PDF sin capas el botón no aparece.
 28. **Mapa del panel Admin (v2.10.11):** abrir Home → Admin (`LSMQC$`). La pestaña **Mapa** debe dibujarse de inmediato, con fondo Esri (sin la marca "API KEY REQUIRED") y los puntos QC/LSM. El desplegable debe listar los mapas del dispositivo o decir "No hay mapas guardados en este dispositivo". Cambiar a **Tabla** y volver a **Mapa**: los tiles deben seguir viéndose (no gris). Seleccionar un mapa y pulsar **Cargar**: el overlay se dibuja y el contador dice "| Mapa cargado"; con un PDF sin georreferenciación debe salir el error y **no** el mensaje "Mapa cargado". Cerrar y reabrir el panel varias veces sin recargar la página: el mapa debe reaparecer siempre.
 
+29. **Medición en m² (v2.10.12):** medir un área pequeña (< 1 ha) y una grande (~2 km²): el valor principal debe verse siempre en m² con separador de miles (`1.938.900 m²`) y debajo `= 193,89 ha · 1,94 km²`. El perímetro y la distancia se ven en metros con separador; distancias ≥ 1000 m muestran además `= X,XXX km`. Los recorridos GPS siguen mostrando su distancia como antes.
+
 ## Notas de versión
 
 > **Regla para agentes:** cada vez que hagas un cambio de código en este proyecto (fix, feature, refactor visible), agrega una entrada nueva arriba de todo en esta sección, siguiendo el formato de las entradas existentes (título con versión, bullets de Problema/Solución/Cambios, archivos y funciones tocadas, "Bumps de versión"). Súmale también un paso a la lista de verificación de la sección anterior si el cambio es comprobable manualmente. Bumpea `APP_VERSION` en `js/app.js` y `sw.js` (y el badge en `index.html`) en el mismo commit. No cierres una tarea sin dejar esto documentado — es lo que permite retomar el trabajo en la siguiente sesión sin releer el diff completo.
+
+### v2.10.12 — Medición: área siempre en m² con equivalencias
+
+- **Problema:** `formatArea()` cambiaba de unidad según el tamaño (m² → ha → km²) y mostraba valores como `1.9389 km²`, difíciles de interpretar en campo.
+- **Solución:** el valor principal del área es **siempre m²** con separador de miles (`1.938.900 m²`) y debajo, en `#measurement-equiv`, las equivalencias (`= 193,89 ha · 1,94 km²`). La distancia de medición también va siempre en metros con separador y, desde 1000 m, la equivalencia en km.
+- **Detalle:** `formatDistance` estaba declarada dos veces en `js/app.js`; la de recorridos (la segunda) sobrescribía a la de medición por hoisting. La medición ahora usa `formatMeasureDistance()` y la de recorridos queda intacta.
+- **Archivos y funciones:** `js/app.js` (`formatNumberEs`, `formatMeasureDistance`, `formatDistanceEquivalence`, `formatArea`, `formatAreaEquivalences`, `updateMeasurementPanel`, preview de `updateMeasurementRubberLine`), `index.html` (`#measurement-equiv`, acentos en "Medición"/"Área"), `css/styles.css` (`.measurement-equiv`, `flex-wrap` en `.measurement-result`).
+- **Bumps de versión:** `2.10.11` → `2.10.12`.
 
 ### v2.10.11 — Fix: el mapa del panel Admin no cargaba (y mapa base sin API key)
 
@@ -475,7 +485,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.10` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.12` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`

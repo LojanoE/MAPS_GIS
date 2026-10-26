@@ -26,7 +26,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.11';
+const APP_VERSION = '2.10.12';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -1147,11 +1147,11 @@ function updateMeasurementRubberLine(latlng) {
   const dx = e2 - e1;
   const dy = n2 - n1;
   const segment = Math.sqrt(dx * dx + dy * dy);
-  let preview = 'Vista previa: ' + formatDistance(segment);
+  let preview = 'Vista previa: ' + formatMeasureDistance(segment);
   if (AppState.measurementType === 'area' && AppState.measurementLatLngs.length >= 2) {
     const previewPoints = AppState.measurementUtmPoints.concat({ east: e2, north: n2 });
     if (previewPoints.length >= 3) {
-      preview += ' | Area preview: ' + formatArea(calculatePolygonArea(previewPoints));
+      preview += ' | Área (vista previa): ' + formatArea(calculatePolygonArea(previewPoints));
     }
   }
   AppState.measurementPreviewText = preview;
@@ -1226,15 +1226,28 @@ function calculatePolygonPerimeter(utmPoints) {
   return total;
 }
 
-function formatDistance(meters) {
-  if (meters < 1000) return meters.toFixed(1) + ' m';
-  return (meters / 1000).toFixed(3) + ' km';
+function formatNumberEs(value, decimals) {
+  return value.toLocaleString('es-EC', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
+// Medición: siempre en metros, con separador de miles
+function formatMeasureDistance(meters) {
+  return formatNumberEs(meters, 1) + ' m';
+}
+
+function formatDistanceEquivalence(meters) {
+  return meters >= 1000 ? '= ' + formatNumberEs(meters / 1000, 3) + ' km' : '';
+}
+
+// Medición: valor principal siempre en m²
 function formatArea(sqMeters) {
-  if (sqMeters < 10000) return sqMeters.toFixed(1) + ' m²';
-  if (sqMeters < 1000000) return (sqMeters / 10000).toFixed(3) + ' ha';
-  return (sqMeters / 1000000).toFixed(4) + ' km²';
+  return formatNumberEs(sqMeters, sqMeters < 10000 ? 1 : 0) + ' m²';
+}
+
+function formatAreaEquivalences(sqMeters) {
+  const ha = sqMeters / 10000;
+  const km2 = sqMeters / 1000000;
+  return '= ' + formatNumberEs(ha, ha < 1 ? 4 : 2) + ' ha · ' + formatNumberEs(km2, km2 < 1 ? 4 : 2) + ' km²';
 }
 
 function updateMeasurementPanel(finished) {
@@ -1242,18 +1255,22 @@ function updateMeasurementPanel(finished) {
   const secondaryEl = document.getElementById('measurement-secondary');
   const finishBtn = document.getElementById('btn-measure-finish');
   const undoBtn = document.getElementById('btn-measure-undo');
+  const equivEl = document.getElementById('measurement-equiv');
   if (!valueEl) return;
+  const setEquiv = (text) => { if (equivEl) equivEl.textContent = text || ''; };
   const points = AppState.measurementUtmPoints;
   if (undoBtn) undoBtn.disabled = points.length === 0 || AppState.measurementFinished;
   if (points.length === 0) {
     valueEl.textContent = AppState.measurementType === 'distance' ? '0 m' : '0 m²';
+    setEquiv('');
     secondaryEl.textContent = AppState.measurementPreviewText || '';
     if (finishBtn) finishBtn.disabled = true;
     return;
   }
   if (AppState.measurementType === 'distance') {
     const total = calculateDistance(points);
-    valueEl.textContent = formatDistance(total);
+    valueEl.textContent = formatMeasureDistance(total);
+    setEquiv(formatDistanceEquivalence(total));
     let sec = '';
     if (points.length >= 2) {
       const lastIdx = points.length - 1;
@@ -1261,7 +1278,7 @@ function updateMeasurementPanel(finished) {
         Math.pow(points[lastIdx].east - points[lastIdx - 1].east, 2) +
         Math.pow(points[lastIdx].north - points[lastIdx - 1].north, 2)
       );
-      sec = 'Segmento actual: ' + formatDistance(lastSegment);
+      sec = 'Segmento actual: ' + formatMeasureDistance(lastSegment);
     }
     if (AppState.measurementPreviewText && !finished) {
       sec = AppState.measurementPreviewText + (sec ? ' | ' + sec : '');
@@ -1270,12 +1287,14 @@ function updateMeasurementPanel(finished) {
   } else {
     if (points.length < 3) {
       valueEl.textContent = '0 m²';
+      setEquiv('');
       secondaryEl.textContent = AppState.measurementPreviewText || 'Agrega al menos 3 puntos';
     } else {
       const area = calculatePolygonArea(points);
       const perimeter = calculatePolygonPerimeter(points);
       valueEl.textContent = formatArea(area);
-      let sec = 'Perimetro: ' + formatDistance(perimeter);
+      setEquiv(formatAreaEquivalences(area));
+      let sec = 'Perímetro: ' + formatMeasureDistance(perimeter);
       if (AppState.measurementPreviewText && !finished) {
         sec = AppState.measurementPreviewText + ' | ' + sec;
       }
