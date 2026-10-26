@@ -150,6 +150,24 @@ const PDFProcessor = (() => {
    * Detecta EPSG/WKT CRS unicamente dentro de un contexto geoespacial (VP/Measure).
    * Evita falsos positivos leyendo todo el texto del PDF.
    */
+  /**
+   * Extrae el EPSG de un nombre UTM tipo "PSAD56 / UTM zone 17N", "PSAD_1956_UTM_Zone_17N",
+   * "WGS 84 / UTM zone 17N". Solo zonas 17/18 (Ecuador). Sin hemisferio asume sur.
+   */
+  function utmCodeFromText(text) {
+    const m = text && text.match(/UTM[\s_]*zone[\s_]*(17|18)[\s_]*([NS])?/i);
+    if (!m) return null;
+    const zone = m[1];
+    const north = (m[2] || 'S').toUpperCase() === 'N';
+    const psad = /PSAD/i.test(text);
+    const hemi = north ? 'N' : 'S';
+    const table = {
+      PSAD: { '17S': 'EPSG:24877', '17N': 'EPSG:24817', '18S': 'EPSG:24878', '18N': 'EPSG:24818' },
+      WGS: { '17S': 'EPSG:32717', '17N': 'EPSG:32617', '18S': 'EPSG:32718', '18N': 'EPSG:32618' }
+    };
+    return table[psad ? 'PSAD' : 'WGS'][zone + hemi];
+  }
+
   function detectCRSInContext(ctx) {
     if (!ctx) return null;
     // 1. EPSG explicito dentro del contexto geoespacial
@@ -164,10 +182,15 @@ const PDFProcessor = (() => {
       // PSAD56 geografico (lat/lon) -> las GPTS siguen siendo lat/lon PSAD56 (datum Intl 1924)
       return 'PSAD56GEO';
     }
-    // Si el contexto declara explicitamente un sistema proyectado PSAD56 UTM 17S,
-    // las coordenadas son este/norte UTM (no lat/lon).
-    if (/PROJCS\s*\[?\s*"[^"]*PSAD56[^"]*UTM[^"]*17S/i.test(ctx) ||
-        /EPSG[":\s]*["']?24877/i.test(ctx)) {
+    // Si el contexto declara explicitamente un sistema proyectado UTM (17N/17S/18N/18S,
+    // PSAD56 o WGS84), se devuelve su EPSG. Las GPTS pueden venir en lat/lon; createGeoOverlay
+    // y convertCornerToUTMPSAD56 lo resuelven segun el rango de los valores.
+    const projcs = ctx.match(/PROJCS\s*\[?\s*"([^"]*)"/i);
+    if (projcs) {
+      const code = utmCodeFromText(projcs[1]);
+      if (code) return code;
+    }
+    if (/EPSG[":\s]*["']?24877/i.test(ctx)) {
       return 'EPSG:24877';
     }
 
@@ -387,6 +410,10 @@ const PDFProcessor = (() => {
       return 'EPSG:' + epsgMatch[1];
     }
 
+    // Look for UTM zone indicators (antes que WGS84/PSAD56 sueltos: "WGS 84 / UTM zone 17N")
+    const utmCode = utmCodeFromText(text);
+    if (utmCode) return utmCode;
+
     // Look for WGS84 indicators
     if (text.match(/WGS[\s_]?84/i) || text.match(/WGS_1984/i)) {
       return 'EPSG:4326';
@@ -395,22 +422,6 @@ const PDFProcessor = (() => {
     // Look for PSAD56 indicators
     if (text.match(/PSAD[\s_]?56/i) || text.match(/EPSG[:\s]*24877/i)) {
       return 'EPSG:24877';
-    }
-
-    // Look for UTM zone indicators
-    const utmMatch = text.match(/UTM[\s_]+Zone[\s_]*(\d+)[\s_]*(N|S)/i);
-    if (utmMatch) {
-      const zone = parseInt(utmMatch[1]);
-      const hemisphere = utmMatch[2].toUpperCase();
-      // Common UTM EPSG codes
-      const utmEPSG = {
-        '17S': 'EPSG:24877', // PSAD56 UTM 17S
-        '17N': 'EPSG:32617', // WGS84 UTM 17N
-        '18S': 'EPSG:24878', // PSAD56 UTM 18S
-        '19S': 'EPSG:32719', // WGS84 UTM 19S
-      };
-      const key = zone + hemisphere;
-      if (utmEPSG[key]) return utmEPSG[key];
     }
 
     // Check for projection strings
@@ -733,15 +744,19 @@ const PDFProcessor = (() => {
       }
       // Si el PDF declara EPSG:24877 (PSAD56 UTM 17S) pero las coordenadas son geográficas (<180),
       // probablemente el GPTS está en lat/lon PSAD56 (datum International 1924).
-      if (crs === 'EPSG:24877' && typeof proj4 !== 'undefined') {
+      // Igual para cualquier UTM registrada en app.js (17N/17S/18N/18S, PSAD56/WGS84).
+      const utmInfo = (typeof UTM_CRS_INFO !== 'undefined') ? UTM_CRS_INFO[crs] : null;
+      if (utmInfo && typeof proj4 !== 'undefined') {
         if (Math.abs(e) < 180 && Math.abs(n) < 90) {
-          if (sourceDatum === 'WGS84') {
+          const datum = (sourceDatum === 'WGS84' || sourceDatum === 'PSAD56')
+            ? sourceDatum : utmInfo.datum;
+          if (datum === 'WGS84') {
             return [n, e];
           }
           const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [e, n]);
           return [lat, lng];
         }
-        const [lng, lat] = proj4('EPSG:24877', 'EPSG:4326', [e, n]);
+        const [lng, lat] = proj4(crs, 'EPSG:4326', [e, n]);
         return [lat, lng];
       }
       if (typeof proj4 !== 'undefined') {

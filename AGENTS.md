@@ -149,9 +149,19 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 29. **Medición en m² (v2.10.12):** medir un área pequeña (< 1 ha) y una grande (~2 km²): el valor principal debe verse siempre en m² con separador de miles (`1.938.900 m²`) y debajo `= 193,89 ha · 1,94 km²`. El perímetro y la distancia se ven en metros con separador; distancias ≥ 1000 m muestran además `= X,XXX km`. Los recorridos GPS siguen mostrando su distancia como antes.
 
+30. **Zona 17N (v2.10.13):** subir un GeoPDF/GeoTIFF en `EPSG:32617` o `24817` (norte de Ecuador) o georreferenciar a mano eligiendo "UTM 17N" en el selector: el CRS se detecta solo, el modal muestra esquinas 17S con norte > 10.000.000 y el overlay cae alineado en el norte del país. Un mapa PSAD56 17S existente debe seguir igual.
+
 ## Notas de versión
 
 > **Regla para agentes:** cada vez que hagas un cambio de código en este proyecto (fix, feature, refactor visible), agrega una entrada nueva arriba de todo en esta sección, siguiendo el formato de las entradas existentes (título con versión, bullets de Problema/Solución/Cambios, archivos y funciones tocadas, "Bumps de versión"). Súmale también un paso a la lista de verificación de la sección anterior si el cambio es comprobable manualmente. Bumpea `APP_VERSION` en `js/app.js` y `sw.js` (y el badge en `index.html`) en el mismo commit. No cierres una tarea sin dejar esto documentado — es lo que permite retomar el trabajo en la siguiente sesión sin releer el diff completo.
+
+### v2.10.13 — Soporte de mapas en UTM 17N (y zona 18)
+
+- **Problema:** sólo se entendían bien archivos en PSAD56 UTM 17S. El norte de Ecuador (zona 17N) fallaba: no había `proj4.defs` para 24817/24818/24878 ni para los 326xx/327xx, `detectCRS()` ignoraba el datum para 17N, y la salvaguarda "GPTS en lat/lon" sólo existía para `EPSG:24877`.
+- **Solución:** registro central `UTM_CRS_INFO` en `js/app.js` (zonas 17/18, N/S, PSAD56 con `towgs84` EPSG:3990 y WGS84) con sus `proj4.defs`, y helper `getCrsDatum()`. Todo se normaliza internamente a EPSG:24877 (para puntos al norte del ecuador el norte queda > 10.000.000, es esperado).
+- **Cambios:** `convertCornerToUTMPSAD56`/`inferSourceDatum` (app.js) y `createGeoOverlay.toWGS84` (pdf-processor.js) generalizados a cualquier UTM registrada (valores lat/lon → datum; métricos → proj4). Nuevo `utmCodeFromText()` usado por `detectCRS` y `detectCRSInContext` (detecta zona, hemisferio y datum; se quitó 19S). `#georef-crs` con opciones 17S/17N/18S/18N en PSAD56 y WGS84.
+- **Archivos:** `js/app.js`, `js/pdf-processor.js`, `index.html`, `sw.js`, `AGENTS.md`.
+- **Bumps de versión:** `2.10.12` → `2.10.13`.
 
 ### v2.10.12 — Medición: área siempre en m² con equivalencias
 
@@ -485,7 +495,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.12` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.13` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`

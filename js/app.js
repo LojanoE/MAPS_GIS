@@ -15,8 +15,39 @@ const WGS84 = 'EPSG:4326';
 proj4.defs('EPSG:24877', PSAD56_UTM_17S);
 proj4.defs('PSAD56GEO', PSAD56_GEOGRAPHIC);
 
+// Zonas UTM aceptadas como ENTRADA de mapas (v2.10.13). Internamente todo se
+// normaliza a EPSG:24877. 17N cubre el norte de Ecuador; 18 el oriente lejano.
+const PSAD56_TOWGS84 = '-60.31,245.935,31.008,12.324,3.755,-7.37,0.447';
+const UTM_CRS_INFO = {
+  'EPSG:24877': { zone: 17, south: true,  datum: 'PSAD56' },
+  'EPSG:24817': { zone: 17, south: false, datum: 'PSAD56' },
+  'EPSG:24878': { zone: 18, south: true,  datum: 'PSAD56' },
+  'EPSG:24818': { zone: 18, south: false, datum: 'PSAD56' },
+  'EPSG:32717': { zone: 17, south: true,  datum: 'WGS84' },
+  'EPSG:32617': { zone: 17, south: false, datum: 'WGS84' },
+  'EPSG:32718': { zone: 18, south: true,  datum: 'WGS84' },
+  'EPSG:32618': { zone: 18, south: false, datum: 'WGS84' }
+};
+Object.keys(UTM_CRS_INFO).forEach(code => {
+  const i = UTM_CRS_INFO[code];
+  const base = '+proj=utm +zone=' + i.zone + (i.south ? ' +south' : '');
+  proj4.defs(code, i.datum === 'PSAD56'
+    ? base + ' +ellps=intl +towgs84=' + PSAD56_TOWGS84 + ' +units=m +no_defs'
+    : base + ' +datum=WGS84 +units=m +no_defs');
+});
+
+/** Datum ('PSAD56' | 'WGS84') de un CRS conocido, o null si no aplica. */
+function getCrsDatum(crs) {
+  if (crs === 'PSAD56GEO') return 'PSAD56';
+  if (crs === 'EPSG:4326') return 'WGS84';
+  return UTM_CRS_INFO[crs] ? UTM_CRS_INFO[crs].datum : null;
+}
+
 const KNOWN_CRS_MAP = {
   24877: 'EPSG:24877',
+  24817: 'EPSG:24817',
+  24878: 'EPSG:24878',
+  24818: 'EPSG:24818',
   32717: 'EPSG:32717',
   32617: 'EPSG:32617',
   4326: 'EPSG:4326',
@@ -26,7 +57,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.12';
+const APP_VERSION = '2.10.13';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -437,15 +468,19 @@ function convertCornerToUTMPSAD56(corner, sourceCrs, sourceDatum) {
     const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [x, y]);
     return proj4('EPSG:4326', 'EPSG:24877', [lng, lat]);
   }
-  if (sourceCrs === 'EPSG:24877') {
+  if (UTM_CRS_INFO[sourceCrs]) {
+    // GPTS de GeoPDF suelen venir en lat/lon aunque el CRS declarado sea UTM.
     if (Math.abs(x) < 180 && Math.abs(y) < 90) {
-      if (sourceDatum === 'WGS84') {
+      const datum = (sourceDatum === 'WGS84' || sourceDatum === 'PSAD56')
+        ? sourceDatum : UTM_CRS_INFO[sourceCrs].datum;
+      if (datum === 'WGS84') {
         return proj4('EPSG:4326', 'EPSG:24877', [x, y]);
       }
       const [lng, lat] = proj4('PSAD56GEO', 'EPSG:4326', [x, y]);
       return proj4('EPSG:4326', 'EPSG:24877', [lng, lat]);
     }
-    return [x, y];
+    if (sourceCrs === 'EPSG:24877') return [x, y];
+    return proj4(sourceCrs, 'EPSG:24877', [x, y]);
   }
   return proj4(sourceCrs, 'EPSG:24877', [x, y]);
 }
@@ -454,8 +489,7 @@ function convertCornerToUTMPSAD56(corner, sourceCrs, sourceDatum) {
  * Determina el datum mas probable para coordenadas geograficas de un GeoPDF.
  */
 function inferSourceDatum(sourceCrs, geoData) {
-  if (sourceCrs === 'PSAD56GEO' || sourceCrs === 'EPSG:24877') return 'PSAD56';
-  if (sourceCrs !== 'EPSG:4326') return 'auto';
+  if (sourceCrs !== 'EPSG:4326') return getCrsDatum(sourceCrs) || 'auto';
   // Para EPSG:4326, miramos si el contexto del PDF menciona PSAD56.
   const ctx = (geoData && geoData._vpContext) || '';
   if (/PSAD56/i.test(ctx)) return 'PSAD56';
