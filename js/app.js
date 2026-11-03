@@ -57,7 +57,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.13';
+const APP_VERSION = '2.10.14';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -3200,6 +3200,7 @@ async function exportToZIP() {
     const zip = new JSZip();
     const folder = zip.folder('fotos');
     const folderCrudas = zip.folder('fotos_crudas');
+    const photoFileMap = new Map(); // markerId -> [foto1, foto2] (para catalogo.html)
     const wb = XLSX.utils.book_new();
     const qcMarkers = markers.filter(m => m.markerType === 'qc');
     const lsmMarkers = markers.filter(m => m.markerType === 'lsm');
@@ -3230,6 +3231,7 @@ async function exportToZIP() {
           }
         }
         qcData.push([m.name || '', MARKER_COLORS[m.color]?.label || '', m.description || '', m.norte, m.este, m.altura != null ? m.altura : '', m.lat, m.lng, new Date(m.createdAt), foto1, foto2]);
+        photoFileMap.set(m.id, [foto1, foto2]);
       }
       const wsQC = XLSX.utils.aoa_to_sheet(qcData, { cellDates: true });
       for (let r = 1; r < qcData.length; r++) {
@@ -3269,6 +3271,7 @@ async function exportToZIP() {
           }
         }
         lsmData.push([d.semanaLaboratorio || '', new Date(m.createdAt), d.tipoMaterial || '', m.name || '', d.localizacion || '', d.fuente || '', m.este, m.norte, m.altura != null ? m.altura : '', (d.ensayos || []).join(', '), m.lat, m.lng, foto1, foto2]);
+        photoFileMap.set(m.id, [foto1, foto2]);
       }
       const wsLSM = XLSX.utils.aoa_to_sheet(lsmData, { cellDates: true });
       for (let r = 1; r < lsmData.length; r++) {
@@ -3310,11 +3313,218 @@ async function exportToZIP() {
 
     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     zip.file('marcadores.xlsx', excelBuffer);
+    try {
+      const catalogHtml = await buildCatalogHTML(markers, photoFileMap);
+      if (catalogHtml) zip.file('catalogo.html', catalogHtml);
+    } catch (e) { console.warn('[exportToZIP] No se pudo generar catalogo.html', e); }
     const zipBlob = await zip.generateAsync({ type: 'blob' });
     saveAs(zipBlob, 'marcadores_' + new Date().toISOString().slice(0, 10) + '.zip');
     showToast(markers.length + ' marcadores, ' + filteredTracks.length + ' recorridos exportados', 'success');
     closeExportModal();
   } catch (error) { console.error('[exportToZIP]', error); showToast('Error al generar ZIP', 'error'); }
+}
+
+// ============================================
+// CATALOGO HTML (incluido en el ZIP)
+// ============================================
+// Reduce una foto a data URI JPEG para incrustarla en el catalogo (autocontenido, sin carpeta de fotos).
+async function blobToCatalogDataUrl(blob, maxSide = 1280, quality = 0.82) {
+  const bmp = await createImageBitmap(blob);
+  const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bmp.width * scale);
+  canvas.height = Math.round(bmp.height * scale);
+  canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  if (bmp.close) bmp.close();
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+function getCatalogRows(m, fileName) {
+  const rows = [];
+  const add = (label, value) => { if (value !== undefined && value !== null && String(value).trim() !== '') rows.push([label, String(value)]); };
+  const when = m.createdAt ? new Date(m.createdAt).toLocaleString('es-EC') : '';
+  if (m.markerType === 'lsm') {
+    const d = m.lsmData || {};
+    add('Tipo', 'LSM');
+    add('Semana laboratorio', d.semanaLaboratorio);
+    add('Nombre de muestra', m.name);
+    add('Tipo de material', d.tipoMaterial);
+    add('Localización', d.localizacion);
+    add('Fuente', d.fuente);
+    add('Ensayos', (d.ensayos || []).join(', '));
+  } else {
+    add('Tipo', 'QC');
+    add('Nombre', m.name);
+    add('Categoría', (typeof MARKER_COLORS !== 'undefined' && MARKER_COLORS[m.color]) ? MARKER_COLORS[m.color].label : '');
+    add('Descripción', m.description);
+  }
+  add('Fecha', when);
+  if (m.lat != null && m.lng != null) add('Coordenadas GPS', Number(m.lat).toFixed(6) + ', ' + Number(m.lng).toFixed(6));
+  if (m.este != null && m.norte != null) add('Este / Norte (UTM)', Math.round(m.este) + ' E, ' + Math.round(m.norte) + ' N');
+  if (m.altura != null && m.altura !== '') add('Altitud', m.altura + ' m s.n.m.');
+  add('Archivo', fileName);
+  return rows;
+}
+
+async function buildCatalogHTML(markers, photoFileMap) {
+  const entries = [];
+  const sorted = markers.slice().sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+  for (const m of sorted) {
+    const names = photoFileMap.get(m.id) || [];
+    const photos = m.photos || [];
+    for (let p = 0; p < photos.length && p < 2; p++) {
+      if (!names[p]) continue;
+      try {
+        const rec = await MapStorage.getPhoto(photos[p]);
+        if (!rec || !rec.blob) continue;
+        entries.push({ src: await blobToCatalogDataUrl(rec.blob), file: names[p], rows: getCatalogRows(m, names[p]) });
+      } catch (e) { console.warn('[catalogo] foto omitida', photos[p], e); }
+    }
+  }
+  if (entries.length === 0) return null;
+
+  const thumbsHtml = entries.map((e, i) => {
+    const rowsHtml = e.rows.map(r => '<div class="detail-row"><span class="detail-label">' + escapeHtml(r[0]) + '</span><span class="detail-value">' + escapeHtml(r[1]) + '</span></div>').join('');
+    return '<div class="thumb" data-idx="' + i + '" data-filename="' + escapeHtml(e.file) + '"><img src="' + e.src + '" alt="' + escapeHtml(e.file) + '" loading="lazy"><div class="details" hidden>' + rowsHtml + '</div></div>';
+  }).join('\n');
+
+  const css = `* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Roboto, Arial, sans-serif; background: #0a0f1a; color: #f8f9fa; padding: 12px; }
+header { text-align: center; margin-bottom: 14px; }
+header h1 { font-size: 1.3rem; }
+header p { font-size: 0.85rem; color: #9fb0c7; margin-top: 4px; }
+.search-bar { display: flex; justify-content: center; margin-bottom: 8px; }
+.search-bar input { flex: 1; max-width: 420px; padding: 10px 12px; border-radius: 8px; border: 1px solid #496596; background: #101828; color: #f8f9fa; font-size: 0.95rem; }
+.search-bar input:focus { outline: none; border-color: #f97316; }
+.search-count { text-align: center; color: #9fb0c7; font-size: 0.8rem; margin-bottom: 8px; min-height: 1em; }
+.catalog { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; max-width: 1200px; margin: 0 auto; }
+.thumb { aspect-ratio: 1; border-radius: 6px; overflow: hidden; cursor: pointer; background: #101828; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); z-index: 100; display: flex; align-items: center; justify-content: center; }
+.lightbox[hidden] { display: none; }
+.lb-content { max-width: 900px; width: 100%; max-height: 100vh; overflow-y: auto; padding: 16px; }
+.lb-img-wrap { text-align: center; }
+.lb-img-wrap img { max-width: 100%; max-height: 62vh; object-fit: contain; border-radius: 6px; }
+.lb-bar { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 10px; }
+.lb-details { margin-top: 10px; background: #101828; border-radius: 8px; padding: 12px 14px; font-size: 0.85rem; }
+.lb-counter { text-align: center; color: #9fb0c7; font-size: 0.8rem; margin-top: 8px; }
+.lb-close, .lb-nav { position: fixed; background: rgba(73,101,150,0.7); color: #fff; border: none; cursor: pointer; z-index: 101; }
+.lb-close { top: 12px; right: 12px; width: 40px; height: 40px; border-radius: 50%; font-size: 1.1rem; }
+.lb-nav { top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; font-size: 1.6rem; line-height: 1; }
+.lb-prev { left: 10px; } .lb-next { right: 10px; }
+.lb-close:hover, .lb-nav:hover { background: #f97316; }
+.copy-btn { background: #ea580c; color: #fff; border: none; border-radius: 6px; padding: 8px 12px; font-size: 0.85rem; cursor: pointer; }
+.copy-btn:hover { background: #f97316; }
+.copy-btn.alt { background: #3b4f75; } .copy-btn.alt:hover { background: #496596; }
+.copy-btn.copied { background: #28a745; }
+.detail-row { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.detail-row:last-child { border-bottom: none; }
+.detail-label { color: #9fb0c7; min-width: 150px; flex-shrink: 0; }
+.detail-value { color: #f8f9fa; word-break: break-word; user-select: all; }
+@media (max-width: 600px) { body { padding: 6px; } .catalog { grid-template-columns: repeat(2, 1fr); gap: 4px; } .detail-label { min-width: 110px; } }`;
+
+  const js = String.raw`var thumbs = Array.prototype.slice.call(document.querySelectorAll('.thumb'));
+var visibleThumbs = thumbs.slice();
+var currentIdx = 0;
+var lightbox = document.getElementById('lightbox');
+var lbImg = document.getElementById('lb-img');
+var lbDetails = document.getElementById('lb-details');
+var lbCounter = document.getElementById('lb-counter');
+var searchCount = document.getElementById('search-count');
+function norm(s) { return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function filterThumbs() {
+  var q = norm(document.getElementById('search1').value.trim());
+  visibleThumbs = [];
+  thumbs.forEach(function (t) {
+    var show = !q || norm(t.textContent).indexOf(q) !== -1;
+    t.style.display = show ? '' : 'none';
+    if (show) visibleThumbs.push(t);
+  });
+  searchCount.textContent = q ? visibleThumbs.length + ' de ' + thumbs.length + ' foto(s)' : '';
+}
+thumbs.forEach(function (t) { t.addEventListener('click', function () { openLightbox(visibleThumbs.indexOf(t)); }); });
+function openLightbox(idx) {
+  if (idx < 0 || idx >= visibleThumbs.length) return;
+  currentIdx = idx;
+  var t = visibleThumbs[idx];
+  lbImg.src = t.querySelector('img').src;
+  lbDetails.innerHTML = t.querySelector('.details').innerHTML;
+  lbCounter.textContent = (idx + 1) + ' / ' + visibleThumbs.length;
+  lightbox.dataset.filename = t.dataset.filename || '';
+  lightbox.hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+function closeLightbox() { lightbox.hidden = true; document.body.style.overflow = ''; }
+function navLightbox(d) { if (visibleThumbs.length) openLightbox((currentIdx + d + visibleThumbs.length) % visibleThumbs.length); }
+lightbox.addEventListener('click', function (e) { if (e.target === lightbox) closeLightbox(); });
+document.addEventListener('keydown', function (e) {
+  if (lightbox.hidden) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft') navLightbox(-1);
+  if (e.key === 'ArrowRight') navLightbox(1);
+});
+function flash(btn, ok, msg) {
+  var orig = btn.dataset.label || (btn.dataset.label = btn.textContent);
+  btn.textContent = msg; if (ok) btn.classList.add('copied');
+  setTimeout(function () { btn.textContent = orig; btn.classList.remove('copied'); }, 2200);
+}
+function detailRows() {
+  return Array.prototype.map.call(lbDetails.querySelectorAll('.detail-row'), function (r) {
+    return [r.children[0].textContent, r.children[1].textContent];
+  });
+}
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function dataText() { return detailRows().map(function (r) { return r[0] + ': ' + r[1]; }).join('\n'); }
+function imageToPngBlob() {
+  return new Promise(function (res, rej) {
+    var c = document.createElement('canvas');
+    c.width = lbImg.naturalWidth; c.height = lbImg.naturalHeight;
+    c.getContext('2d').drawImage(lbImg, 0, 0);
+    c.toBlob(function (b) { b ? res(b) : rej(new Error('blob')); }, 'image/png');
+  });
+}
+async function copyImage(btn) {
+  try {
+    var b = await imageToPngBlob();
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]);
+    flash(btn, true, '✓ Foto copiada');
+  } catch (e) { flash(btn, false, '⚠ Clic derecho > Copiar imagen'); }
+}
+async function copyData(btn) {
+  try { await navigator.clipboard.writeText(dataText()); flash(btn, true, '✓ Datos copiados'); }
+  catch (e) {
+    var ta = document.createElement('textarea'); ta.value = dataText(); document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); flash(btn, true, '✓ Datos copiados'); } catch (e2) { flash(btn, false, '⚠ No se pudo copiar'); }
+    document.body.removeChild(ta);
+  }
+}
+async function copyBoth(btn) {
+  try {
+    var rows = detailRows().map(function (r) { return '<tr><td><b>' + esc(r[0]) + '</b></td><td>' + esc(r[1]) + '</td></tr>'; }).join('');
+    var html = '<div><img src="' + lbImg.src + '" style="max-width:600px"><table border="1" cellpadding="4" style="border-collapse:collapse;font-family:Arial;font-size:11pt">' + rows + '</table></div>';
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([dataText()], { type: 'text/plain' })
+    })]);
+    flash(btn, true, '✓ Foto + datos copiados');
+  } catch (e) { flash(btn, false, '⚠ Usa Copiar foto y Copiar datos'); }
+}
+function downloadImage() {
+  var a = document.createElement('a'); a.href = lbImg.src; a.download = lightbox.dataset.filename || 'foto.jpg';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}`;
+
+  const total = entries.length;
+  const now = new Date().toLocaleString('es-EC');
+  return '<!DOCTYPE html>\n<html lang="es">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n<title>Catálogo Fotográfico MAPS GIS</title>\n<style>\n' + css + '\n</style>\n</head>\n<body>\n' +
+    '<header><h1>📷 Catálogo Fotográfico MAPS GIS</h1><p>Generado: ' + escapeHtml(now) + ' · ' + total + ' foto(s) · Toca una foto para ver detalles y copiar</p></header>\n' +
+    '<div class="search-bar"><input type="search" id="search1" placeholder="🔍 Buscar (nombre, material, localización, fecha...)" oninput="filterThumbs()"></div>\n' +
+    '<p class="search-count" id="search-count"></p>\n<div class="catalog">\n' + thumbsHtml + '\n</div>\n' +
+    '<div id="lightbox" class="lightbox" hidden>\n<button class="lb-close" onclick="closeLightbox()">✕</button>\n<button class="lb-nav lb-prev" onclick="navLightbox(-1)">‹</button>\n<button class="lb-nav lb-next" onclick="navLightbox(1)">›</button>\n' +
+    '<div class="lb-content"><div class="lb-img-wrap"><img id="lb-img" src="" alt=""></div>\n' +
+    '<div class="lb-bar"><button class="copy-btn" onclick="copyBoth(this)">📋 Copiar foto + datos</button><button class="copy-btn alt" onclick="copyImage(this)">🖼 Copiar foto</button><button class="copy-btn alt" onclick="copyData(this)">📝 Copiar datos</button><button class="copy-btn alt" onclick="downloadImage()">⬇ Descargar</button></div>\n' +
+    '<div class="lb-counter" id="lb-counter"></div><div class="details lb-details" id="lb-details"></div></div>\n</div>\n' +
+    '<scr' + 'ipt>\n' + js + '\n</scr' + 'ipt>\n</body>\n</html>';
 }
 
 // ============================================

@@ -151,9 +151,20 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 
 30. **Zona 17N (v2.10.13):** subir un GeoPDF/GeoTIFF en `EPSG:32617` o `24817` (norte de Ecuador) o georreferenciar a mano eligiendo "UTM 17N" en el selector: el CRS se detecta solo, el modal muestra esquinas 17S con norte > 10.000.000 y el overlay cae alineado en el norte del país. Un mapa PSAD56 17S existente debe seguir igual.
 
+31. **Catálogo HTML en el ZIP (v2.10.14):** crear marcadores QC y LSM con fotos y exportar ZIP. En la raíz debe aparecer `catalogo.html`; abrirlo sin conexión: cuadrícula de miniaturas, buscador (sin acentos), y al tocar una foto el visor con los datos del marcador. Probar **Copiar foto + datos**, **Copiar foto**, **Copiar datos** (pegar en Word/Excel/chat) y **Descargar**. Sin fotos en ningún marcador, el ZIP no incluye catálogo y la exportación sigue funcionando.
+
 ## Notas de versión
 
 > **Regla para agentes:** cada vez que hagas un cambio de código en este proyecto (fix, feature, refactor visible), agrega una entrada nueva arriba de todo en esta sección, siguiendo el formato de las entradas existentes (título con versión, bullets de Problema/Solución/Cambios, archivos y funciones tocadas, "Bumps de versión"). Súmale también un paso a la lista de verificación de la sección anterior si el cambio es comprobable manualmente. Bumpea `APP_VERSION` en `js/app.js` y `sw.js` (y el badge en `index.html`) en el mismo commit. No cierres una tarea sin dejar esto documentado — es lo que permite retomar el trabajo en la siguiente sesión sin releer el diff completo.
+
+### v2.10.14 — `catalogo.html` autocontenido dentro del ZIP de exportación
+
+- **Problema:** armar informes con las fotos del campo obligaba a abrir el Excel y las carpetas por separado, copiando datos a mano.
+- **Solución:** `exportToZIP()` agrega `catalogo.html` (un solo archivo, sin dependencias, funciona offline) con todas las fotos estampadas incrustadas (JPEG redimensionado a 1280 px, calidad 0.82) y los datos de su marcador. Tema oscuro, cuadrícula, buscador sin acentos, visor con navegación (flechas/teclado) y botones **Copiar foto + datos** (HTML tabla + texto plano), **Copiar foto** (PNG), **Copiar datos** (texto) y **Descargar**.
+- **Campos:** QC (nombre, categoría, descripción) y LSM (semana, nombre de muestra, tipo de material, localización, fuente, ensayos); ambos con fecha, GPS WGS84, Este/Norte UTM, altitud y nombre de archivo (igual al de `fotos/`).
+- **Cambios:** `js/app.js` (`exportToZIP` con `photoFileMap`; nuevas `blobToCatalogDataUrl`, `getCatalogRows`, `buildCatalogHTML`). Si falla la generación se ignora con aviso en consola y el ZIP sale igual.
+- **Archivos tocados:** `js/app.js`, `index.html`, `sw.js`, `AGENTS.md`.
+- **Bumps de versión:** `2.10.13` → `2.10.14`.
 
 ### v2.10.13 — Soporte de mapas en UTM 17N (y zona 18)
 
@@ -495,7 +506,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.13` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.10.14` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
@@ -599,6 +610,7 @@ Nota: las claves `maps_gis_admin` y `maps_gis_app_version` solo existen en `js/a
   - Carpeta `fotos/` con las fotos estampadas (máximo 2 por marcador).
   - Carpeta `fotos_crudas/` con las fotos originales sin estampar (sufijo `_cruda.jpg`; solo si existe `originalBlob`).
   - Carpeta `recorridos/` con archivos GeoJSON.
+  - `catalogo.html` autocontenido (fotos incrustadas + datos + botones de copiar) cuando hay fotos (v2.10.14).
 - El panel Admin puede exportar Excel de los registros seleccionados.
 
 ## Consideraciones de seguridad
