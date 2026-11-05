@@ -65,6 +65,7 @@ C:\Users\LojanoE\Documents\GitHub\MAPS_GIS
 15. `js/app.js`
 16. `js/sync-manager.js`
 17. `js/admin-manager.js`
+18. `js/slope-meter.js` (medidor de pendiente con cámara; va al final, v2.11.0)
 
 ## Stack tecnológico
 
@@ -152,10 +153,48 @@ Luego abrir `http://localhost:8000` en un navegador. Para probar funcionalidades
 30. **Zona 17N (v2.10.13):** subir un GeoPDF/GeoTIFF en `EPSG:32617` o `24817` (norte de Ecuador) o georreferenciar a mano eligiendo "UTM 17N" en el selector: el CRS se detecta solo, el modal muestra esquinas 17S con norte > 10.000.000 y el overlay cae alineado en el norte del país. Un mapa PSAD56 17S existente debe seguir igual.
 
 31. **Catálogo HTML en el ZIP (v2.10.14):** crear marcadores QC y LSM con fotos y exportar ZIP. En la raíz debe aparecer `catalogo.html`; abrirlo sin conexión: cuadrícula de miniaturas, buscador (sin acentos), y al tocar una foto el visor con los datos del marcador. Probar **Copiar foto + datos**, **Copiar foto**, **Copiar datos** (pegar en Word/Excel/chat) y **Descargar**. Sin fotos en ningún marcador, el ZIP no incluye catálogo y la exportación sigue funcionando.
+32. **Medidor de pendiente (v2.11.0, requiere celular real por HTTPS):** en el mapa, tocar el botón de triángulo (`#btn-slope`). Debe pedir permiso de cámara (y de movimiento en iOS). **Apoyar:** con el celular sobre una mesa nivelada leer ~0° (si no, "Calibrar 0°"); sobre una superficie de ángulo conocido el error debe ser < 1°. **Apuntar:** celular vertical mirando al horizonte ~0°; inclinar arriba/abajo y revisar el signo, el horizonte animado y la escalera de grados. La lectura pasa a verde al estabilizarse, vibra y se bloquea; "Fijar/Soltar" congela. **Capturar** abre el modal QC con la foto estampada (ángulo, %, H:V) y descripción pre-llenada; al guardar el marcador queda en la posición GPS con `pendiente`. Exportar ZIP: columnas `Pendiente (°)`/`Pendiente (%)` en la hoja QC y fila "Pendiente" en `catalogo.html`. Negar permisos: toast claro sin romper el mapa. Cerrar apaga la cámara. Si los signos salen invertidos, corregir solo en `computeAngles()`.
+33. **Modo Medir (v2.12.0, celular real por HTTPS, Android e iPhone):** abrir el medidor → **Medir**. Ajustar la altura del celular (ej. 1,5 m). Apuntar a la base de un objeto en el suelo a distancia conocida (ej. 5 m) y **Marcar base**: la distancia debe coincidir (error ~±5 %). Apuntar a la punta y **Marcar punta**: la altura debe coincidir con el objeto real. Base sobre el horizonte → aviso. **Capturar** abre el modal QC con foto estampada y descripción con distancia/altura; el ZIP incluye `Distancia medida (m)` y `Altura objeto (m)` en el Excel y filas en `catalogo.html`. Recargar: la altura del celular persiste.
+34. **Compatibilidad Android + iPhone (v2.12.1, celular real por HTTPS):** probar el medidor en Android (Chrome) e iPhone (Safari **y** Chrome iOS). iOS: debe pedir permiso de movimiento y cámara con un solo toque en el botón; si se niega, toast que indica reactivar en Ajustes. En vertical y en horizontal (giro a ambos lados) la lectura debe ser la misma (compensación de `screen.orientation`/`window.orientation`). Sin sensores (desktop) el medidor avisa y se cierra tras ~2,5 s sin dejar la cámara encendida. Sin HTTPS: aviso claro. El video debe verse en línea (no pantalla completa nativa en iOS).
+
 
 ## Notas de versión
 
 > **Regla para agentes:** cada vez que hagas un cambio de código en este proyecto (fix, feature, refactor visible), agrega una entrada nueva arriba de todo en esta sección, siguiendo el formato de las entradas existentes (título con versión, bullets de Problema/Solución/Cambios, archivos y funciones tocadas, "Bumps de versión"). Súmale también un paso a la lista de verificación de la sección anterior si el cambio es comprobable manualmente. Bumpea `APP_VERSION` en `js/app.js` y `sw.js` (y el badge en `index.html`) en el mismo commit. No cierres una tarea sin dejar esto documentado — es lo que permite retomar el trabajo en la siguiente sesión sin releer el diff completo.
+
+### v2.12.1 — Medidor: compatibilidad Android + iPhone (Chrome iOS incluido)
+
+- **Problema:** el medidor asumía el celular en vertical y trataba igual todos los fallos de permisos; en iOS (todos los navegadores usan WebKit) podía quedar sin sensor o con el video en pantalla completa.
+- **Solución (`js/slope-meter.js`):**
+  - `upFromOrientation()` rota el vector "arriba" según el ángulo de pantalla (`getScreenAngle()`: `screen.orientation.angle` en Android, `window.orientation` en iOS), así la lectura es igual en vertical y horizontal.
+  - `requestSensors()` devuelve `'ok' | 'denied' | 'unsupported'` (permiso `DeviceOrientationEvent.requestPermission()` de iOS con try/catch) y se muestran toasts guiados; `waitForSensor(2500)` detecta equipos sin sensor y cierra limpiando cámara y listeners.
+  - `startCamera()` prueba hasta 3 restricciones (environment exacto → ideal → cualquiera), corta en `NotAllowedError`/`SecurityError`, y fuerza `muted`, `playsinline`/`webkit-playsinline`.
+  - Se corrigió el reinicio de `S.up`/`S.hasSensor` que borraba la primera lectura tras abrir.
+- **No se hizo:** fallback a `DeviceMotion` (signos distintos entre plataformas) ni bloqueo de orientación.
+- **Archivos:** `js/slope-meter.js`, `js/app.js`, `index.html`, `sw.js`, `AGENTS.md`.
+- **Bumps de versión:** `2.12.0` → `2.12.1`.
+
+### v2.12.0 — Modo "Medir" (distancia y altura con la cámara, Android + iPhone)
+
+- **Qué hace:** tercer modo del medidor de pendiente (`data-mode="measure"`), multiplataforma (solo sensores + cámara + trigonometría; no usa WebXR). El usuario ingresa la **altura a la que sostiene el celular** (`#slope-height`, 0,3–3 m, por defecto 1,5) y: (1) apunta a la base del objeto en el suelo y pulsa **Marcar base** → distancia `d = h / tan(-elev)` (la base debe estar ≥ 1° bajo el horizonte); (2) apunta a la punta y pulsa **Marcar punta** → altura `H = h + d·tan(elev_punta)`. "Nueva medida" reinicia. No hay auto-bloqueo en este modo.
+- **Captura:** foto estampada con distancia/altura y descripción pre-llenada; `AppState.pendingSlope = {modo:'medir', distancia, altura, alturaCelular}` → `marker.pendiente`.
+- **Exportación:** hoja QC con `Distancia medida (m)` y `Altura objeto (m)`; filas "Distancia medida"/"Altura del objeto" en `catalogo.html`; popup con `Dist`/`Alt. obj`. No se sincroniza a Supabase.
+- **Calibración:** "Calibrar 0°" en `measure` usa el offset `aim`.
+- **Archivos:** `js/slope-meter.js`, `js/app.js` (popup, Excel, `getCatalogRows`), `index.html`, `css/styles.css`, `sw.js`, `AGENTS.md`.
+- **Pendiente (opcional):** AR con WebXR solo Android (`js/ar-measure.js`).
+- **Bumps de versión:** `2.11.0` → `2.12.0`.
+
+### v2.11.0 — Medidor de pendiente con la cámara del celular
+
+- **Qué hace:** nueva pantalla `#slope-screen` (botón `#btn-slope` en los controles del mapa) con video en vivo de la cámara trasera y animación en canvas. Dos modos: **Apuntar** (clinómetro a la altura de los ojos: horizonte que rota/se desplaza, escalera de grados, arco de ángulo) y **Apoyar** (celular sobre la superficie: nivel de burbuja). Lectura en grados, % y talud H:V; se vuelve verde y vibra al estabilizarse (desviación < 0,3° en ~30 lecturas); "Fijar/Soltar" congela y "Calibrar 0°" guarda un offset por modo.
+- **Matemática:** vector "arriba" `up = (-cosβ·sinγ, sinβ, cosβ·cosγ)` con filtro exponencial sobre el vector (sin saltos en ±180°). Apuntar: `elev = asin(-up.z)`, `roll = atan2(up.x, up.y)`. Apoyar: `incl = acos(|up.z|)`. Todos los signos están en `computeAngles()` (validar en dispositivo real).
+- **Captura → marcador QC:** `capture()` toma la posición GPS, genera foto cruda + foto estampada (con EXIF GPS), cierra la cámara y abre `openMarkerModal()` con las fotos en `AppState.pendingPhotos`, descripción pre-llenada y `AppState.pendingSlope = {grados, porcentaje, hv, modo}`. `saveMarker()` lo pasa a `MarkerManager.createQC(..., extra)` que lo guarda como `marker.pendiente`; `closeMarkerModal()` lo limpia.
+- **Exportación:** hoja QC del Excel con `Pendiente (°)` y `Pendiente (%)`, fila "Pendiente" en `getCatalogRows()` y texto en el popup del marcador.
+- **No se sincroniza a Supabase** (igual que la altura GPS): el panel Admin no ve la pendiente.
+- **Ciclo de vida:** la cámara se apaga al cerrar, al salir del mapa (`#btn-back` → `SlopeMeter.close()`) y con `visibilitychange`. Respeta `prefers-reduced-motion`. Abrirla desactiva medición y modo marcador.
+- **Archivos:** `js/slope-meter.js` (nuevo, cargado al final), `js/app.js` (`AppState.pendingSlope`, `createQC`, `closeMarkerModal`, `saveMarker`, popup, Excel, `getCatalogRows`, `#btn-back`), `index.html`, `css/styles.css` (`.slope-*`), `sw.js` (`CORE_ASSETS`), `AGENTS.md`.
+- **Pendiente (fase 2, v2.12.0):** medición AR punto A→B con WebXR (`js/ar-measure.js`, solo Android Chrome), después de validar esta fase en campo.
+- **Bumps de versión:** `2.10.14` → `2.11.0`.
 
 ### v2.10.14 — `catalogo.html` autocontenido dentro del ZIP de exportación
 
@@ -506,7 +545,7 @@ Novedades en esta versión:
 - **Tema:** oscuro por defecto. El modo claro se **persiste entre sesiones** (`#btn-theme`, clase `light-mode` en `body`, clave `maps_gis_theme`; `toggleTheme()` y `loadThemePreference()` en `app.js`).
 - **Estilo:** no hay linter, formatter ni TypeScript. Se escribe JavaScript ES6+ con funciones declaradas y módulos IIFE.
 - **Coordenadas:** primarias en **PSAD56 UTM 17S (EPSG:24877)**; secundarias en **WGS84 (EPSG:4326)**. El panel muestra ambas.
-- **Versionado:** la versión actual es `2.10.14` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
+- **Versionado:** la versión actual es `2.12.1` y debe sincronizarse en todos estos lugares al subir cambios funcionales (los números de línea son orientativos y pueden desplazarse con cada cambio):
   - `sw.js:11` — `APP_VERSION`
   - `app.js:23` — `APP_VERSION`
   - `index.html:51` — texto de `#app-version-badge`
@@ -531,6 +570,8 @@ Novedades en esta versión:
 | Device name / id | LocalStorage | `maps_gis_device_name` / `maps_gis_device_id` (formato `dev_<timestamp>_<random>`) |
 | Usuario LSM | LocalStorage | `maps_gis_lsm_user` |
 | Último formulario LSM | LocalStorage | `maps_gis_last_lsm_form` (excluye `nombreMuestra` y `ensayos`) |
+| Offset de calibración del medidor de pendiente | LocalStorage | `maps_gis_slope_offset` (`{aim, flat}` en grados) |
+| Altura del celular (modo Medir) | LocalStorage | `maps_gis_slope_height` (metros, 0,3–3) |
 | Modo marcador | LocalStorage | `maps_gis_marker_mode` (`qc` o `lsm`) |
 | Tema | LocalStorage | `maps_gis_theme` (`light` o `dark`) |
 | Versión config | LocalStorage | `maps_gis_config_version` |

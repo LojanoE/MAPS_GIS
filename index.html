@@ -17,12 +17,12 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
 
   <!-- App CSS -->
-  <link rel="stylesheet" href="css/styles.css?v=2.10.14">
+  <link rel="stylesheet" href="css/styles.css?v=2.12.1">
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.10.14">
+  <link rel="preload" as="image" href="assets/logo_lab_chino_PNG.png?v=2.12.1">
 </head>
 <body>
 
@@ -48,7 +48,7 @@
               <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
             </svg>
           </button>
-          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:999px;">v2.10.14</span>
+          <span id="app-version-badge" style="font-size:0.75rem;color:var(--text-secondary);padding:4px 8px;background:var(--bg-tertiary);border-radius:999px;">v2.12.1</span>
         </div>
       </div>
       <p class="subtitle">Visor de Mapas y Marcadores</p>
@@ -275,6 +275,14 @@
           </svg>
         </button>
 
+        <!-- Medir pendiente con la cámara -->
+        <button id="btn-slope" class="map-btn" title="Medir pendiente con la cámara">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+            <path d="M3 20h18L3 8z"/>
+            <path d="M9 20a6 6 0 0 0-4.5-2.6"/>
+          </svg>
+        </button>
+
         <!-- Añadir marcador -->
         <button id="btn-add-marker" class="map-btn map-btn-primary" title="Añadir marcador">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
@@ -494,6 +502,32 @@
         <button id="btn-edit-marker" class="btn-secondary">Editar</button>
         <button id="btn-delete-marker" class="btn-primary btn-danger">Eliminar</button>
         <button id="btn-close-detail" class="btn-primary">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pantalla del medidor de pendiente (cámara + sensores) -->
+  <div id="slope-screen" class="slope-screen hidden">
+    <video id="slope-video" class="slope-video" playsinline muted autoplay></video>
+    <canvas id="slope-overlay" class="slope-canvas"></canvas>
+    <div class="slope-topbar">
+      <div class="slope-modes">
+        <button type="button" class="slope-mode-btn active" data-mode="aim">Apuntar</button>
+        <button type="button" class="slope-mode-btn" data-mode="measure">Medir</button>
+        <button type="button" class="slope-mode-btn" data-mode="flat">Apoyar</button>
+      </div>
+      <button type="button" id="btn-slope-close" class="slope-close" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="slope-bottom">
+      <div id="slope-hint" class="slope-hint"></div>
+      <label id="slope-height-wrap" class="slope-height hidden">Altura del celular (m)
+        <input id="slope-height" type="number" step="0.05" min="0.3" max="3" value="1.5" inputmode="decimal">
+      </label>
+      <button type="button" id="btn-slope-mark" class="slope-btn slope-mark hidden">Marcar base</button>
+      <div class="slope-actions">
+        <button type="button" id="btn-slope-calibrate" class="slope-btn">Calibrar 0°</button>
+        <button type="button" id="btn-slope-capture" class="slope-capture" aria-label="Capturar"></button>
+        <button type="button" id="btn-slope-freeze" class="slope-btn">Fijar</button>
       </div>
     </div>
   </div>
@@ -1094,8 +1128,8 @@
 
   <!-- Leaflet JS -->
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script defer src="js/leaflet-rotate.js?v=2.10.14"></script>
-  <script defer src="js/leaflet-rotate-patches.js?v=2.10.14"></script>
+  <script defer src="js/leaflet-rotate.js?v=2.12.1"></script>
+  <script defer src="js/leaflet-rotate-patches.js?v=2.12.1"></script>
 
   <!-- Proj4js -->
   <script defer src="https://unpkg.com/proj4@2.9.2/dist/proj4.js"></script>
@@ -1125,19 +1159,20 @@
   <script defer src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
 
   <!-- Storage Module (IndexedDB) -->
-  <script defer src="js/storage.js?v=2.10.14"></script>
+  <script defer src="js/storage.js?v=2.12.1"></script>
 
   <!-- PDF Processor -->
-  <script defer src="js/pdf-processor.js?v=2.10.14"></script>
+  <script defer src="js/pdf-processor.js?v=2.12.1"></script>
 
   <!-- App Main Logic -->
-  <script defer src="js/app.js?v=2.10.14"></script>
+  <script defer src="js/app.js?v=2.12.1"></script>
 
   <!-- Sync Manager (Offline-first Supabase sync) -->
-  <script defer src="js/sync-manager.js?v=2.10.14"></script>
+  <script defer src="js/sync-manager.js?v=2.12.1"></script>
 
   <!-- Admin Manager (Remote admin panel) -->
-  <script defer src="js/admin-manager.js?v=2.10.14"></script>
+  <script defer src="js/admin-manager.js?v=2.12.1"></script>
+  <script defer src="js/slope-meter.js?v=2.12.1"></script>
 
   <!-- Service Worker Registration with forced updates -->
   <script>

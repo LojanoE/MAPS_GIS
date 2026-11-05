@@ -57,7 +57,7 @@ const KNOWN_CRS_MAP = {
   32618: 'EPSG:32618'
 };
 
-const APP_VERSION = '2.10.14';
+const APP_VERSION = '2.12.1';
 
 const MARKER_COLORS = {
   red:    { hex: '#ef4444', label: 'Rojo' },
@@ -79,6 +79,7 @@ const AppState = {
   currentMarkerMode: localStorage.getItem('maps_gis_marker_mode') || 'qc',
   lsmSelectedCategory: 'red', gotoMarkerType: 'qc', pendingMarkerType: 'qc',
   isMeasurementMode: false,
+  pendingSlope: null, // pendiente medida con la cámara (v2.12.0), se adjunta al marcador QC al guardar
   measurementType: 'distance',
   measurementLayer: null,
   measurementLatLngs: [],
@@ -130,7 +131,7 @@ const MarkerManager = {
     } catch { this._cache = []; return this._cache; }
   },
   saveAll(markers) { this._cache = markers; localStorage.setItem(this.STORAGE_KEY, JSON.stringify(markers)); },
-  createQC(name, description, lat, lng, color, photos, altura) {
+  createQC(name, description, lat, lng, color, photos, altura, extra) {
     const markers = this.getAll();
     const [east, north] = proj4(WGS84, 'EPSG:24877', [lng, lat]);
     const marker = {
@@ -146,6 +147,7 @@ const MarkerManager = {
     if (altura !== null && altura !== undefined && !isNaN(altura)) {
       marker.altura = Math.round(altura);
     }
+    if (extra && extra.pendiente) marker.pendiente = extra.pendiente;
     markers.push(marker); this.saveAll(markers); return marker;
   },
   createLSM(lat, lng, color, photos, lsmData, altura) {
@@ -2906,6 +2908,7 @@ function closeMarkerModal() {
   AppState.pendingMarkerLatLng = null;
   AppState.editingMarkerId = null;
   AppState.isAddMarkerMode = false;
+  AppState.pendingSlope = null;
   clearPendingPhotos();
   document.getElementById('btn-add-marker').classList.remove('active');
 }
@@ -2950,7 +2953,7 @@ async function saveMarker() {
     showToast('Marcador actualizado', 'success');
   } else if (AppState.pendingMarkerLatLng) {
     const { lat, lng } = AppState.pendingMarkerLatLng;
-    MarkerManager.createQC(name, description, lat, lng, AppState.selectedCategory, photoIds, AppState.currentAltitude);
+    MarkerManager.createQC(name, description, lat, lng, AppState.selectedCategory, photoIds, AppState.currentAltitude, AppState.pendingSlope ? { pendiente: AppState.pendingSlope } : null);
     showToast('Marcador "' + name + '" guardado', 'success');
   }
   if (AppState.markersLayer) refreshMarkersOnMap();
@@ -3045,7 +3048,10 @@ function addMarkerToMap(marker) {
       '<span class="marker-item-type ' + marker.markerType + '">' + typeLabel + '</span>' +
     '</div>' +
     '<div class="marker-popup-coords">N: ' + marker.norte + ' | E: ' + marker.este +
-      (marker.altura != null ? ' | Z: ' + marker.altura + ' m' : '') + '</div>' +
+      (marker.altura != null ? ' | Z: ' + marker.altura + ' m' : '') +
+      (marker.pendiente ? (marker.pendiente.modo === 'medir'
+        ? ' | Dist: ' + marker.pendiente.distancia + ' m' + (marker.pendiente.altura != null ? ' | Alt. obj: ' + marker.pendiente.altura + ' m' : '')
+        : ' | Pend: ' + marker.pendiente.grados + '° (' + marker.pendiente.porcentaje + ' %)') : '') + '</div>' +
   '</div>';
   L.marker([marker.lat, marker.lng], { icon: icon }).bindPopup(popupContent).on('click', () => {
     AppState.map.setView([marker.lat, marker.lng], AppState.map.getZoom());
@@ -3205,7 +3211,7 @@ async function exportToZIP() {
     const qcMarkers = markers.filter(m => m.markerType === 'qc');
     const lsmMarkers = markers.filter(m => m.markerType === 'lsm');
     if (qcMarkers.length > 0) {
-      const qcData = [['Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)', 'Altura (m)', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2']];
+      const qcData = [['Nombre', 'Categoria', 'Descripcion', 'Norte (m)', 'Este (m)', 'Altura (m)', 'Pendiente (°)', 'Pendiente (%)', 'Distancia medida (m)', 'Altura objeto (m)', 'Latitud', 'Longitud', 'Fecha_Hora', 'Foto_1', 'Foto_2']];
       for (let i = 0; i < qcMarkers.length; i++) {
         const m = qcMarkers[i];
         const prefix = 'QC';
@@ -3230,7 +3236,7 @@ async function exportToZIP() {
             } catch (e) { console.warn('Could not add photo to zip:', photoId); }
           }
         }
-        qcData.push([m.name || '', MARKER_COLORS[m.color]?.label || '', m.description || '', m.norte, m.este, m.altura != null ? m.altura : '', m.lat, m.lng, new Date(m.createdAt), foto1, foto2]);
+        qcData.push([m.name || '', MARKER_COLORS[m.color]?.label || '', m.description || '', m.norte, m.este, m.altura != null ? m.altura : '', m.pendiente && m.pendiente.grados != null ? m.pendiente.grados : '', m.pendiente && m.pendiente.porcentaje != null ? m.pendiente.porcentaje : '', m.pendiente && m.pendiente.distancia != null ? m.pendiente.distancia : '', m.pendiente && m.pendiente.altura != null ? m.pendiente.altura : '', m.lat, m.lng, new Date(m.createdAt), foto1, foto2]);
         photoFileMap.set(m.id, [foto1, foto2]);
       }
       const wsQC = XLSX.utils.aoa_to_sheet(qcData, { cellDates: true });
@@ -3362,6 +3368,10 @@ function getCatalogRows(m, fileName) {
   if (m.lat != null && m.lng != null) add('Coordenadas GPS', Number(m.lat).toFixed(6) + ', ' + Number(m.lng).toFixed(6));
   if (m.este != null && m.norte != null) add('Este / Norte (UTM)', Math.round(m.este) + ' E, ' + Math.round(m.norte) + ' N');
   if (m.altura != null && m.altura !== '') add('Altitud', m.altura + ' m s.n.m.');
+  if (m.pendiente && m.pendiente.modo === 'medir') {
+    add('Distancia medida', m.pendiente.distancia + ' m');
+    if (m.pendiente.altura != null) add('Altura del objeto', m.pendiente.altura + ' m');
+  } else if (m.pendiente) add('Pendiente', m.pendiente.grados + '° · ' + m.pendiente.porcentaje + ' % · ' + m.pendiente.hv);
   add('Archivo', fileName);
   return rows;
 }
@@ -3786,6 +3796,7 @@ function loadThemePreference() {
 function initEventListeners() {
   document.getElementById('map-input').addEventListener('change', (e) => { if (e.target.files.length > 0) handleFileUpload(e.target.files[0]); });
   document.getElementById('btn-back').addEventListener('click', () => {
+    if (typeof SlopeMeter !== 'undefined') SlopeMeter.close(); // apaga la cámara del medidor de pendiente
     resetMapVisualRotation(); // al salir del mapa se limpia la rotación visual
     stopLocationTracking();   // y se detiene el seguimiento GPS continuo
     stopFollowLocation();     // limpia el estado visual del botón de ubicación

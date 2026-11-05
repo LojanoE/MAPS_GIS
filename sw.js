@@ -8,7 +8,7 @@
 // ============================================
 // VERSION CONTROL - BUMP THIS TO FORCE UPDATE
 // ============================================
-const APP_VERSION = '2.10.14'; // Bump to force cache refresh on all devices
+const APP_VERSION = '2.12.1'; // Bump to force cache refresh on all devices
 
 const CACHE_NAME = 'maps-gis-v' + APP_VERSION;
 const STATIC_CACHE = 'maps-gis-static-v' + APP_VERSION;
@@ -18,16 +18,17 @@ const DYNAMIC_CACHE = 'maps-gis-dynamic-v' + APP_VERSION;
 const CORE_ASSETS = [
   './',
   './index.html',
-  './css/styles.css?v=2.10.14',
-  './js/leaflet-rotate.js?v=2.10.14',
-  './js/leaflet-rotate-patches.js?v=2.10.14',
-  './js/app.js?v=2.10.14',
-  './js/storage.js?v=2.10.14',
-  './js/pdf-processor.js?v=2.10.14',
-  './js/sync-manager.js?v=2.10.14',
-  './js/admin-manager.js?v=2.10.14',
+  './css/styles.css?v=2.12.1',
+  './js/leaflet-rotate.js?v=2.12.1',
+  './js/leaflet-rotate-patches.js?v=2.12.1',
+  './js/app.js?v=2.12.1',
+  './js/storage.js?v=2.12.1',
+  './js/pdf-processor.js?v=2.12.1',
+  './js/sync-manager.js?v=2.12.1',
+  './js/admin-manager.js?v=2.12.1',
+  './js/slope-meter.js?v=2.12.1',
   './manifest.json',
-  './assets/logo_lab_chino_PNG.png?v=2.10.14',
+  './assets/logo_lab_chino_PNG.png?v=2.12.1',
   './config.json'
 ];
 
